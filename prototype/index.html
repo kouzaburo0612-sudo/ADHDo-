@@ -12,6 +12,8 @@
   --c-meal:#d97706;     /* 食事 = オレンジ */
   --c-sleep:#9d7bf5;    /* 睡眠 = 紫 */
   --c-routine:#0da06f;  /* ルーティン = 緑 */
+  --c-meeting:#84a31c;  /* ミーティング = 黄緑 */
+  --brand:#7bc5ba;      /* ロゴのティール */
 
   --bg:#0d1017;
   --surface:#131722;
@@ -43,6 +45,10 @@ header.app{
 }
 header.app h1{font-size:20px;font-weight:700;letter-spacing:.02em}
 header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand svg{flex:none}
+.logo-word{font-size:22px;font-weight:800;color:var(--ink);letter-spacing:.04em}
+.logo-word .o{color:var(--brand)}
 
 /* ============ 24hチャート ============ */
 .clock-wrap{position:relative;margin:4px auto 6px;max-width:360px}
@@ -168,11 +174,11 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .ach-top{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--ink-2)}
 .ach-top b{font-size:20px;color:var(--ink);font-variant-numeric:tabular-nums}
 .ach-bar{height:8px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin-top:8px}
-.ach-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--c-routine),var(--c-work));transition:width .4s}
+.ach-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--brand),var(--c-routine));transition:width .4s}
 .ach-meta{font-size:11px;color:var(--ink-3);margin-top:5px}
 .seg-tabs{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;margin:10px 0 14px}
 .seg-tabs button{flex:1;background:none;border:none;color:var(--ink-2);font-size:13px;font-weight:600;padding:8px;border-radius:9px}
-.seg-tabs button.sel{background:var(--surface-2);color:var(--ink)}
+.seg-tabs button.sel{background:var(--brand);color:#0d1017;font-weight:700}
 
 /* 完了チェック */
 .s-check,.ev-check{
@@ -189,8 +195,8 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .fab{
   position:fixed;right:max(18px,calc(50% - 222px));bottom:calc(var(--footer-h) + 20px);
   width:54px;height:54px;border-radius:50%;z-index:40;
-  background:var(--c-work);border:none;color:#fff;font-size:30px;line-height:1;font-weight:300;
-  box-shadow:0 6px 20px color-mix(in srgb,var(--c-work) 45%,transparent);
+  background:var(--brand);border:none;color:#0d1017;font-size:30px;line-height:1;font-weight:400;
+  box-shadow:0 6px 20px color-mix(in srgb,var(--brand) 45%,transparent);
 }
 .modal{position:fixed;inset:0;z-index:60;display:none;align-items:flex-end;justify-content:center;background:rgba(5,8,14,.65)}
 .modal.show{display:flex}
@@ -243,7 +249,7 @@ nav.footer button.active svg{stroke-width:2.2}
   background:var(--surface-2);border:1px solid var(--line);color:var(--ink);
   border-radius:10px;padding:9px 16px;font-size:13px;font-weight:600;
 }
-.btn.primary{background:var(--c-work);border-color:var(--c-work);color:#fff}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#0d1017;font-weight:700}
 textarea,input[type=text],input[type=time]{
   width:100%;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);
   border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none;
@@ -286,7 +292,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
 /* プロフィール */
 .avatar{
   width:72px;height:72px;border-radius:50%;margin:0 auto 10px;
-  background:linear-gradient(135deg,var(--c-work),var(--c-sleep));
+  background:linear-gradient(135deg,var(--brand),#3f9d92);
   display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#fff;
 }
 .setting-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line);font-size:14px}
@@ -302,7 +308,20 @@ textarea:focus,input:focus{border-color:var(--c-work)}
 <!-- ============ ホーム(タイムスケジュール) ============ -->
 <section class="screen active" id="scr-home">
   <header class="app">
-    <h1>今日のスケジュール</h1>
+    <div class="brand">
+      <svg viewBox="0 0 64 64" width="36" height="36" aria-hidden="true">
+        <rect width="64" height="64" rx="16" fill="var(--brand)"/>
+        <g fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round">
+          <circle cx="21" cy="27" r="9"/>
+          <circle cx="16" cy="36" r="7.5"/>
+          <circle cx="25" cy="38" r="5.5"/>
+          <path d="M31 37h7"/>
+          <circle cx="47" cy="35" r="9"/>
+          <path d="M42.5 35l3.5 3.5 6.5-6.5"/>
+        </g>
+      </svg>
+      <span class="logo-word">ADHD<span class="o">o</span></span>
+    </div>
     <div class="date" id="home-date"></div>
   </header>
 
@@ -409,11 +428,26 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <div class="setting-row"><span>スケジュールを初期状態に戻す</span><button class="btn" id="reset-schedule">リセット</button></div>
   </div>
   <div class="panel">
+    <h3>Googleカレンダー連携</h3>
+    <p style="font-size:12.5px;color:var(--ink-2);line-height:1.7;margin-bottom:12px">
+      Googleカレンダーからエクスポートした予定ファイル(.ics)を読み込むと、今日の予定が
+      <span style="color:var(--c-meeting);font-weight:700">ミーティング(黄緑)</span>としてタイムラインに追加されます。
+    </p>
+    <input type="file" id="ics-file" accept=".ics,text/calendar" style="display:none">
+    <button class="btn primary" id="ics-import" style="width:100%">.icsファイルを読み込む</button>
+    <p id="ics-result" style="font-size:12px;color:var(--brand);margin-top:10px;display:none"></p>
+    <p style="font-size:11px;color:var(--ink-3);line-height:1.7;margin-top:10px">
+      ファイルの取得方法: Googleカレンダー(Web版)→ 設定 → インポート/エクスポート → エクスポート。
+      iPhone/iPadではダウンロードしたzipを開き、.icsを「ファイル」に保存してから選んでください。
+      ※終日予定は対象外、繰り返し予定は初回日程のみ対応
+    </p>
+  </div>
+  <div class="panel">
     <h3>1日の基本設定</h3>
     <div class="setting-row"><span>起床時間</span><input type="time" value="06:30" style="width:132px"></div>
     <div class="setting-row"><span>就寝時間</span><input type="time" value="23:00" style="width:132px"></div>
   </div>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:6px">ADHDo v0.4</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:6px">ADHDo v0.5</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -474,6 +508,7 @@ const CATS = {
   meal:   {name:'食事',      color:'var(--c-meal)',    hex:'#d97706', icon:'🍙'},
   sleep:  {name:'睡眠',      color:'var(--c-sleep)',   hex:'#9d7bf5', icon:'🌙'},
   routine:{name:'ルーティン', color:'var(--c-routine)', hex:'#0da06f', icon:'🌿'},
+  meeting:{name:'ミーティング', color:'var(--c-meeting)', hex:'#84a31c', icon:'🤝'},
 };
 
 // start/end は 0:00 からの分。end < start は日付をまたぐ(睡眠)
@@ -733,7 +768,7 @@ function renderClock(){
 function renderLegend(){
   const totals = {};
   for(const e of SCHEDULE) totals[e.cat] = (totals[e.cat] || 0) + dur(e);
-  $('#legend').innerHTML = Object.entries(CATS).map(([k,c]) =>
+  $('#legend').innerHTML = Object.entries(CATS).filter(([k]) => totals[k]).map(([k,c]) =>
     `<span class="item"><span class="dot" style="background:${c.hex}"></span>${c.name} <b>${(totals[k]/60).toFixed(totals[k]%60?1:0)}h</b></span>`
   ).join('');
 }
@@ -995,6 +1030,74 @@ function renderAch(){
   $('#ach-fill').style.width = pct + '%';
   $('#ach-meta').textContent = `${total}個のタスク中 ${done}個 完了${pct === 100 ? ' 🎉 全部やりきった!' : ''}`;
 }
+
+/* ================= Googleカレンダー連携 (.ics読み込み) ================= */
+function parseICS(text){
+  // 折り返し行(継続行)を結合してからVEVENTを抽出
+  const lines = text.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '').replace(/\r/g, '').split('\n');
+  const events = [];
+  let cur = null;
+  for(const ln of lines){
+    if(ln === 'BEGIN:VEVENT') cur = {};
+    else if(ln === 'END:VEVENT'){ if(cur) events.push(cur); cur = null; }
+    else if(cur){
+      const i = ln.indexOf(':');
+      if(i < 0) continue;
+      const name = ln.slice(0, i).split(';')[0];
+      const val = ln.slice(i + 1);
+      if(name === 'SUMMARY') cur.summary = val.replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\n/g, ' ');
+      else if(name === 'DTSTART') cur.dtstart = val;
+      else if(name === 'DTEND') cur.dtend = val;
+      else if(name === 'UID') cur.uid = val;
+    }
+  }
+  return events;
+}
+
+function icsToDate(v){
+  if(!v) return null;
+  if(/^\d{8}$/.test(v)) return {allDay: true};
+  const m = v.match(/^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)?(Z)?$/);
+  if(!m) return null;
+  const d = m[7] === 'Z'
+    ? new Date(Date.UTC(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +(m[6]||0)))
+    : new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5]); // TZID付きは端末のタイムゾーンとして扱う
+  return {date: d};
+}
+
+function importICS(text){
+  const today = new Date();
+  const sameDay = d => d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
+  let added = 0, skipped = 0;
+  for(const ev of parseICS(text)){
+    const s = icsToDate(ev.dtstart);
+    if(!s || s.allDay || !s.date || !sameDay(s.date)){ skipped++; continue; }
+    const e = icsToDate(ev.dtend);
+    const start = s.date.getHours() * 60 + s.date.getMinutes();
+    let end = (e && e.date && !e.allDay) ? e.date.getHours() * 60 + e.date.getMinutes() : (start + 60) % 1440;
+    if(end === start) end = (start + 30) % 1440;
+    const id = 'gcal-' + (ev.uid || ev.summary + start) + '-' + todayKey();
+    if(SCHEDULE.some(x => x.id === id)) { skipped++; continue; }
+    SCHEDULE.push({id, cat: 'meeting', title: ev.summary || '(無題の予定)', start, end});
+    added++;
+  }
+  if(added) persistSchedule();
+  const r = $('#ics-result');
+  r.style.display = 'block';
+  r.textContent = added
+    ? `✓ 今日の予定を ${added}件 取り込みました(タイムラインに黄緑で表示されます)`
+    : '今日の日付の予定が見つかりませんでした(終日予定・他の日の予定は取り込まれません)';
+}
+
+$('#ics-import').addEventListener('click', () => $('#ics-file').click());
+$('#ics-file').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = () => importICS(reader.result);
+  reader.readAsText(f);
+  e.target.value = '';
+});
 
 // スケジュールを初期状態に戻す
 $('#reset-schedule').addEventListener('click', () => {
