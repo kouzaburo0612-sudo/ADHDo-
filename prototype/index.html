@@ -163,6 +163,28 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 .tl-item.flash .tl-card{box-shadow:0 0 0 2px var(--cat),0 4px 28px color-mix(in srgb,var(--cat) 35%,transparent)}
 
+/* ============ 達成率・ビュー切り替え ============ */
+.ach{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-top:10px}
+.ach-top{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--ink-2)}
+.ach-top b{font-size:20px;color:var(--ink);font-variant-numeric:tabular-nums}
+.ach-bar{height:8px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin-top:8px}
+.ach-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--c-routine),var(--c-work));transition:width .4s}
+.ach-meta{font-size:11px;color:var(--ink-3);margin-top:5px}
+.seg-tabs{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;margin:10px 0 14px}
+.seg-tabs button{flex:1;background:none;border:none;color:var(--ink-2);font-size:13px;font-weight:600;padding:8px;border-radius:9px}
+.seg-tabs button.sel{background:var(--surface-2);color:var(--ink)}
+
+/* 完了チェック */
+.s-check,.ev-check{
+  width:20px;height:20px;border-radius:50%;flex:none;padding:0;
+  border:1.5px solid var(--ink-3);background:none;color:#fff;font-size:12px;line-height:1;
+  display:flex;align-items:center;justify-content:center;transition:all .2s;
+}
+.s-check.on,.ev-check.on{background:var(--cat);border-color:var(--cat)}
+.ev-check{width:22px;height:22px}
+.sub-count{font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tl-item.checked .title{text-decoration:line-through;opacity:.6}
+
 /* ============ 予定エディタ ============ */
 .fab{
   position:fixed;right:max(18px,calc(50% - 222px));bottom:calc(var(--footer-h) + 20px);
@@ -284,21 +306,36 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <div class="date" id="home-date"></div>
   </header>
 
-  <div class="clock-wrap">
-    <svg id="clock" viewBox="22 22 316 316" aria-label="24時間スケジュール円グラフ"></svg>
-    <div class="clock-center">
-      <div class="day" id="cc-day"></div>
-      <div class="big-time" id="cc-time">--:--</div>
-      <div class="task-chip" id="cc-chip"><span class="dot"></span><span id="cc-task"></span></div>
-      <div class="remain" id="cc-remain"></div>
-    </div>
-    <div class="chart-tip" id="chart-tip"></div>
+  <div class="ach">
+    <div class="ach-top"><span>今日の達成率</span><b id="ach-pct">0%</b></div>
+    <div class="ach-bar"><div class="ach-fill" id="ach-fill"></div></div>
+    <div class="ach-meta" id="ach-meta"></div>
   </div>
-  <div class="legend" id="legend"></div>
 
-  <div class="tl-head"><h2>タイムライン</h2><span>カードをタップで編集</span></div>
-  <div class="tl" id="timeline"></div>
-  <button class="fab" id="fab-add" aria-label="予定を追加">+</button>
+  <div class="seg-tabs">
+    <button id="tab-tl" class="sel">タイムライン</button>
+    <button id="tab-clock">24Hグラフ</button>
+  </div>
+
+  <div id="view-clock" style="display:none">
+    <div class="clock-wrap">
+      <svg id="clock" viewBox="22 22 316 316" aria-label="24時間スケジュール円グラフ"></svg>
+      <div class="clock-center">
+        <div class="day" id="cc-day"></div>
+        <div class="big-time" id="cc-time">--:--</div>
+        <div class="task-chip" id="cc-chip"><span class="dot"></span><span id="cc-task"></span></div>
+        <div class="remain" id="cc-remain"></div>
+      </div>
+      <div class="chart-tip" id="chart-tip"></div>
+    </div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div id="view-tl">
+    <div class="tl-head"><h2>タイムライン</h2><span>○で完了 / カードをタップで編集</span></div>
+    <div class="tl" id="timeline"></div>
+    <button class="fab" id="fab-add" aria-label="予定を追加">+</button>
+  </div>
 </section>
 
 <!-- ============ 瞑想 ============ -->
@@ -376,7 +413,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <div class="setting-row"><span>起床時間</span><input type="time" value="06:30" style="width:132px"></div>
     <div class="setting-row"><span>就寝時間</span><input type="time" value="23:00" style="width:132px"></div>
   </div>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:6px">ADHDo v0.3</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:6px">ADHDo v0.4</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -503,6 +540,18 @@ function persistSchedule(){
   renderLegend();
 }
 
+// 完了チェック(達成は自動判定せず、自分でチェックする。日付が変わるとリセット)
+const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; };
+let doneData = store.get('done', null);
+if(!doneData || doneData.date !== todayKey()) doneData = {date: todayKey(), items: {}};
+const isDone = key => !!doneData.items[key];
+function toggleDone(key){
+  if(doneData.items[key]) delete doneData.items[key];
+  else doneData.items[key] = true;
+  store.set('done', doneData);
+  refreshHome();
+}
+
 /* ================= タイムライン ================= */
 function renderTimeline(){
   const n = nowMin();
@@ -510,8 +559,13 @@ function renderTimeline(){
   tl.innerHTML = '';
   for(const e of SCHEDULE){
     const cat = CATS[e.cat];
+    const checkable = e.cat !== 'sleep';
+    const hasSubs = !!(e.subs && e.subs.length);
+    const evDone = checkable && !hasSubs && isDone(e.id);
+    const subDoneCount = hasSubs ? e.subs.filter((s,i) => isDone(e.id + '/' + i)).length : 0;
+
     const item = document.createElement('div');
-    item.className = 'tl-item' + (isActive(e,n) ? ' now' : isPast(e,n) ? ' past' : '');
+    item.className = 'tl-item' + (isActive(e,n) ? ' now' : isPast(e,n) ? ' past' : '') + (evDone ? ' checked' : '');
     item.dataset.id = e.id;
     item.style.setProperty('--cat', cat.color);
 
@@ -524,14 +578,21 @@ function renderTimeline(){
       <div class="tl-node"></div>
       <div class="tl-card">
         <div class="row1">
+          ${checkable && !hasSubs ? `<button class="ev-check${evDone ? ' on' : ''}" data-key="${e.id}" aria-label="完了">${evDone ? '✓' : ''}</button>` : ''}
           <span class="title">${cat.icon} ${esc(e.title)}</span>
+          ${hasSubs && checkable ? `<span class="sub-count">${subDoneCount}/${e.subs.length}</span>` : ''}
           <span class="now-badge">NOW</span>
           <span class="cat-tag">${cat.name}</span>
         </div>
         <div class="range">${fmt(e.start)} – ${fmt(e.end)} ・ ${durLabel(dur(e))}</div>
-        ${e.subs ? `<div class="subs">${e.subs.map(s => {
-          const cls = isActive(s,n) && isActive(e,n) ? ' active' : (n >= s.end && n >= e.start ? ' done' : '');
-          return `<div class="sub${cls}"><span class="s-dot"></span><span class="s-name">${esc(s.name)}</span><span class="s-time">${fmt(s.start)} – ${fmt(s.end)}</span></div>`;
+        ${hasSubs ? `<div class="subs">${e.subs.map((s,si) => {
+          const key = e.id + '/' + si;
+          const sd = checkable && isDone(key);
+          const cls = (isActive(s,n) && isActive(e,n) ? ' active' : '') + (sd ? ' done' : '');
+          const lead = checkable
+            ? `<button class="s-check${sd ? ' on' : ''}" data-key="${key}" aria-label="完了">${sd ? '✓' : ''}</button>`
+            : '<span class="s-dot"></span>';
+          return `<div class="sub${cls}">${lead}<span class="s-name">${esc(s.name)}</span><span class="s-time">${fmt(s.start)} – ${fmt(s.end)}</span></div>`;
         }).join('')}</div>` : ''}
         <div class="now-progress">
           <div class="bar"><div class="fill" style="width:${pct}%"></div></div>
@@ -654,14 +715,18 @@ function renderClock(){
     const tip = $('#chart-tip');
     tip.innerHTML = `<b style="color:${CATS[e.cat].hex}">${CATS[e.cat].icon} ${esc(e.title)}</b> <span class="t">${fmt(e.start)}–${fmt(e.end)} (${durLabel(dur(e))})</span>`;
     tip.classList.add('show');
-    const card = document.querySelector(`.tl-item[data-id="${e.id}"]`);
-    if(card){
-      card.scrollIntoView({behavior:'smooth', block:'center'});
-      card.classList.add('flash');
-      setTimeout(() => card.classList.remove('flash'), 1600);
-    }
     clearTimeout(tip._t);
-    tip._t = setTimeout(() => tip.classList.remove('show'), 3000);
+    tip._t = setTimeout(() => tip.classList.remove('show'), 2200);
+    // 少し見せてからタイムラインに切り替えて該当カードへ
+    setTimeout(() => {
+      setView('tl');
+      const card = document.querySelector(`.tl-item[data-id="${e.id}"]`);
+      if(card){
+        card.scrollIntoView({behavior:'smooth', block:'center'});
+        card.classList.add('flash');
+        setTimeout(() => card.classList.remove('flash'), 1600);
+      }
+    }, 650);
   }));
 }
 
@@ -891,13 +956,45 @@ $('#ed-cancel').addEventListener('click', closeEditor);
 $('#editor').addEventListener('click', e => { if(e.target === $('#editor')) closeEditor(); });
 $('#fab-add').addEventListener('click', () => openEditor(null));
 
-// カードをタップで編集
+// ○タップで完了トグル / カードをタップで編集
 $('#timeline').addEventListener('click', e => {
+  const chk = e.target.closest('.s-check, .ev-check');
+  if(chk){ toggleDone(chk.dataset.key); return; }
   const item = e.target.closest('.tl-item');
   if(!item) return;
   const ev = SCHEDULE.find(x => x.id === item.dataset.id);
   if(ev) openEditor(ev);
 });
+
+// タイムライン / 24Hグラフ 切り替え
+function setView(v){
+  store.set('view', v);
+  $('#tab-tl').classList.toggle('sel', v === 'tl');
+  $('#tab-clock').classList.toggle('sel', v === 'clock');
+  $('#view-tl').style.display = v === 'tl' ? '' : 'none';
+  $('#view-clock').style.display = v === 'clock' ? '' : 'none';
+}
+$('#tab-tl').addEventListener('click', () => { setView('tl'); scrollToNow(); });
+$('#tab-clock').addEventListener('click', () => setView('clock'));
+
+// 達成率(チェックした数 / チェック対象の数。睡眠は対象外)
+function renderAch(){
+  let total = 0, done = 0;
+  for(const e of SCHEDULE){
+    if(e.cat === 'sleep') continue;
+    if(e.subs && e.subs.length){
+      total += e.subs.length;
+      e.subs.forEach((s,i) => { if(isDone(e.id + '/' + i)) done++; });
+    }else{
+      total++;
+      if(isDone(e.id)) done++;
+    }
+  }
+  const pct = total ? Math.round(done / total * 100) : 0;
+  $('#ach-pct').textContent = pct + '%';
+  $('#ach-fill').style.width = pct + '%';
+  $('#ach-meta').textContent = `${total}個のタスク中 ${done}個 完了${pct === 100 ? ' 🎉 全部やりきった!' : ''}`;
+}
 
 // スケジュールを初期状態に戻す
 $('#reset-schedule').addEventListener('click', () => {
@@ -911,11 +1008,18 @@ $('#reset-schedule').addEventListener('click', () => {
 /* ================= 起動・更新 ================= */
 function refreshHome(){
   const d = new Date();
+  // 日付が変わったら完了チェックをリセット
+  if(doneData.date !== todayKey()){
+    doneData = {date: todayKey(), items: {}};
+    store.set('done', doneData);
+  }
   $('#home-date').textContent = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 (${'日月火水木金土'[d.getDay()]})`;
   $('#diary-date').textContent = `${d.getMonth()+1}月${d.getDate()}日`;
   renderTimeline();
   renderClock();
+  renderAch();
 }
+setView(store.get('view', 'tl'));
 refreshHome();
 renderLegend();
 renderDiary();
