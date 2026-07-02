@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>ADHDo — 今日のタイムライン</title>
+<style>
+:root{
+  /* カテゴリ色(ダーク背景でCVD/コントラスト検証済み) */
+  --c-workout:#f4526a;  /* 筋トレ = 赤 */
+  --c-work:#4a8df8;     /* Work = 青 */
+  --c-meal:#d97706;     /* 食事 = オレンジ */
+  --c-sleep:#9d7bf5;    /* 睡眠 = 紫 */
+  --c-routine:#0da06f;  /* ルーティン = 緑 */
+
+  --bg:#0d1017;
+  --surface:#131722;
+  --surface-2:#1a2030;
+  --line:#232b3d;
+  --ink:#e8ecf4;
+  --ink-2:#98a2b8;
+  --ink-3:#5f6a82;
+  --footer-h:64px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Segoe UI",sans-serif;
+  font-size:15px;line-height:1.55;
+  max-width:480px;margin:0 auto;
+}
+button{font-family:inherit;cursor:pointer}
+
+/* ============ レイアウト ============ */
+.screen{display:none;padding:0 16px calc(var(--footer-h) + 24px)}
+.screen.active{display:block}
+header.app{
+  position:sticky;top:0;z-index:20;
+  background:var(--bg);
+  box-shadow:0 8px 16px -8px var(--bg);
+  padding:18px 2px 10px;
+}
+header.app h1{font-size:20px;font-weight:700;letter-spacing:.02em}
+header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
+
+/* ============ 24hチャート ============ */
+.clock-wrap{position:relative;margin:4px auto 6px;max-width:360px}
+.clock-wrap svg{display:block;width:100%;height:auto}
+.clock-center{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;pointer-events:none;
+}
+.clock-center .big-time{
+  font-size:34px;font-weight:800;letter-spacing:.01em;
+  font-variant-numeric:tabular-nums;line-height:1.1;
+}
+.clock-center .day{font-size:11px;color:var(--ink-3);margin-bottom:2px;letter-spacing:.08em}
+.clock-center .task-chip{
+  display:inline-flex;align-items:center;gap:6px;margin-top:8px;
+  background:var(--surface-2);border:1px solid var(--line);
+  border-radius:99px;padding:4px 12px;font-size:12px;font-weight:600;
+}
+.clock-center .task-chip .dot{width:8px;height:8px;border-radius:50%}
+.clock-center .remain{font-size:11px;color:var(--ink-2);margin-top:5px}
+.seg{transition:opacity .25s,filter .25s;cursor:pointer}
+.seg.dim{opacity:.5;filter:saturate(.75)}
+.chart-tip{
+  position:absolute;left:50%;top:6px;transform:translateX(-50%);
+  background:var(--surface-2);border:1px solid var(--line);border-radius:10px;
+  padding:7px 14px;font-size:12px;white-space:nowrap;display:none;z-index:5;
+  box-shadow:0 6px 20px rgba(0,0,0,.45);
+}
+.chart-tip.show{display:block}
+.chart-tip b{font-size:13px}
+.chart-tip .t{color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+.legend{
+  display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;
+  margin:2px auto 22px;font-size:12px;color:var(--ink-2);
+}
+.legend .item{display:flex;align-items:center;gap:6px}
+.legend .dot{width:9px;height:9px;border-radius:50%}
+.legend b{color:var(--ink);font-weight:600}
+
+/* ============ タイムライン ============ */
+.tl-head{display:flex;align-items:baseline;justify-content:space-between;margin:4px 2px 12px}
+.tl-head h2{font-size:16px;font-weight:700}
+.tl-head span{font-size:12px;color:var(--ink-3)}
+.tl{position:relative;padding-left:64px}
+.tl::before{
+  content:"";position:absolute;left:56px;top:8px;bottom:8px;width:2px;
+  background:var(--line);border-radius:2px;
+}
+.tl-item{position:relative;margin-bottom:14px}
+.tl-time{
+  position:absolute;left:-64px;top:14px;width:48px;text-align:right;
+  font-size:13px;font-weight:600;color:var(--ink-2);
+  font-variant-numeric:tabular-nums;transition:all .3s;
+}
+.tl-node{
+  position:absolute;left:-12px;top:19px;width:10px;height:10px;border-radius:50%;
+  background:var(--surface);border:2px solid var(--cat);z-index:2;transition:all .3s;
+}
+.tl-card{
+  background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:13px 14px;border-left:4px solid var(--cat);
+  transition:all .35s ease;
+}
+.tl-card .row1{display:flex;align-items:center;gap:8px}
+.tl-card .title{font-size:15px;font-weight:700;flex:1}
+.tl-card .range{font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tl-card .cat-tag{
+  font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--cat);
+  border:1px solid color-mix(in srgb,var(--cat) 45%,transparent);
+  border-radius:6px;padding:1px 7px;
+}
+.subs{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;display:grid;gap:5px}
+.sub{
+  display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);
+  transition:opacity .3s;
+}
+.sub .s-dot{width:6px;height:6px;border-radius:50%;background:var(--ink-3);flex:none;transition:all .3s}
+.sub .s-name{flex:1}
+.sub .s-time{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.sub.done{opacity:.45}
+.sub.done .s-name{text-decoration:line-through}
+.sub.active{color:var(--ink);font-weight:600}
+.sub.active .s-dot{background:var(--cat);box-shadow:0 0 8px var(--cat);transform:scale(1.35)}
+.sub.active .s-time{color:var(--cat)}
+
+/* --- NOW 強調(順序はそのまま・その場で大きく) --- */
+.tl-item.now .tl-time{font-size:17px;color:var(--cat);font-weight:800}
+.tl-item.now .tl-node{
+  width:14px;height:14px;left:-14px;background:var(--cat);
+  box-shadow:0 0 0 5px color-mix(in srgb,var(--cat) 25%,transparent),0 0 18px var(--cat);
+  animation:pulse 2s infinite;
+}
+.tl-item.now .tl-card{
+  padding:18px 16px;transform:scale(1.02);transform-origin:left center;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--cat) 14%,var(--surface)),var(--surface) 70%);
+  border-color:color-mix(in srgb,var(--cat) 55%,var(--line));
+  box-shadow:0 4px 28px color-mix(in srgb,var(--cat) 28%,transparent);
+}
+.tl-item.now .title{font-size:19px}
+.tl-item.now .range{font-size:13px;color:var(--ink)}
+.now-badge{
+  display:none;align-items:center;gap:5px;
+  background:var(--cat);color:#fff;font-size:10px;font-weight:800;letter-spacing:.1em;
+  border-radius:99px;padding:2px 9px;
+}
+.now-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:#fff;animation:blink 1.2s infinite}
+.tl-item.now .now-badge{display:inline-flex}
+.tl-item.now .cat-tag{display:none}
+.now-progress{display:none;margin-top:12px}
+.tl-item.now .now-progress{display:block}
+.now-progress .bar{height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden}
+.now-progress .fill{height:100%;background:var(--cat);border-radius:99px;transition:width .5s}
+.now-progress .meta{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2);margin-top:5px;font-variant-numeric:tabular-nums}
+.tl-item.past .tl-card{opacity:.55}
+.tl-item.past .tl-time{opacity:.55}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 5px color-mix(in srgb,var(--cat) 25%,transparent),0 0 18px var(--cat)}50%{box-shadow:0 0 0 8px color-mix(in srgb,var(--cat) 12%,transparent),0 0 26px var(--cat)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.tl-item.flash .tl-card{box-shadow:0 0 0 2px var(--cat),0 4px 28px color-mix(in srgb,var(--cat) 35%,transparent)}
+
+/* ============ フッター ============ */
+nav.footer{
+  position:fixed;bottom:0;left:50%;transform:translateX(-50%);
+  width:100%;max-width:480px;height:var(--footer-h);z-index:50;
+  background:color-mix(in srgb,var(--surface) 92%,transparent);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-top:1px solid var(--line);
+  display:grid;grid-template-columns:repeat(5,1fr);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+nav.footer button{
+  background:none;border:none;color:var(--ink-3);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font-size:9.5px;font-weight:600;letter-spacing:.02em;
+}
+nav.footer button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+nav.footer button.small{font-size:8px;letter-spacing:0}
+nav.footer button.active{color:var(--ink)}
+nav.footer button.active svg{stroke-width:2.2}
+
+/* ============ サブ画面共通 ============ */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:14px}
+.panel h3{font-size:15px;font-weight:700;margin-bottom:10px}
+.btn{
+  background:var(--surface-2);border:1px solid var(--line);color:var(--ink);
+  border-radius:10px;padding:9px 16px;font-size:13px;font-weight:600;
+}
+.btn.primary{background:var(--c-work);border-color:var(--c-work);color:#fff}
+textarea,input[type=text],input[type=time]{
+  width:100%;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);
+  border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none;
+}
+textarea:focus,input:focus{border-color:var(--c-work)}
+
+/* 瞑想 */
+.breath-stage{display:flex;flex-direction:column;align-items:center;padding:30px 0 10px}
+.breath-circle{
+  width:170px;height:170px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--c-routine) 45%,var(--surface-2)),var(--surface-2));
+  border:2px solid var(--c-routine);
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;font-weight:700;
+  transition:transform 4s ease-in-out;box-shadow:0 0 40px color-mix(in srgb,var(--c-routine) 25%,transparent);
+}
+.breath-circle.inhale{transform:scale(1.25)}
+.breath-circle.exhale{transform:scale(.85);transition-duration:8s}
+.med-timer{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;margin:18px 0 6px}
+.med-presets{display:flex;gap:8px;justify-content:center;margin:10px 0}
+.med-presets .btn.sel{border-color:var(--c-routine);color:var(--c-routine)}
+
+/* 日記 */
+.diary-entry{border-bottom:1px solid var(--line);padding:12px 2px}
+.diary-entry:last-child{border-bottom:none}
+.diary-entry .d{font-size:11px;color:var(--ink-3);display:flex;justify-content:space-between}
+.diary-entry p{font-size:13.5px;margin-top:4px;white-space:pre-wrap}
+.diary-entry button{background:none;border:none;color:var(--ink-3);font-size:11px}
+
+/* アファメーション */
+.affirm-card{
+  background:linear-gradient(135deg,color-mix(in srgb,var(--c-sleep) 22%,var(--surface)),var(--surface));
+  border:1px solid color-mix(in srgb,var(--c-sleep) 40%,var(--line));
+  border-radius:18px;padding:44px 24px;text-align:center;margin-bottom:14px;
+  box-shadow:0 8px 30px color-mix(in srgb,var(--c-sleep) 15%,transparent);
+}
+.affirm-card .q{font-size:18px;font-weight:700;line-height:1.7}
+.affirm-card .n{font-size:11px;color:var(--ink-3);margin-top:14px}
+
+/* プロフィール */
+.avatar{
+  width:72px;height:72px;border-radius:50%;margin:0 auto 10px;
+  background:linear-gradient(135deg,var(--c-work),var(--c-sleep));
+  display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#fff;
+}
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line);font-size:14px}
+.setting-row:last-child{border-bottom:none}
+.toggle{position:relative;width:44px;height:25px;border-radius:99px;background:var(--surface-2);border:1px solid var(--line);transition:.25s}
+.toggle::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:var(--ink-3);transition:.25s}
+.toggle.on{background:var(--c-routine);border-color:var(--c-routine)}
+.toggle.on::after{left:21px;background:#fff}
+</style>
+</head>
+<body>
+
+<!-- ============ ホーム(タイムスケジュール) ============ -->
+<section class="screen active" id="scr-home">
+  <header class="app">
+    <h1>今日のスケジュール</h1>
+    <div class="date" id="home-date"></div>
+  </header>
+
+  <div class="clock-wrap">
+    <svg id="clock" viewBox="22 22 316 316" aria-label="24時間スケジュール円グラフ"></svg>
+    <div class="clock-center">
+      <div class="day" id="cc-day"></div>
+      <div class="big-time" id="cc-time">--:--</div>
+      <div class="task-chip" id="cc-chip"><span class="dot"></span><span id="cc-task"></span></div>
+      <div class="remain" id="cc-remain"></div>
+    </div>
+    <div class="chart-tip" id="chart-tip"></div>
+  </div>
+  <div class="legend" id="legend"></div>
+
+  <div class="tl-head"><h2>タイムライン</h2><span>タップで詳細 / 自動でNOWへ</span></div>
+  <div class="tl" id="timeline"></div>
+</section>
+
+<!-- ============ 瞑想 ============ -->
+<section class="screen" id="scr-meditate">
+  <header class="app"><h1>瞑想</h1><div class="date">呼吸に意識を向けましょう</div></header>
+  <div class="panel">
+    <div class="breath-stage">
+      <div class="breath-circle" id="breath-circle"><span id="breath-label">準備OK</span></div>
+      <div class="med-timer" id="med-timer">3:00</div>
+      <div class="med-presets" id="med-presets">
+        <button class="btn" data-min="1">1分</button>
+        <button class="btn sel" data-min="3">3分</button>
+        <button class="btn" data-min="5">5分</button>
+        <button class="btn" data-min="10">10分</button>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:8px">
+        <button class="btn primary" id="med-start">開始</button>
+        <button class="btn" id="med-reset">リセット</button>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>やり方</h3>
+    <p style="font-size:13px;color:var(--ink-2)">円が大きくなったら4秒かけて吸い、4秒止めて、8秒かけてゆっくり吐きます。考えごとが浮かんでも大丈夫。気づいたら呼吸に戻るだけでOK。</p>
+  </div>
+</section>
+
+<!-- ============ 日記 ============ -->
+<section class="screen" id="scr-diary">
+  <header class="app"><h1>日記</h1><div class="date" id="diary-date"></div></header>
+  <div class="panel">
+    <h3>今日のふりかえり</h3>
+    <textarea id="diary-text" rows="5" placeholder="今日できたこと、感じたことを自由に…"></textarea>
+    <div style="margin-top:10px;text-align:right"><button class="btn primary" id="diary-save">保存する</button></div>
+  </div>
+  <div class="panel">
+    <h3>これまでの記録</h3>
+    <div id="diary-list"><p style="font-size:13px;color:var(--ink-3)">まだ記録がありません</p></div>
+  </div>
+</section>
+
+<!-- ============ アファメーション ============ -->
+<section class="screen" id="scr-affirm">
+  <header class="app"><h1>アファメーション</h1><div class="date">自分に優しい言葉を</div></header>
+  <div class="affirm-card">
+    <div class="q" id="affirm-text"></div>
+    <div class="n" id="affirm-count"></div>
+  </div>
+  <div style="display:flex;gap:10px;justify-content:center;margin-bottom:16px">
+    <button class="btn primary" id="affirm-next">次の言葉</button>
+  </div>
+  <div class="panel">
+    <h3>自分の言葉を追加</h3>
+    <input type="text" id="affirm-input" placeholder="例:私は一歩ずつ進んでいる">
+    <div style="margin-top:10px;text-align:right"><button class="btn" id="affirm-add">追加</button></div>
+  </div>
+</section>
+
+<!-- ============ プロフィール & 設定 ============ -->
+<section class="screen" id="scr-profile">
+  <header class="app"><h1>プロフィール & 設定</h1></header>
+  <div class="panel" style="text-align:center">
+    <div class="avatar" id="avatar">A</div>
+    <input type="text" id="profile-name" placeholder="名前" style="text-align:center;max-width:220px;margin:0 auto">
+  </div>
+  <div class="panel">
+    <h3>設定</h3>
+    <div class="setting-row"><span>リマインダー通知</span><div class="toggle on" data-key="notify"></div></div>
+    <div class="setting-row"><span>サウンド</span><div class="toggle on" data-key="sound"></div></div>
+    <div class="setting-row"><span>NOWへ自動スクロール</span><div class="toggle on" data-key="autoscroll"></div></div>
+  </div>
+  <div class="panel">
+    <h3>1日の基本設定</h3>
+    <div class="setting-row"><span>起床時間</span><input type="time" value="06:30" style="width:132px"></div>
+    <div class="setting-row"><span>就寝時間</span><input type="time" value="23:00" style="width:132px"></div>
+  </div>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:6px">ADHDo v0.2</p>
+</section>
+
+<!-- ============ フッターナビ ============ -->
+<nav class="footer">
+  <button data-scr="home" class="active">
+    <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></svg>
+    ホーム
+  </button>
+  <button data-scr="meditate">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="2.2"/><path d="M12 8v4.5"/><path d="M6 20c1-4 3.5-6 6-6s5 2 6 6"/><path d="M4.5 15.5c2 .8 3.5 2 4 4.5M19.5 15.5c-2 .8-3.5 2-4 4.5"/></svg>
+    瞑想
+  </button>
+  <button data-scr="diary">
+    <svg viewBox="0 0 24 24"><path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2V4z"/><path d="M5 4a2 2 0 0 1 2-2h11v16"/><path d="M9 8h6M9 12h6"/></svg>
+    日記
+  </button>
+  <button data-scr="affirm" class="small">
+    <svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-9-8.5C1.5 8 3.5 5 6.7 5c2 0 3.6 1.2 5.3 3.2C13.7 6.2 15.3 5 17.3 5c3.2 0 5.2 3 3.7 6.5-2 4.1-9 8.5-9 8.5z"/></svg>
+    アファメーション
+  </button>
+  <button data-scr="profile">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.8 3.6-5.5 7-5.5s6.2 1.7 7 5.5"/></svg>
+    プロフィール
+  </button>
+</nav>
+
+<script>
+/* ================= データ ================= */
+const CATS = {
+  workout:{name:'筋トレ',    color:'var(--c-workout)', hex:'#f4526a', icon:'💪'},
+  work:   {name:'Work',      color:'var(--c-work)',    hex:'#4a8df8', icon:'💻'},
+  meal:   {name:'食事',      color:'var(--c-meal)',    hex:'#d97706', icon:'🍙'},
+  sleep:  {name:'睡眠',      color:'var(--c-sleep)',   hex:'#9d7bf5', icon:'🌙'},
+  routine:{name:'ルーティン', color:'var(--c-routine)', hex:'#0da06f', icon:'🌿'},
+};
+
+// start/end は 0:00 からの分。end < start は日付をまたぐ(睡眠)
+const SCHEDULE = [
+  {id:'am-routine', cat:'routine', title:'モーニングルーティン', start:390,  end:450, subs:[
+    {name:'起床・水分補給', start:390, end:405},
+    {name:'瞑想',           start:405, end:425},
+    {name:'シャワー・身支度', start:425, end:450},
+  ]},
+  {id:'breakfast', cat:'meal', title:'朝食', start:450, end:480},
+  {id:'workout', cat:'workout', title:'筋トレ', start:480, end:540, subs:[
+    {name:'ウォームアップ', start:480, end:490},
+    {name:'ベンチプレス',   start:490, end:510},
+    {name:'スクワット',     start:510, end:530},
+    {name:'クールダウン',   start:530, end:540},
+  ]},
+  {id:'work-am', cat:'work', title:'Work(午前)', start:540, end:720, subs:[
+    {name:'メール・タスク整理', start:540, end:570},
+    {name:'集中タスク',        start:570, end:690},
+    {name:'ミーティング',      start:690, end:720},
+  ]},
+  {id:'lunch', cat:'meal', title:'昼食・休憩', start:720, end:780},
+  {id:'work-pm', cat:'work', title:'Work(午後)', start:780, end:1080, subs:[
+    {name:'集中タスク',           start:780,  end:900},
+    {name:'休憩・軽いストレッチ',  start:900,  end:915},
+    {name:'タスク処理',           start:915,  end:1050},
+    {name:'振り返り・明日の計画',  start:1050, end:1080},
+  ]},
+  {id:'dinner', cat:'meal', title:'夕食', start:1080, end:1140},
+  {id:'ev-routine', cat:'routine', title:'イブニングルーティン', start:1140, end:1290, subs:[
+    {name:'散歩',     start:1140, end:1180},
+    {name:'自由時間', start:1180, end:1260},
+    {name:'片付け',   start:1260, end:1290},
+  ]},
+  {id:'night-routine', cat:'routine', title:'ナイトルーティン', start:1290, end:1380, subs:[
+    {name:'日記',     start:1290, end:1320},
+    {name:'瞑想',     start:1320, end:1340},
+    {name:'ストレッチ', start:1340, end:1360},
+    {name:'就寝準備', start:1360, end:1380},
+  ]},
+  {id:'sleep', cat:'sleep', title:'睡眠', start:1380, end:390},
+];
+
+/* ================= ユーティリティ ================= */
+const $ = s => document.querySelector(s);
+const fmt = m => `${String(Math.floor((m%1440)/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+const dur = e => (e.end - e.start + 1440) % 1440;
+const nowMin = () => { const d = new Date(); return d.getHours()*60 + d.getMinutes(); };
+const isActive = (e,n) => e.start < e.end ? (n >= e.start && n < e.end) : (n >= e.start || n < e.end);
+const isPast = (e,n) => e.start < e.end && n >= e.end;
+const durLabel = m => m >= 60 ? (m%60 ? `${Math.floor(m/60)}時間${m%60}分` : `${Math.floor(m/60)}時間`) : `${m}分`;
+const store = {
+  get(k,f){ try{ return JSON.parse(localStorage.getItem('adhdo.'+k)) ?? f }catch{ return f } },
+  set(k,v){ localStorage.setItem('adhdo.'+k, JSON.stringify(v)) },
+};
+
+/* ================= タイムライン ================= */
+function renderTimeline(){
+  const n = nowMin();
+  const tl = $('#timeline');
+  tl.innerHTML = '';
+  for(const e of SCHEDULE){
+    const cat = CATS[e.cat];
+    const item = document.createElement('div');
+    item.className = 'tl-item' + (isActive(e,n) ? ' now' : isPast(e,n) ? ' past' : '');
+    item.dataset.id = e.id;
+    item.style.setProperty('--cat', cat.color);
+
+    const elapsed = (n - e.start + 1440) % 1440;
+    const pct = Math.min(100, Math.round(elapsed / dur(e) * 100));
+    const remain = dur(e) - elapsed;
+
+    item.innerHTML = `
+      <div class="tl-time">${fmt(e.start)}</div>
+      <div class="tl-node"></div>
+      <div class="tl-card">
+        <div class="row1">
+          <span class="title">${cat.icon} ${e.title}</span>
+          <span class="now-badge">NOW</span>
+          <span class="cat-tag">${cat.name}</span>
+        </div>
+        <div class="range">${fmt(e.start)} – ${fmt(e.end)} ・ ${durLabel(dur(e))}</div>
+        ${e.subs ? `<div class="subs">${e.subs.map(s => {
+          const cls = isActive(s,n) && isActive(e,n) ? ' active' : (n >= s.end && n >= e.start ? ' done' : '');
+          return `<div class="sub${cls}"><span class="s-dot"></span><span class="s-name">${s.name}</span><span class="s-time">${fmt(s.start)} – ${fmt(s.end)}</span></div>`;
+        }).join('')}</div>` : ''}
+        <div class="now-progress">
+          <div class="bar"><div class="fill" style="width:${pct}%"></div></div>
+          <div class="meta"><span>${pct}% 経過</span><span>あと ${durLabel(remain)}</span></div>
+        </div>
+      </div>`;
+    tl.appendChild(item);
+  }
+}
+
+function scrollToNow(smooth=true){
+  if(!store.get('set.autoscroll', true)) return;
+  const el = document.querySelector('.tl-item.now');
+  if(el) el.scrollIntoView({behavior: smooth ? 'smooth' : 'auto', block:'center'});
+}
+
+/* ================= 24hチャート ================= */
+const C = 180, R_OUT = 132, R_IN = 100;
+const polar = (r,deg) => { const a = (deg-90)*Math.PI/180; return [C + r*Math.cos(a), C + r*Math.sin(a)]; };
+function arcPath(rO,rI,a0,a1){
+  const large = (a1-a0) > 180 ? 1 : 0;
+  const [x0,y0] = polar(rO,a0), [x1,y1] = polar(rO,a1);
+  const [x2,y2] = polar(rI,a1), [x3,y3] = polar(rI,a0);
+  return `M${x0.toFixed(2)} ${y0.toFixed(2)} A${rO} ${rO} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)} L${x2.toFixed(2)} ${y2.toFixed(2)} A${rI} ${rI} 0 ${large} 0 ${x3.toFixed(2)} ${y3.toFixed(2)} Z`;
+}
+const toDeg = m => m/1440*360;
+
+function chartSegments(){
+  // 日付またぎを分割してチャート用セグメントに
+  const segs = [];
+  for(const e of SCHEDULE){
+    if(e.start < e.end) segs.push({...e, s:e.start, t:e.end});
+    else { segs.push({...e, s:e.start, t:1440}); segs.push({...e, s:0, t:e.end, wrapped:true}); }
+  }
+  return segs;
+}
+
+function renderClock(){
+  const n = nowMin();
+  const svg = $('#clock');
+  const GAP = 0.7; // セグメント間の角度ギャップ(≈2px)
+  let html = '';
+
+  // 背景リング
+  html += `<circle cx="${C}" cy="${C}" r="${(R_OUT+R_IN)/2}" fill="none" stroke="var(--surface-2)" stroke-width="${R_OUT-R_IN}"/>`;
+
+  // グロー用フィルタ
+  html += `<defs>`;
+  for(const [k,c] of Object.entries(CATS)){
+    html += `<filter id="glow-${k}" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="${c.hex}" flood-opacity="0.7"/></filter>`;
+  }
+  html += `</defs>`;
+
+  // セグメント
+  const segs = chartSegments();
+  for(const sg of segs){
+    const a0 = toDeg(sg.s) + GAP/2, a1 = toDeg(sg.t) - GAP/2;
+    if(a1 <= a0) continue;
+    const active = isActive(sg, n);
+    html += `<path class="seg${!active && sg.t <= n ? ' dim' : ''}" data-id="${sg.id}"
+      d="${arcPath(active ? R_OUT+5 : R_OUT, active ? R_IN-2 : R_IN, a0, a1)}"
+      fill="${CATS[sg.cat].hex}" ${active ? `filter="url(#glow-${sg.cat})"` : ''}/>`;
+  }
+
+  // セグメント上のアイコンと時間ラベル
+  for(const sg of segs){
+    if(sg.wrapped) continue;
+    const span = dur(sg);
+    const midDeg = toDeg((sg.start + span/2) % 1440);
+    const rMid = (R_OUT + R_IN)/2;
+    if(span >= 45){
+      const [ix,iy] = polar(rMid, midDeg);
+      html += `<text x="${ix}" y="${iy}" font-size="14" text-anchor="middle" dominant-baseline="central" pointer-events="none">${CATS[sg.cat].icon}</text>`;
+    }
+    if(span >= 120){
+      const [lx,ly] = polar(R_OUT + 14, midDeg);
+      html += `<text x="${lx}" y="${ly}" font-size="10" font-weight="700" fill="var(--ink-2)" text-anchor="middle" dominant-baseline="central" pointer-events="none">${(span/60).toFixed(span%60?1:0)}h</text>`;
+    }
+  }
+
+  // 時間目盛り(1時間ごと・6時間ごとに強調+ラベル)
+  for(let h=0; h<24; h++){
+    const deg = toDeg(h*60);
+    const major = h % 6 === 0;
+    const [x0,y0] = polar(R_IN - 6, deg), [x1,y1] = polar(R_IN - (major ? 14 : 10), deg);
+    html += `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="${major ? 'var(--ink-3)' : 'var(--line)'}" stroke-width="${major ? 2 : 1}"/>`;
+    if(major){
+      const [tx,ty] = polar(R_IN - 24, deg);
+      html += `<text x="${tx}" y="${ty}" font-size="10" fill="var(--ink-3)" text-anchor="middle" dominant-baseline="central">${h}</text>`;
+    }
+  }
+
+  // 現在時刻の針
+  const nd = toDeg(n);
+  const [nx0,ny0] = polar(R_IN - 2, nd), [nx1,ny1] = polar(R_OUT + 9, nd);
+  html += `<line x1="${nx0}" y1="${ny0}" x2="${nx1}" y2="${ny1}" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>`;
+  html += `<circle cx="${nx1}" cy="${ny1}" r="4.5" fill="#fff"/>`;
+  const cur = SCHEDULE.find(e => isActive(e, n));
+  if(cur) html += `<circle cx="${nx1}" cy="${ny1}" r="8" fill="none" stroke="${CATS[cur.cat].hex}" stroke-width="2"><animate attributeName="r" values="6;11;6" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0;1" dur="2s" repeatCount="indefinite"/></circle>`;
+
+  svg.innerHTML = html;
+
+  // 中央表示
+  const d = new Date();
+  $('#cc-time').textContent = fmt(n);
+  $('#cc-day').textContent = `${d.getMonth()+1}/${d.getDate()} ${'日月火水木金土'[d.getDay()]}曜日`;
+  if(cur){
+    const c = CATS[cur.cat];
+    $('#cc-chip').querySelector('.dot').style.background = c.hex;
+    $('#cc-task').textContent = cur.title;
+    const remain = dur(cur) - ((n - cur.start + 1440) % 1440);
+    $('#cc-remain').textContent = `${fmt(cur.end)} まで・あと${durLabel(remain)}`;
+  }
+
+  // タップで詳細&タイムラインへ
+  svg.querySelectorAll('.seg').forEach(p => p.addEventListener('click', ev => {
+    ev.stopPropagation();
+    const e = SCHEDULE.find(x => x.id === p.dataset.id);
+    const tip = $('#chart-tip');
+    tip.innerHTML = `<b style="color:${CATS[e.cat].hex}">${CATS[e.cat].icon} ${e.title}</b> <span class="t">${fmt(e.start)}–${fmt(e.end)} (${durLabel(dur(e))})</span>`;
+    tip.classList.add('show');
+    const card = document.querySelector(`.tl-item[data-id="${e.id}"]`);
+    if(card){
+      card.scrollIntoView({behavior:'smooth', block:'center'});
+      card.classList.add('flash');
+      setTimeout(() => card.classList.remove('flash'), 1600);
+    }
+    clearTimeout(tip._t);
+    tip._t = setTimeout(() => tip.classList.remove('show'), 3000);
+  }));
+}
+
+function renderLegend(){
+  const totals = {};
+  for(const e of SCHEDULE) totals[e.cat] = (totals[e.cat] || 0) + dur(e);
+  $('#legend').innerHTML = Object.entries(CATS).map(([k,c]) =>
+    `<span class="item"><span class="dot" style="background:${c.hex}"></span>${c.name} <b>${(totals[k]/60).toFixed(totals[k]%60?1:0)}h</b></span>`
+  ).join('');
+}
+
+/* ================= ナビゲーション ================= */
+document.querySelectorAll('nav.footer button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav.footer button').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'scr-' + btn.dataset.scr));
+    if(btn.dataset.scr === 'home'){ refreshHome(); setTimeout(() => scrollToNow(), 60); }
+    else window.scrollTo(0,0);
+  });
+});
+
+/* ================= 瞑想 ================= */
+let medTotal = 180, medLeft = 180, medTimer = null, breathTimer = null;
+const medFmt = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+function medRender(){ $('#med-timer').textContent = medFmt(medLeft); }
+function breathLoop(){
+  const c = $('#breath-circle'), l = $('#breath-label');
+  const phases = [['吸って…',4000,'inhale'],['止めて',4000,'inhale'],['吐いて…',8000,'exhale']];
+  let i = 0;
+  const step = () => {
+    const [label,ms,cls] = phases[i % 3];
+    l.textContent = label;
+    c.classList.remove('inhale','exhale');
+    if(cls) c.classList.add(cls);
+    i++;
+    breathTimer = setTimeout(step, ms);
+  };
+  step();
+}
+$('#med-start').addEventListener('click', () => {
+  if(medTimer){ // 一時停止
+    clearInterval(medTimer); clearTimeout(breathTimer); medTimer = null;
+    $('#med-start').textContent = '再開';
+    $('#breath-circle').classList.remove('inhale','exhale');
+    $('#breath-label').textContent = '一時停止中';
+    return;
+  }
+  $('#med-start').textContent = '一時停止';
+  breathLoop();
+  medTimer = setInterval(() => {
+    medLeft--;
+    medRender();
+    if(medLeft <= 0){
+      clearInterval(medTimer); clearTimeout(breathTimer); medTimer = null;
+      $('#breath-circle').classList.remove('inhale','exhale');
+      $('#breath-label').textContent = 'おつかれさま 🌿';
+      $('#med-start').textContent = '開始';
+      medLeft = medTotal;
+      setTimeout(medRender, 1500);
+    }
+  }, 1000);
+});
+$('#med-reset').addEventListener('click', () => {
+  clearInterval(medTimer); clearTimeout(breathTimer); medTimer = null;
+  medLeft = medTotal; medRender();
+  $('#med-start').textContent = '開始';
+  $('#breath-circle').classList.remove('inhale','exhale');
+  $('#breath-label').textContent = '準備OK';
+});
+$('#med-presets').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('#med-presets .btn').forEach(x => x.classList.toggle('sel', x === b));
+  medTotal = medLeft = +b.dataset.min * 60; medRender();
+});
+
+/* ================= 日記 ================= */
+function renderDiary(){
+  const list = store.get('diary', []);
+  $('#diary-list').innerHTML = list.length
+    ? list.map((e,i) => `<div class="diary-entry"><div class="d"><span>${e.date}</span><button data-i="${i}">削除</button></div><p>${e.text.replace(/</g,'&lt;')}</p></div>`).join('')
+    : '<p style="font-size:13px;color:var(--ink-3)">まだ記録がありません</p>';
+}
+$('#diary-save').addEventListener('click', () => {
+  const t = $('#diary-text').value.trim(); if(!t) return;
+  const d = new Date();
+  const list = store.get('diary', []);
+  list.unshift({date:`${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${fmt(nowMin())}`, text:t});
+  store.set('diary', list);
+  $('#diary-text').value = '';
+  renderDiary();
+});
+$('#diary-list').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  const list = store.get('diary', []);
+  list.splice(+b.dataset.i, 1);
+  store.set('diary', list);
+  renderDiary();
+});
+
+/* ================= アファメーション ================= */
+const DEFAULT_AFFIRMS = [
+  '私は今、やるべきことに集中できる',
+  '小さな一歩も、確かな前進だ',
+  '完璧じゃなくていい。続けることが大事',
+  '私の脳はユニークで、それは強みだ',
+  '休むことも、前に進むための行動だ',
+  '昨日の自分より、少しだけ良くなればいい',
+];
+let affirmIdx = 0;
+function affirms(){ return [...DEFAULT_AFFIRMS, ...store.get('affirms', [])]; }
+function renderAffirm(){
+  const a = affirms();
+  $('#affirm-text').textContent = a[affirmIdx % a.length];
+  $('#affirm-count').textContent = `${affirmIdx % a.length + 1} / ${a.length}`;
+}
+$('#affirm-next').addEventListener('click', () => { affirmIdx++; renderAffirm(); });
+$('#affirm-add').addEventListener('click', () => {
+  const v = $('#affirm-input').value.trim(); if(!v) return;
+  const list = store.get('affirms', []);
+  list.push(v); store.set('affirms', list);
+  $('#affirm-input').value = '';
+  affirmIdx = affirms().length - 1;
+  renderAffirm();
+});
+
+/* ================= プロフィール ================= */
+$('#profile-name').value = store.get('name', '');
+if(store.get('name','')) $('#avatar').textContent = store.get('name','A')[0];
+$('#profile-name').addEventListener('input', e => {
+  store.set('name', e.target.value);
+  $('#avatar').textContent = (e.target.value || 'A')[0];
+});
+document.querySelectorAll('.toggle').forEach(t => {
+  const k = 'set.' + t.dataset.key;
+  t.classList.toggle('on', store.get(k, true));
+  t.addEventListener('click', () => {
+    t.classList.toggle('on');
+    store.set(k, t.classList.contains('on'));
+  });
+});
+
+/* ================= 起動・更新 ================= */
+function refreshHome(){
+  const d = new Date();
+  $('#home-date').textContent = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 (${'日月火水木金土'[d.getDay()]})`;
+  $('#diary-date').textContent = `${d.getMonth()+1}月${d.getDate()}日`;
+  renderTimeline();
+  renderClock();
+}
+refreshHome();
+renderLegend();
+renderDiary();
+renderAffirm();
+setTimeout(() => scrollToNow(false), 120);
+setInterval(() => { if($('#scr-home').classList.contains('active')) refreshHome(); }, 30000);
+</script>
+</body>
+</html>
