@@ -49,6 +49,7 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .brand svg{flex:none}
 .logo-word{font-size:22px;font-weight:800;color:var(--ink);letter-spacing:.04em}
 .logo-word .o{color:var(--brand)}
+.live-clock{color:var(--brand);font-weight:700;font-variant-numeric:tabular-nums;margin-left:8px}
 
 /* ============ 24hチャート ============ */
 .clock-wrap{position:relative;margin:4px auto 6px;max-width:360px}
@@ -176,7 +177,7 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .ach-bar{height:8px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin-top:8px}
 .ach-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--brand),var(--c-routine));transition:width .4s}
 .ach-meta{font-size:11px;color:var(--ink-3);margin-top:5px}
-.seg-tabs{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;margin:10px 0 14px}
+.seg-tabs{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;margin:10px 0 2px}
 .seg-tabs button{flex:1;background:none;border:none;color:var(--ink-2);font-size:13px;font-weight:600;padding:8px;border-radius:9px}
 .seg-tabs button.sel{background:var(--brand);color:#0d1017;font-weight:700}
 
@@ -250,6 +251,7 @@ nav.footer button.active svg{stroke-width:2.2}
   border-radius:10px;padding:9px 16px;font-size:13px;font-weight:600;
 }
 .btn.primary{background:var(--brand);border-color:var(--brand);color:#0d1017;font-weight:700}
+.btn.sm{padding:6px 11px;font-size:12px}
 textarea,input[type=text],input[type=time]{
   width:100%;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);
   border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none;
@@ -271,6 +273,20 @@ textarea:focus,input:focus{border-color:var(--c-work)}
 .med-timer{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;margin:18px 0 6px}
 .med-presets{display:flex;gap:8px;justify-content:center;margin:10px 0}
 .med-presets .btn.sel{border-color:var(--c-routine);color:var(--c-routine)}
+
+/* マンスリーカレンダー */
+.cal-nav{display:flex;align-items:center;justify-content:space-between;margin:8px 0 14px}
+.cal-nav b{font-size:16px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.cal-dow{text-align:center;font-size:11px;color:var(--ink-3);padding:2px 0}
+.cal-cell{
+  aspect-ratio:1;border-radius:10px;background:var(--surface);border:1px solid var(--line);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+}
+.cal-cell .d{font-size:12px;color:var(--ink-2)}
+.cal-cell .p{font-size:9.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.cal-cell.today{border:2px solid var(--brand)}
+.cal-cell.empty{background:none;border:none}
 
 /* 日記 */
 .diary-entry{border-bottom:1px solid var(--line);padding:12px 2px}
@@ -322,19 +338,19 @@ textarea:focus,input:focus{border-color:var(--c-work)}
       </svg>
       <span class="logo-word">ADHD<span class="o">o</span></span>
     </div>
-    <div class="date" id="home-date"></div>
+    <div class="date"><span id="home-date"></span><span class="live-clock" id="home-clock"></span></div>
+
+    <div class="ach">
+      <div class="ach-top"><span>今日の達成率</span><b id="ach-pct">0%</b></div>
+      <div class="ach-bar"><div class="ach-fill" id="ach-fill"></div></div>
+      <div class="ach-meta" id="ach-meta"></div>
+    </div>
+
+    <div class="seg-tabs">
+      <button id="tab-tl" class="sel">タイムライン</button>
+      <button id="tab-clock">24Hグラフ</button>
+    </div>
   </header>
-
-  <div class="ach">
-    <div class="ach-top"><span>今日の達成率</span><b id="ach-pct">0%</b></div>
-    <div class="ach-bar"><div class="ach-fill" id="ach-fill"></div></div>
-    <div class="ach-meta" id="ach-meta"></div>
-  </div>
-
-  <div class="seg-tabs">
-    <button id="tab-tl" class="sel">タイムライン</button>
-    <button id="tab-clock">24Hグラフ</button>
-  </div>
 
   <div id="view-clock" style="display:none">
     <div class="clock-wrap">
@@ -382,9 +398,22 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   </div>
 </section>
 
-<!-- ============ 日記 ============ -->
+<!-- ============ 日記 & アファメーション ============ -->
 <section class="screen" id="scr-diary">
-  <header class="app"><h1>日記</h1><div class="date" id="diary-date"></div></header>
+  <header class="app"><h1>日記 & アファメーション</h1><div class="date" id="diary-date"></div></header>
+  <div class="affirm-card">
+    <div class="q" id="affirm-text"></div>
+    <div class="n" id="affirm-count"></div>
+  </div>
+  <div style="display:flex;gap:10px;justify-content:center;margin-bottom:16px">
+    <button class="btn primary" id="affirm-next">次の言葉</button>
+    <button class="btn" id="affirm-add-toggle">言葉を追加</button>
+  </div>
+  <div class="panel" id="affirm-add-panel" style="display:none">
+    <h3>自分の言葉を追加</h3>
+    <input type="text" id="affirm-input" placeholder="例:私は一歩ずつ進んでいる">
+    <div style="margin-top:10px;text-align:right"><button class="btn" id="affirm-add">追加</button></div>
+  </div>
   <div class="panel">
     <h3>今日のふりかえり</h3>
     <textarea id="diary-text" rows="5" placeholder="今日できたこと、感じたことを自由に…"></textarea>
@@ -396,20 +425,19 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   </div>
 </section>
 
-<!-- ============ アファメーション ============ -->
-<section class="screen" id="scr-affirm">
-  <header class="app"><h1>アファメーション</h1><div class="date">自分に優しい言葉を</div></header>
-  <div class="affirm-card">
-    <div class="q" id="affirm-text"></div>
-    <div class="n" id="affirm-count"></div>
+<!-- ============ マンスリー達成率カレンダー ============ -->
+<section class="screen" id="scr-calendar">
+  <header class="app"><h1>マンスリー達成率</h1><div class="date">色が濃い日ほど達成率が高い日</div></header>
+  <div class="cal-nav">
+    <button class="btn" id="cal-prev">‹ 前月</button>
+    <b id="cal-title"></b>
+    <button class="btn" id="cal-next">翌月 ›</button>
   </div>
-  <div style="display:flex;gap:10px;justify-content:center;margin-bottom:16px">
-    <button class="btn primary" id="affirm-next">次の言葉</button>
-  </div>
-  <div class="panel">
-    <h3>自分の言葉を追加</h3>
-    <input type="text" id="affirm-input" placeholder="例:私は一歩ずつ進んでいる">
-    <div style="margin-top:10px;text-align:right"><button class="btn" id="affirm-add">追加</button></div>
+  <div class="cal-grid" id="cal-dow"></div>
+  <div class="cal-grid" id="cal-grid" style="margin-top:6px"></div>
+  <div class="panel" style="margin-top:16px">
+    <div class="ach-top"><span>この月の平均達成率</span><b id="cal-avg">–</b></div>
+    <p style="font-size:11px;color:var(--ink-3);margin-top:6px">記録がある日だけで計算しています。タスクにチェックを付けた日が自動で記録されます。</p>
   </div>
 </section>
 
@@ -426,6 +454,13 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <div class="setting-row"><span>サウンド</span><div class="toggle on" data-key="sound"></div></div>
     <div class="setting-row"><span>NOWへ自動スクロール</span><div class="toggle on" data-key="autoscroll"></div></div>
     <div class="setting-row"><span>スケジュールを初期状態に戻す</span><button class="btn" id="reset-schedule">リセット</button></div>
+  </div>
+  <div class="panel">
+    <h3>スケジュールテンプレート</h3>
+    <p style="font-size:12.5px;color:var(--ink-2);line-height:1.7;margin-bottom:6px">
+      今のスケジュールを保存して、いつでも呼び出せます(3つまで)。「平日用」「休日用」などに。
+    </p>
+    <div id="tpl-list"></div>
   </div>
   <div class="panel">
     <h3>Googleカレンダー連携</h3>
@@ -447,7 +482,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <div class="setting-row"><span>起床時間</span><input type="time" value="06:30" style="width:132px"></div>
     <div class="setting-row"><span>就寝時間</span><input type="time" value="23:00" style="width:132px"></div>
   </div>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:6px">ADHDo v0.5</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:6px">ADHDo v0.6</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -490,9 +525,9 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <svg viewBox="0 0 24 24"><path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2V4z"/><path d="M5 4a2 2 0 0 1 2-2h11v16"/><path d="M9 8h6M9 12h6"/></svg>
     日記
   </button>
-  <button data-scr="affirm" class="small">
-    <svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-9-8.5C1.5 8 3.5 5 6.7 5c2 0 3.6 1.2 5.3 3.2C13.7 6.2 15.3 5 17.3 5c3.2 0 5.2 3 3.7 6.5-2 4.1-9 8.5-9 8.5z"/></svg>
-    アファメーション
+  <button data-scr="calendar">
+    <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 10h17M8 2.5V6M16 2.5V6"/><path d="M7.5 14h2M11 14h2M14.5 14h2M7.5 17.5h2M11 17.5h2"/></svg>
+    カレンダー
   </button>
   <button data-scr="profile">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.8 3.6-5.5 7-5.5s6.2 1.7 7 5.5"/></svg>
@@ -779,6 +814,7 @@ document.querySelectorAll('nav.footer button').forEach(btn => {
     document.querySelectorAll('nav.footer button').forEach(b => b.classList.toggle('active', b === btn));
     document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'scr-' + btn.dataset.scr));
     if(btn.dataset.scr === 'home'){ refreshHome(); setTimeout(() => scrollToNow(), 60); }
+    else if(btn.dataset.scr === 'calendar'){ renderCalendar(); window.scrollTo(0,0); }
     else window.scrollTo(0,0);
   });
 });
@@ -878,6 +914,10 @@ function renderAffirm(){
   $('#affirm-count').textContent = `${affirmIdx % a.length + 1} / ${a.length}`;
 }
 $('#affirm-next').addEventListener('click', () => { affirmIdx++; renderAffirm(); });
+$('#affirm-add-toggle').addEventListener('click', () => {
+  const p = $('#affirm-add-panel');
+  p.style.display = p.style.display === 'none' ? '' : 'none';
+});
 $('#affirm-add').addEventListener('click', () => {
   const v = $('#affirm-input').value.trim(); if(!v) return;
   const list = store.get('affirms', []);
@@ -1029,7 +1069,83 @@ function renderAch(){
   $('#ach-pct').textContent = pct + '%';
   $('#ach-fill').style.width = pct + '%';
   $('#ach-meta').textContent = `${total}個のタスク中 ${done}個 完了${pct === 100 ? ' 🎉 全部やりきった!' : ''}`;
+  // マンスリーカレンダー用に日別履歴を記録
+  if(total){
+    const h = store.get('history', {});
+    h[todayKey()] = {pct, done, total};
+    store.set('history', h);
+  }
 }
+
+/* ================= マンスリー達成率カレンダー ================= */
+let calMonth = new Date();
+function renderCalendar(){
+  const y = calMonth.getFullYear(), m = calMonth.getMonth();
+  const today = new Date();
+  const hist = store.get('history', {});
+  $('#cal-title').textContent = `${y}年${m + 1}月`;
+  $('#cal-dow').innerHTML = '日月火水木金土'.split('').map((d,i) =>
+    `<div class="cal-dow" style="${i===0?'color:var(--c-workout)':i===6?'color:var(--c-work)':''}">${d}</div>`).join('');
+
+  const firstDow = new Date(y, m, 1).getDay();
+  const days = new Date(y, m + 1, 0).getDate();
+  let html = '';
+  for(let i = 0; i < firstDow; i++) html += '<div class="cal-cell empty"></div>';
+  let sum = 0, cnt = 0;
+  for(let d = 1; d <= days; d++){
+    const key = `${y}-${m + 1}-${d}`;
+    const rec = hist[key];
+    const isToday = y === today.getFullYear() && m === today.getMonth() && d === today.getDate();
+    const isFuture = new Date(y, m, d) > today;
+    if(rec){ sum += rec.pct; cnt++; }
+    const bg = rec ? `background:color-mix(in srgb,var(--brand) ${rec.pct}%,var(--surface))` : '';
+    const pTxt = rec ? `<span class="p" style="color:${rec.pct >= 55 ? '#0d1017' : 'var(--brand)'}">${rec.pct}%</span>` : (isFuture ? '' : '<span class="p" style="color:var(--ink-3)">–</span>');
+    const dCol = rec && rec.pct >= 55 ? '#0d1017' : '';
+    html += `<div class="cal-cell${isToday ? ' today' : ''}" style="${bg}"><span class="d"${dCol ? ` style="color:${dCol}"` : ''}>${d}</span>${pTxt}</div>`;
+  }
+  $('#cal-grid').innerHTML = html;
+  $('#cal-avg').textContent = cnt ? Math.round(sum / cnt) + '%' : '–';
+}
+$('#cal-prev').addEventListener('click', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); renderCalendar(); });
+$('#cal-next').addEventListener('click', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderCalendar(); });
+
+/* ================= スケジュールテンプレート ================= */
+function renderTemplates(){
+  const tpls = store.get('templates', [null, null, null]);
+  $('#tpl-list').innerHTML = tpls.map((t, i) => `
+    <div class="setting-row">
+      <span style="font-size:13px">${t ? '📋 ' + esc(t.name) : `スロット${i + 1}(空き)`}</span>
+      <span style="display:flex;gap:6px">
+        <button class="btn sm" data-tpl-save="${i}">${t ? '上書き' : '保存'}</button>
+        ${t ? `<button class="btn sm primary" data-tpl-load="${i}">読み込み</button><button class="btn sm danger" data-tpl-del="${i}">削除</button>` : ''}
+      </span>
+    </div>`).join('');
+}
+$('#tpl-list').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  const tpls = store.get('templates', [null, null, null]);
+  if(b.dataset.tplSave != null){
+    const i = +b.dataset.tplSave;
+    const name = prompt('テンプレート名を入力', tpls[i] ? tpls[i].name : `テンプレート${i + 1}`);
+    if(!name) return;
+    tpls[i] = {name: name.trim(), schedule: JSON.parse(JSON.stringify(SCHEDULE))};
+    store.set('templates', tpls);
+    renderTemplates();
+  }else if(b.dataset.tplLoad != null){
+    const t = tpls[+b.dataset.tplLoad];
+    if(!t || !confirm(`「${t.name}」を読み込みますか?\n今のスケジュールは置き換わります`)) return;
+    SCHEDULE = JSON.parse(JSON.stringify(t.schedule));
+    persistSchedule();
+    renderTemplates();
+    alert(`「${t.name}」を読み込みました`);
+  }else if(b.dataset.tplDel != null){
+    const i = +b.dataset.tplDel;
+    if(!tpls[i] || !confirm(`「${tpls[i].name}」を削除しますか?`)) return;
+    tpls[i] = null;
+    store.set('templates', tpls);
+    renderTemplates();
+  }
+});
 
 /* ================= Googleカレンダー連携 (.ics読み込み) ================= */
 function parseICS(text){
@@ -1122,11 +1238,21 @@ function refreshHome(){
   renderClock();
   renderAch();
 }
+// 秒つきリアルタイム時計
+function tickClock(){
+  const d = new Date();
+  $('#home-clock').textContent =
+    `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+}
+
 setView(store.get('view', 'tl'));
 refreshHome();
 renderLegend();
 renderDiary();
 renderAffirm();
+renderTemplates();
+tickClock();
+setInterval(tickClock, 1000);
 setTimeout(() => scrollToNow(false), 120);
 setInterval(() => { if($('#scr-home').classList.contains('active')) refreshHome(); }, 30000);
 </script>
