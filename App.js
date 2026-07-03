@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import APP_HTML from './src/appHtml';
-import { rescheduleNotifications } from './src/notifications';
+import { rescheduleNotifications, scheduleTestNotification, ensurePermission } from './src/notifications';
 
 // アーキテクチャ: Web版(prototype/index.html)をWebViewで表示するシェル。
 // - データ: WebView内のlocalStorage + AsyncStorageへミラー(起動時に注入して復元)
@@ -14,8 +14,12 @@ const BG = '#0d1017';
 
 export default function App() {
   const [seedJs, setSeedJs] = useState(null);
+  const webviewRef = useRef(null);
 
   useEffect(() => {
+    // 起動時に通知の許可を確認(初回はここでOSのダイアログが出る)
+    ensurePermission();
+
     (async () => {
       try {
         const keys = (await AsyncStorage.getAllKeys()).filter((k) => k.startsWith('adhdo.'));
@@ -31,13 +35,23 @@ export default function App() {
     })();
   }, []);
 
+  const tellWebView = (js) => {
+    if (webviewRef.current) webviewRef.current.injectJavaScript(js + ';true;');
+  };
+
   const onMessage = (event) => {
     try {
       const msg = JSON.parse(event.nativeEvent.data);
       if (msg.type === 'kv') {
         AsyncStorage.setItem(msg.key, msg.value).catch(() => {});
       } else if (msg.type === 'schedule') {
-        rescheduleNotifications(msg.events, msg.notify);
+        rescheduleNotifications(msg.events, msg.notify).then((count) => {
+          tellWebView(`window.__notifySet && window.__notifySet(${count})`);
+        });
+      } else if (msg.type === 'test') {
+        scheduleTestNotification().then((ok) => {
+          tellWebView(`window.__notifyTest && window.__notifyTest(${ok ? 'true' : 'false'})`);
+        });
       }
     } catch {}
   };
@@ -48,6 +62,7 @@ export default function App() {
     <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
       <ExpoStatusBar style="light" />
       <WebView
+        ref={webviewRef}
         originWhitelist={['*']}
         source={{ html: APP_HTML, baseUrl: 'https://adhdo.app' }}
         injectedJavaScriptBeforeContentLoaded={seedJs}

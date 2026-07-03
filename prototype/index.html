@@ -517,6 +517,8 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   <div class="panel">
     <h3>設定</h3>
     <div class="setting-row"><span>リマインダー通知</span><div class="toggle on" data-key="notify"></div></div>
+    <div class="setting-row"><span>通知のテスト</span><button class="btn sm" id="notify-test">5秒後に通知</button></div>
+    <p id="notify-status" style="font-size:11px;color:var(--ink-3);margin-top:8px;line-height:1.6">ネイティブ通知: 未接続(Web版では通知は使えません。Expo版で有効になります)</p>
     <div class="setting-row"><span>サウンド</span><div class="toggle on" data-key="sound"></div></div>
     <div class="setting-row"><span>NOWへ自動スクロール</span><div class="toggle on" data-key="autoscroll"></div></div>
     <div class="setting-row"><span>スケジュールを初期状態に戻す</span><button class="btn" id="reset-schedule">リセット</button></div>
@@ -548,7 +550,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <div class="setting-row"><span>起床時間</span><input type="time" value="06:30" style="width:132px"></div>
     <div class="setting-row"><span>就寝時間</span><input type="time" value="23:00" style="width:132px"></div>
   </div>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:6px">ADHDo v0.8</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:6px">ADHDo v0.9</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -688,6 +690,24 @@ const store = {
     // ネイティブアプリ(Expo/WebView)内ではAsyncStorageにもミラー保存
     try{ window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'kv', key:'adhdo.'+k, value:JSON.stringify(v)})) }catch{}
   },
+};
+
+// ネイティブ側からの状態通知を受けるフック
+window.__notifySet = function(n){
+  const el = document.querySelector('#notify-status');
+  if(!el) return;
+  if(n === -1){ el.textContent = 'ネイティブ通知: 権限がありません。iPadの設定→通知→Expo Goで許可してください'; el.style.color = 'var(--c-workout)'; }
+  else if(n === -2){ el.textContent = 'ネイティブ通知: エラーが発生しました'; el.style.color = 'var(--c-workout)'; }
+  else if(n === 0){ el.textContent = 'ネイティブ通知: 接続OK(通知OFF設定のためセットなし)'; el.style.color = ''; }
+  else { el.textContent = `ネイティブ通知: 接続OK ✓ 毎日${n}件の通知をセット済み`; el.style.color = 'var(--brand)'; }
+};
+window.__notifyTest = function(ok){
+  const el = document.querySelector('#notify-status');
+  if(!el) return;
+  el.textContent = ok
+    ? 'テスト通知を予約しました。5秒待ってください(アプリを閉じていてもOK)'
+    : '通知の権限がありません。iPadの設定→通知→Expo Goで許可してください';
+  el.style.color = ok ? 'var(--brand)' : 'var(--c-workout)';
 };
 
 // ネイティブアプリに通知スケジュールを送る(ブラウザでは何もしない)
@@ -1521,6 +1541,16 @@ $('#ics-file').addEventListener('change', e => {
   reader.onload = () => importICS(reader.result);
   reader.readAsText(f);
   e.target.value = '';
+});
+
+// 通知のテスト(Expo版のみ)
+$('#notify-test').addEventListener('click', () => {
+  if(!window.ReactNativeWebView){
+    $('#notify-status').textContent = 'ここはWeb版なので通知は動きません。Expo版アプリで押してください';
+    return;
+  }
+  window.ReactNativeWebView.postMessage(JSON.stringify({type: 'test'}));
+  $('#notify-status').textContent = 'テスト通知をリクエスト中…';
 });
 
 // スケジュールを初期状態に戻す
