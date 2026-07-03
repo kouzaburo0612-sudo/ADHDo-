@@ -683,8 +683,27 @@ const isPast = (e,n) => e.start < e.end && n >= e.end;
 const durLabel = m => m >= 60 ? (m%60 ? `${Math.floor(m/60)}時間${m%60}分` : `${Math.floor(m/60)}時間`) : `${m}分`;
 const store = {
   get(k,f){ try{ return JSON.parse(localStorage.getItem('adhdo.'+k)) ?? f }catch{ return f } },
-  set(k,v){ localStorage.setItem('adhdo.'+k, JSON.stringify(v)) },
+  set(k,v){
+    try{ localStorage.setItem('adhdo.'+k, JSON.stringify(v)) }catch{}
+    // ネイティブアプリ(Expo/WebView)内ではAsyncStorageにもミラー保存
+    try{ window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'kv', key:'adhdo.'+k, value:JSON.stringify(v)})) }catch{}
+  },
 };
+
+// ネイティブアプリに通知スケジュールを送る(ブラウザでは何もしない)
+function syncNative(){
+  try{
+    if(!window.ReactNativeWebView) return;
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'schedule',
+      notify: store.get('set.notify', true),
+      events: SCHEDULE.filter(e => e.cat !== 'sleep').map(e => ({
+        title: e.title, start: e.start, end: e.end,
+        firstSub: e.subs && e.subs.length ? e.subs[0].name : null,
+      })),
+    }));
+  }catch{}
+}
 
 // 編集したスケジュールは端末に保存。なければ初期スケジュール
 let SCHEDULE = store.get('schedule', null) || JSON.parse(JSON.stringify(DEFAULT_SCHEDULE));
@@ -693,6 +712,7 @@ function persistSchedule(){
   store.set('schedule', SCHEDULE);
   refreshHome();
   renderLegend();
+  syncNative();
 }
 
 // 完了チェック(達成は自動判定せず、自分でチェックする。日付が変わるとリセット)
@@ -1113,6 +1133,7 @@ document.querySelectorAll('.toggle').forEach(t => {
   t.addEventListener('click', () => {
     t.classList.toggle('on');
     store.set(k, t.classList.contains('on'));
+    if(t.dataset.key === 'notify') syncNative(); // 通知ON/OFFを即ネイティブに反映
   });
 });
 
@@ -1543,6 +1564,7 @@ tickClock();
 setInterval(tickClock, 1000);
 setTimeout(() => scrollToNow(false), 120);
 setInterval(() => { if($('#scr-home').classList.contains('active')) refreshHome(); }, 30000);
+syncNative();
 </script>
 </body>
 </html>
