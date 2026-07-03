@@ -199,6 +199,51 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .sub-count{font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
 .tl-item.checked .title{text-decoration:line-through;opacity:.6}
 
+/* ============ 許す仕組み(スキップ/持ち越し) ============ */
+.quick{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+.quick button{background:none;border:1px solid var(--line);color:var(--ink-3);border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600}
+.tl-item.skipped .tl-card{opacity:.4}
+.skip-badge{font-size:10px;font-weight:700;color:var(--ink-3);border:1px solid var(--line);border-radius:6px;padding:1px 7px;white-space:nowrap}
+.carry-panel{
+  background:color-mix(in srgb,var(--brand) 10%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--brand) 35%,var(--line));
+  border-radius:14px;padding:12px 14px;margin-bottom:14px;
+}
+.carry-panel h4{font-size:13px;margin-bottom:8px;color:var(--brand)}
+.carry-panel .sub{--cat:var(--brand)}
+
+/* ============ XP・レベル ============ */
+.lv-chip{
+  font-size:10px;font-weight:800;color:var(--brand);
+  border:1px solid color-mix(in srgb,var(--brand) 45%,transparent);
+  border-radius:99px;padding:1px 8px;margin-left:7px;white-space:nowrap;
+}
+.xp-bar{height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin-top:8px}
+.xp-fill{height:100%;background:var(--brand);border-radius:99px;transition:width .4s}
+
+/* ============ 紙吹雪 ============ */
+.confetti{position:fixed;width:8px;height:8px;border-radius:2px;pointer-events:none;z-index:99}
+
+/* ============ 集中タイマー ============ */
+.modal.center{align-items:center;padding:0 20px}
+.focus-box{
+  background:var(--surface);border:1px solid var(--line);border-radius:20px;
+  padding:28px 22px;width:100%;max-width:340px;text-align:center;
+}
+.focus-phase{font-size:11px;color:var(--ink-3);letter-spacing:.12em;font-weight:700}
+.focus-task-name{font-size:14px;font-weight:700;margin-top:4px}
+.focus-time{font-size:56px;font-weight:800;font-variant-numeric:tabular-nums;margin:8px 0 4px}
+.focus-hint{font-size:11.5px;color:var(--ink-2);margin-bottom:14px}
+.focus-btn-row{display:flex;gap:10px;justify-content:center}
+.focus-presets{display:flex;gap:8px;justify-content:center;margin-bottom:14px}
+.focus-presets .btn.sel{border-color:var(--brand);color:var(--brand)}
+.focus-open{
+  margin-top:10px;width:100%;
+  background:color-mix(in srgb,var(--cat) 18%,var(--surface-2));
+  border:1px solid color-mix(in srgb,var(--cat) 45%,transparent);
+  color:var(--ink);border-radius:10px;padding:9px;font-size:13px;font-weight:700;
+}
+
 /* ============ 予定エディタ ============ */
 .fab{
   position:fixed;right:max(18px,calc(50% - 222px));bottom:calc(var(--footer-h) + 20px);
@@ -346,6 +391,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
             </g>
           </svg>
           <span class="logo-word">ADHD<span class="o">o</span></span>
+          <span class="lv-chip" id="lv-chip">Lv.1</span>
         </div>
         <div class="date"><span id="home-date"></span><span class="live-clock" id="home-clock"></span></div>
       </div>
@@ -377,6 +423,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   </div>
 
   <div id="view-tl">
+    <div id="carry-wrap"></div>
     <div class="tl-head"><h2>タイムライン</h2><span>○で完了 / カードをタップで編集</span></div>
     <div class="tl" id="timeline"></div>
     <button class="fab" id="fab-add" aria-label="予定を追加">+</button>
@@ -446,6 +493,10 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   <div class="cal-grid" id="cal-dow"></div>
   <div class="cal-grid" id="cal-grid" style="margin-top:6px"></div>
   <div class="panel" style="margin-top:16px">
+    <div class="ach-top"><span>🔥 連続記録(1日休んでも切れません)</span><b id="cal-streak">–</b></div>
+    <div class="ach-top" style="margin-top:10px"><span>直近7日の平均達成率</span><b id="cal-week">–</b></div>
+  </div>
+  <div class="panel">
     <div class="ach-top"><span>この月の平均達成率</span><b id="cal-avg">–</b></div>
     <p style="font-size:11px;color:var(--ink-3);margin-top:6px">記録がある日だけで計算しています。タスクにチェックを付けた日が自動で記録されます。</p>
   </div>
@@ -457,6 +508,11 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   <div class="panel" style="text-align:center">
     <div class="avatar" id="avatar">A</div>
     <input type="text" id="profile-name" placeholder="名前" style="text-align:center;max-width:220px;margin:0 auto">
+    <div style="max-width:260px;margin:14px auto 0;text-align:left">
+      <div class="ach-top" style="font-size:11px"><span id="xp-level" style="color:var(--brand);font-weight:800">Lv.1</span><span id="xp-count" style="color:var(--ink-3)">0 XP</span></div>
+      <div class="xp-bar"><div class="xp-fill" id="xp-fill" style="width:0%"></div></div>
+      <p style="font-size:10.5px;color:var(--ink-3);margin-top:5px">タスク完了で+10XP、集中タイマー完走で+20XP。100XPごとにレベルアップ</p>
+    </div>
   </div>
   <div class="panel">
     <h3>設定</h3>
@@ -492,7 +548,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <div class="setting-row"><span>起床時間</span><input type="time" value="06:30" style="width:132px"></div>
     <div class="setting-row"><span>就寝時間</span><input type="time" value="23:00" style="width:132px"></div>
   </div>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:6px">ADHDo v0.7</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:6px">ADHDo v0.8</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -517,6 +573,25 @@ textarea:focus,input:focus{border-color:var(--c-work)}
       <button class="btn danger" id="ed-delete">削除</button>
       <button class="btn" id="ed-cancel">キャンセル</button>
       <button class="btn primary" id="ed-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 集中タイマー ============ -->
+<div class="modal center" id="focus">
+  <div class="focus-box">
+    <div class="focus-phase" id="focus-phase">FOCUS</div>
+    <div class="focus-task-name" id="focus-task"></div>
+    <div class="focus-time" id="focus-time">25:00</div>
+    <p class="focus-hint" id="focus-hint">まずは始めるだけでOK。終わったら5分休憩</p>
+    <div class="focus-presets" id="focus-presets">
+      <button class="btn sm" data-fmin="15">15分</button>
+      <button class="btn sm sel" data-fmin="25">25分</button>
+      <button class="btn sm" data-fmin="45">45分</button>
+    </div>
+    <div class="focus-btn-row">
+      <button class="btn primary" id="focus-start">開始</button>
+      <button class="btn" id="focus-close">閉じる</button>
     </div>
   </div>
 </div>
@@ -623,13 +698,85 @@ function persistSchedule(){
 // 完了チェック(達成は自動判定せず、自分でチェックする。日付が変わるとリセット)
 const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; };
 let doneData = store.get('done', null);
-if(!doneData || doneData.date !== todayKey()) doneData = {date: todayKey(), items: {}};
-const isDone = key => !!doneData.items[key];
-function toggleDone(key){
-  if(doneData.items[key]) delete doneData.items[key];
-  else doneData.items[key] = true;
+if(!doneData || doneData.date !== todayKey()) doneData = {date: todayKey(), items: {}, skips: {}};
+doneData.skips = doneData.skips || {};
+const isDone = key => doneData.items[key] === true;
+const skipStateOf = id => doneData.skips[id]; // 'skip' | 'carry' | undefined
+function toggleDone(key, clickPos){
+  if(doneData.items[key]){
+    delete doneData.items[key];
+    addXP(-10);
+  }else{
+    doneData.items[key] = true;
+    addXP(10);
+    if(clickPos) confettiBurst(clickPos.x, clickPos.y);
+  }
+  store.set('done', doneData);
+  const before100 = $('#ach-pct').textContent;
+  refreshHome();
+  if($('#ach-pct').textContent === '100%' && before100 !== '100%'){
+    confettiBurst(innerWidth/2, innerHeight/3, 36);
+  }
+}
+
+/* ================= 許す仕組み(スキップ / 明日へ持ち越し) ================= */
+const tomorrowKey = () => { const d = new Date(Date.now() + 86400000); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; };
+function setSkip(id, mode){ // mode: 'skip' | 'carry' | null(解除)
+  if(mode) doneData.skips[id] = mode;
+  else delete doneData.skips[id];
   store.set('done', doneData);
   refreshHome();
+}
+function sendToTomorrow(ev){
+  let carry = store.get('carry', null);
+  if(!carry || carry.date !== tomorrowKey()) carry = {date: tomorrowKey(), items: []};
+  carry.items.push({title: ev.title, cat: ev.cat, done: false});
+  store.set('carry', carry);
+  setSkip(ev.id, 'carry');
+}
+function renderCarry(){
+  const wrap = $('#carry-wrap');
+  const carry = store.get('carry', null);
+  if(!carry || carry.date !== todayKey() || !carry.items.length){ wrap.innerHTML = ''; return; }
+  wrap.innerHTML = `<div class="carry-panel"><h4>📦 昨日からの持ち越し</h4>${carry.items.map((it, i) => `
+    <div class="sub${it.done ? ' done' : ''}" style="padding:4px 0">
+      <button class="s-check${it.done ? ' on' : ''}" data-carry-i="${i}">${it.done ? '✓' : ''}</button>
+      <span class="s-name">${CATS[it.cat] ? CATS[it.cat].icon + ' ' : ''}${esc(it.title)}</span>
+    </div>`).join('')}</div>`;
+}
+
+/* ================= XP・レベル ================= */
+function addXP(n){
+  const xp = Math.max(0, store.get('xp', 0) + n);
+  store.set('xp', xp);
+  renderLevel();
+}
+function renderLevel(){
+  const xp = store.get('xp', 0);
+  const lv = Math.floor(xp / 100) + 1;
+  $('#lv-chip').textContent = 'Lv.' + lv;
+  $('#xp-level').textContent = 'Lv.' + lv;
+  $('#xp-count').textContent = `${xp} XP(次のレベルまで ${100 - xp % 100} XP)`;
+  $('#xp-fill').style.width = (xp % 100) + '%';
+}
+
+/* ================= 紙吹雪 ================= */
+function confettiBurst(x, y, count = 14){
+  const colors = ['#f4526a','#4a8df8','#d97706','#9d7bf5','#0da06f','#84a31c','#7bc5ba'];
+  for(let i = 0; i < count; i++){
+    const el = document.createElement('div');
+    el.className = 'confetti';
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.background = colors[i % colors.length];
+    document.body.appendChild(el);
+    const ang = Math.random() * Math.PI * 2;
+    const dist = 40 + Math.random() * 70;
+    el.animate([
+      {transform: 'translate(0,0) rotate(0deg) scale(1)', opacity: 1},
+      {transform: `translate(${Math.cos(ang)*dist}px,${Math.sin(ang)*dist - 30}px) rotate(${Math.random()*540-270}deg) scale(.4)`, opacity: 0},
+    ], {duration: 650 + Math.random() * 350, easing: 'cubic-bezier(.15,.6,.4,1)'}).onfinish = () => el.remove();
+  }
 }
 
 /* ================= タイムライン ================= */
@@ -644,8 +791,12 @@ function renderTimeline(){
     const evDone = checkable && !hasSubs && isDone(e.id);
     const subDoneCount = hasSubs ? e.subs.filter((s,i) => isDone(e.id + '/' + i)).length : 0;
 
+    const skipState = checkable ? skipStateOf(e.id) : null;
+    const active = isActive(e,n), past = !active && isPast(e,n);
+    const fullyDone = checkable && (hasSubs ? subDoneCount === e.subs.length : evDone);
+
     const item = document.createElement('div');
-    item.className = 'tl-item' + (isActive(e,n) ? ' now' : isPast(e,n) ? ' past' : '') + (evDone ? ' checked' : '');
+    item.className = 'tl-item' + (active ? ' now' : past ? ' past' : '') + (evDone ? ' checked' : '') + (skipState ? ' skipped' : '');
     item.dataset.id = e.id;
     item.style.setProperty('--cat', cat.color);
 
@@ -653,22 +804,31 @@ function renderTimeline(){
     const pct = Math.min(100, Math.round(elapsed / dur(e) * 100));
     const remain = dur(e) - elapsed;
 
+    // スキップ/持ち越しのクイック操作(未完了カードに表示)
+    let quick = '';
+    if(skipState){
+      quick = `<div class="quick"><button data-unskip="${e.id}">元に戻す</button></div>`;
+    }else if(checkable && !fullyDone){
+      quick = `<div class="quick"><button data-skip="${e.id}">今日はスキップ</button><button data-carry="${e.id}">明日へ送る</button></div>`;
+    }
+
     item.innerHTML = `
       <div class="tl-time">${fmt(e.start)}</div>
       <div class="tl-node"></div>
       <div class="tl-card">
         <div class="row1">
-          ${checkable && !hasSubs ? `<button class="ev-check${evDone ? ' on' : ''}" data-key="${e.id}" aria-label="完了">${evDone ? '✓' : ''}</button>` : ''}
+          ${checkable && !hasSubs && !skipState ? `<button class="ev-check${evDone ? ' on' : ''}" data-key="${e.id}" aria-label="完了">${evDone ? '✓' : ''}</button>` : ''}
           <span class="title">${cat.icon} ${esc(e.title)}</span>
-          ${hasSubs && checkable ? `<span class="sub-count">${subDoneCount}/${e.subs.length}</span>` : ''}
+          ${hasSubs && checkable && !skipState ? `<span class="sub-count">${subDoneCount}/${e.subs.length}</span>` : ''}
+          ${skipState ? `<span class="skip-badge">${skipState === 'carry' ? '📦 明日へ' : 'スキップ中'}</span>` : ''}
           <span class="now-badge">NOW</span>
-          <span class="cat-tag">${cat.name}</span>
+          ${skipState ? '' : '<span class="cat-tag">' + cat.name + '</span>'}
         </div>
         <div class="range">${fmt(e.start)} – ${fmt(e.end)} ・ ${durLabel(dur(e))}</div>
-        ${hasSubs ? `<div class="subs">${e.subs.map((s,si) => {
+        ${hasSubs && !skipState ? `<div class="subs">${e.subs.map((s,si) => {
           const key = e.id + '/' + si;
           const sd = checkable && isDone(key);
-          const cls = (isActive(s,n) && isActive(e,n) ? ' active' : '') + (sd ? ' done' : '');
+          const cls = (isActive(s,n) && active ? ' active' : '') + (sd ? ' done' : '');
           const lead = checkable
             ? `<button class="s-check${sd ? ' on' : ''}" data-key="${key}" aria-label="完了">${sd ? '✓' : ''}</button>`
             : '<span class="s-dot"></span>';
@@ -677,10 +837,13 @@ function renderTimeline(){
         <div class="now-progress">
           <div class="bar"><div class="fill" style="width:${pct}%"></div></div>
           <div class="meta"><span>${pct}% 経過</span><span>あと ${durLabel(remain)}</span></div>
+          ${checkable ? `<button class="focus-open" data-focus="${esc(e.title)}">▶ 集中タイマーで始める</button>` : ''}
         </div>
+        ${quick}
       </div>`;
     tl.appendChild(item);
   }
+  renderCarry();
 }
 
 function scrollToNow(smooth=true){
@@ -1041,15 +1204,104 @@ $('#ed-cancel').addEventListener('click', closeEditor);
 $('#editor').addEventListener('click', e => { if(e.target === $('#editor')) closeEditor(); });
 $('#fab-add').addEventListener('click', () => openEditor(null));
 
-// ○タップで完了トグル / カードをタップで編集
+// ○タップで完了トグル / スキップ・持ち越し / 集中タイマー / カードをタップで編集
 $('#timeline').addEventListener('click', e => {
   const chk = e.target.closest('.s-check, .ev-check');
-  if(chk){ toggleDone(chk.dataset.key); return; }
+  if(chk){
+    const r = chk.getBoundingClientRect();
+    toggleDone(chk.dataset.key, {x: r.left + r.width/2, y: r.top + r.height/2});
+    return;
+  }
+  const skipBtn = e.target.closest('[data-skip]');
+  if(skipBtn){ setSkip(skipBtn.dataset.skip, 'skip'); return; }
+  const carryBtn = e.target.closest('[data-carry]');
+  if(carryBtn){
+    const ev = SCHEDULE.find(x => x.id === carryBtn.dataset.carry);
+    if(ev) sendToTomorrow(ev);
+    return;
+  }
+  const unskipBtn = e.target.closest('[data-unskip]');
+  if(unskipBtn){ setSkip(unskipBtn.dataset.unskip, null); return; }
+  const focusBtn = e.target.closest('[data-focus]');
+  if(focusBtn){ openFocus(focusBtn.dataset.focus); return; }
   const item = e.target.closest('.tl-item');
   if(!item) return;
   const ev = SCHEDULE.find(x => x.id === item.dataset.id);
   if(ev) openEditor(ev);
 });
+
+// 持ち越しタスクのチェック
+$('#carry-wrap').addEventListener('click', e => {
+  const b = e.target.closest('[data-carry-i]');
+  if(!b) return;
+  const carry = store.get('carry', null);
+  if(!carry) return;
+  const it = carry.items[+b.dataset.carryI];
+  it.done = !it.done;
+  store.set('carry', carry);
+  addXP(it.done ? 10 : -10);
+  if(it.done){
+    const r = b.getBoundingClientRect();
+    confettiBurst(r.left + r.width/2, r.top + r.height/2);
+  }
+  refreshHome();
+});
+
+/* ================= 集中タイマー(ポモドーロ) ================= */
+let focusLeft = 25*60, focusTotal = 25*60, focusTimer = null, focusPhase = 'work';
+const fFmt = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+function focusRender(){
+  $('#focus-time').textContent = fFmt(focusLeft);
+  $('#focus-phase').textContent = focusPhase === 'work' ? 'FOCUS' : 'BREAK ☕';
+}
+function openFocus(taskName){
+  $('#focus-task').textContent = taskName || '';
+  focusPhase = 'work';
+  focusLeft = focusTotal;
+  $('#focus-hint').textContent = 'まずは始めるだけでOK。終わったら5分休憩';
+  $('#focus-start').textContent = '開始';
+  focusRender();
+  $('#focus').classList.add('show');
+}
+function stopFocus(){ clearInterval(focusTimer); focusTimer = null; }
+$('#focus-presets').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('#focus-presets .btn').forEach(x => x.classList.toggle('sel', x === b));
+  focusTotal = +b.dataset.fmin * 60;
+  if(focusPhase === 'work' && !focusTimer){ focusLeft = focusTotal; focusRender(); }
+});
+$('#focus-start').addEventListener('click', () => {
+  if(focusTimer){ stopFocus(); $('#focus-start').textContent = '再開'; return; }
+  $('#focus-start').textContent = '一時停止';
+  focusTimer = setInterval(() => {
+    focusLeft--;
+    focusRender();
+    if(focusLeft > 0) return;
+    stopFocus();
+    if(focusPhase === 'work'){
+      addXP(20);
+      confettiBurst(innerWidth/2, innerHeight/2, 30);
+      focusPhase = 'break';
+      focusLeft = 5*60;
+      $('#focus-hint').textContent = 'おつかれさま!+20XP 🎉 5分休憩しよう';
+      $('#focus-start').textContent = '一時停止';
+      focusRender();
+      focusTimer = setInterval(() => {
+        focusLeft--;
+        focusRender();
+        if(focusLeft <= 0){
+          stopFocus();
+          $('#focus-hint').textContent = '休憩おわり。次の一歩へ 🌿';
+          $('#focus-start').textContent = '開始';
+          focusPhase = 'work';
+          focusLeft = focusTotal;
+        }
+      }, 1000);
+    }
+  }, 1000);
+});
+$('#focus-close').addEventListener('click', () => { stopFocus(); $('#focus').classList.remove('show'); $('#focus-start').textContent = '開始'; });
+$('#focus').addEventListener('click', e => { if(e.target === $('#focus')){ stopFocus(); $('#focus').classList.remove('show'); $('#focus-start').textContent = '開始'; } });
 
 // タイムライン / 24Hグラフ 切り替え
 function setView(v){
@@ -1066,7 +1318,7 @@ $('#tab-clock').addEventListener('click', () => setView('clock'));
 function renderAch(){
   let total = 0, done = 0;
   for(const e of SCHEDULE){
-    if(e.cat === 'sleep') continue;
+    if(e.cat === 'sleep' || skipStateOf(e.id)) continue; // スキップした予定はノーカウント
     if(e.subs && e.subs.length){
       total += e.subs.length;
       e.subs.forEach((s,i) => { if(isDone(e.id + '/' + i)) done++; });
@@ -1074,6 +1326,12 @@ function renderAch(){
       total++;
       if(isDone(e.id)) done++;
     }
+  }
+  // 持ち越しタスクも達成率に含める
+  const carry = store.get('carry', null);
+  if(carry && carry.date === todayKey()){
+    total += carry.items.length;
+    done += carry.items.filter(it => it.done).length;
   }
   const pct = total ? Math.round(done / total * 100) : 0;
   $('#ach-pct').textContent = pct + '%';
@@ -1115,6 +1373,25 @@ function renderCalendar(){
   }
   $('#cal-grid').innerHTML = html;
   $('#cal-avg').textContent = cnt ? Math.round(sum / cnt) + '%' : '–';
+
+  // 連続記録(1日の休みは許容、2日連続で途切れる)
+  let streak = 0, miss = 0;
+  for(let i = 0; i < 366; i++){
+    const d = new Date(Date.now() - i * 86400000);
+    const rec = hist[`${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`];
+    if(rec && rec.done > 0){ streak++; miss = 0; }
+    else if(i > 0){ miss++; if(miss >= 2) break; }
+  }
+  $('#cal-streak').textContent = streak ? `${streak}日` : '–';
+
+  // 直近7日の平均
+  let wSum = 0, wCnt = 0;
+  for(let i = 0; i < 7; i++){
+    const d = new Date(Date.now() - i * 86400000);
+    const rec = hist[`${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`];
+    if(rec){ wSum += rec.pct; wCnt++; }
+  }
+  $('#cal-week').textContent = wCnt ? Math.round(wSum / wCnt) + '%' : '–';
 }
 $('#cal-prev').addEventListener('click', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); renderCalendar(); });
 $('#cal-next').addEventListener('click', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderCalendar(); });
@@ -1239,7 +1516,7 @@ function refreshHome(){
   const d = new Date();
   // 日付が変わったら完了チェックをリセット
   if(doneData.date !== todayKey()){
-    doneData = {date: todayKey(), items: {}};
+    doneData = {date: todayKey(), items: {}, skips: {}};
     store.set('done', doneData);
   }
   $('#home-date').textContent = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 (${'日月火水木金土'[d.getDay()]})`;
@@ -1261,6 +1538,7 @@ renderLegend();
 renderDiary();
 renderAffirm();
 renderTemplates();
+renderLevel();
 tickClock();
 setInterval(tickClock, 1000);
 setTimeout(() => scrollToNow(false), 120);
