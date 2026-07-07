@@ -272,6 +272,10 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .sub-edit input[type=text]{flex:1;padding:8px 10px;min-width:0}
 .sub-edit input[type=time]{width:84px;padding:8px 4px;font-size:12px}
 .sub-del{background:none;border:none;color:var(--ink-3);font-size:18px;padding:2px 6px}
+.drag-h{color:var(--ink-3);font-size:15px;padding:2px 4px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;flex:none}
+.sub-edit.dragging{opacity:.55}
+.tl-item.drag-lift{z-index:30;position:relative}
+.tl-item.drag-lift .tl-card{transform:scale(1.03);border-color:var(--brand);box-shadow:0 10px 30px rgba(0,0,0,.55)}
 .sheet-actions{display:flex;gap:10px;margin-top:20px}
 .sheet-actions .btn{flex:1;text-align:center;padding:12px}
 .btn.danger{color:var(--c-workout);border-color:color-mix(in srgb,var(--c-workout) 40%,transparent)}
@@ -285,7 +289,7 @@ nav.footer{
   background:color-mix(in srgb,var(--surface) 92%,transparent);
   backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
   border-top:1px solid var(--line);
-  display:grid;grid-template-columns:repeat(5,1fr);
+  display:grid;grid-template-columns:repeat(4,1fr);
   padding-bottom:env(safe-area-inset-bottom);
 }
 nav.footer button{
@@ -326,7 +330,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
 .breath-circle.inhale{transform:scale(1.25)}
 .breath-circle.exhale{transform:scale(.85);transition-duration:8s}
 .med-timer{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;margin:18px 0 6px}
-.med-presets{display:flex;gap:8px;justify-content:center;margin:10px 0}
+.med-presets{display:flex;gap:8px;justify-content:center;margin:10px 0;flex-wrap:wrap}
 .med-presets .btn.sel{border-color:var(--c-routine);color:var(--c-routine)}
 
 /* マンスリーカレンダー */
@@ -416,7 +420,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
 
   <div id="view-tl">
     <div id="carry-wrap"></div>
-    <div class="tl-head"><h2>タイムライン</h2><span>○で完了 / カードをタップで編集</span></div>
+    <div class="tl-head"><h2>タイムライン</h2><span>○完了 / タップ編集 / 長押しで並べ替え</span></div>
     <div class="tl" id="timeline"></div>
     <button class="fab" id="fab-add" aria-label="予定を追加">+</button>
   </div>
@@ -434,6 +438,8 @@ textarea:focus,input:focus{border-color:var(--c-work)}
         <button class="btn sel" data-min="3">3分</button>
         <button class="btn" data-min="5">5分</button>
         <button class="btn" data-min="10">10分</button>
+        <button class="btn" data-min="20">20分</button>
+        <button class="btn" data-min="30">30分</button>
       </div>
       <div style="display:flex;gap:10px;margin-top:8px">
         <button class="btn primary" id="med-start">開始</button>
@@ -444,33 +450,6 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   <div class="panel">
     <h3>やり方</h3>
     <p style="font-size:13px;color:var(--ink-2)">円が大きくなったら4秒かけて吸い、4秒止めて、8秒かけてゆっくり吐きます。考えごとが浮かんでも大丈夫。気づいたら呼吸に戻るだけでOK。</p>
-  </div>
-</section>
-
-<!-- ============ 日記 & アファメーション ============ -->
-<section class="screen" id="scr-diary">
-  <header class="app"><h1>日記 & アファメーション</h1><div class="date" id="diary-date"></div></header>
-  <div class="affirm-card">
-    <div class="q" id="affirm-text"></div>
-    <div class="n" id="affirm-count"></div>
-  </div>
-  <div style="display:flex;gap:10px;justify-content:center;margin-bottom:16px">
-    <button class="btn primary" id="affirm-next">次の言葉</button>
-    <button class="btn" id="affirm-add-toggle">言葉を追加</button>
-  </div>
-  <div class="panel" id="affirm-add-panel" style="display:none">
-    <h3>自分の言葉を追加</h3>
-    <input type="text" id="affirm-input" placeholder="例:私は一歩ずつ進んでいる">
-    <div style="margin-top:10px;text-align:right"><button class="btn" id="affirm-add">追加</button></div>
-  </div>
-  <div class="panel">
-    <h3>今日のふりかえり</h3>
-    <textarea id="diary-text" rows="5" placeholder="今日できたこと、感じたことを自由に…"></textarea>
-    <div style="margin-top:10px;text-align:right"><button class="btn primary" id="diary-save">保存する</button></div>
-  </div>
-  <div class="panel">
-    <h3>これまでの記録</h3>
-    <div id="diary-list"><p style="font-size:13px;color:var(--ink-3)">まだ記録がありません</p></div>
   </div>
 </section>
 
@@ -543,7 +522,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <div class="setting-row"><span>就寝時間</span><input type="time" value="23:00" style="width:132px"></div>
   </div>
   <p class="tagline">By ADHD. <b>For ADHD.</b></p>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v0.9</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.1</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -601,10 +580,6 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <svg viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="2.2"/><path d="M12 8v4.5"/><path d="M6 20c1-4 3.5-6 6-6s5 2 6 6"/><path d="M4.5 15.5c2 .8 3.5 2 4 4.5M19.5 15.5c-2 .8-3.5 2-4 4.5"/></svg>
     瞑想
   </button>
-  <button data-scr="diary">
-    <svg viewBox="0 0 24 24"><path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2V4z"/><path d="M5 4a2 2 0 0 1 2-2h11v16"/><path d="M9 8h6M9 12h6"/></svg>
-    日記
-  </button>
   <button data-scr="calendar">
     <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 10h17M8 2.5V6M16 2.5V6"/><path d="M7.5 14h2M11 14h2M14.5 14h2M7.5 17.5h2M11 17.5h2"/></svg>
     カレンダー
@@ -619,7 +594,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
 /* ================= データ ================= */
 const CATS = {
   workout:{name:'筋トレ',    color:'var(--c-workout)', hex:'#f4526a', icon:'💪'},
-  work:   {name:'Work',      color:'var(--c-work)',    hex:'#4a8df8', icon:'💻'},
+  work:   {name:'仕事',      color:'var(--c-work)',    hex:'#4a8df8', icon:'💻'},
   meal:   {name:'食事',      color:'var(--c-meal)',    hex:'#d97706', icon:'🍙'},
   sleep:  {name:'睡眠',      color:'var(--c-sleep)',   hex:'#9d7bf5', icon:'🌙'},
   routine:{name:'ルーティン', color:'var(--c-routine)', hex:'#0da06f', icon:'🌿'},
@@ -1079,60 +1054,6 @@ $('#med-presets').addEventListener('click', e => {
   medTotal = medLeft = +b.dataset.min * 60; medRender();
 });
 
-/* ================= 日記 ================= */
-function renderDiary(){
-  const list = store.get('diary', []);
-  $('#diary-list').innerHTML = list.length
-    ? list.map((e,i) => `<div class="diary-entry"><div class="d"><span>${e.date}</span><button data-i="${i}">削除</button></div><p>${e.text.replace(/</g,'&lt;')}</p></div>`).join('')
-    : '<p style="font-size:13px;color:var(--ink-3)">まだ記録がありません</p>';
-}
-$('#diary-save').addEventListener('click', () => {
-  const t = $('#diary-text').value.trim(); if(!t) return;
-  const d = new Date();
-  const list = store.get('diary', []);
-  list.unshift({date:`${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${fmt(nowMin())}`, text:t});
-  store.set('diary', list);
-  $('#diary-text').value = '';
-  renderDiary();
-});
-$('#diary-list').addEventListener('click', e => {
-  const b = e.target.closest('button'); if(!b) return;
-  const list = store.get('diary', []);
-  list.splice(+b.dataset.i, 1);
-  store.set('diary', list);
-  renderDiary();
-});
-
-/* ================= アファメーション ================= */
-const DEFAULT_AFFIRMS = [
-  '私は今、やるべきことに集中できる',
-  '小さな一歩も、確かな前進だ',
-  '完璧じゃなくていい。続けることが大事',
-  '私の脳はユニークで、それは強みだ',
-  '休むことも、前に進むための行動だ',
-  '昨日の自分より、少しだけ良くなればいい',
-];
-let affirmIdx = 0;
-function affirms(){ return [...DEFAULT_AFFIRMS, ...store.get('affirms', [])]; }
-function renderAffirm(){
-  const a = affirms();
-  $('#affirm-text').textContent = a[affirmIdx % a.length];
-  $('#affirm-count').textContent = `${affirmIdx % a.length + 1} / ${a.length}`;
-}
-$('#affirm-next').addEventListener('click', () => { affirmIdx++; renderAffirm(); });
-$('#affirm-add-toggle').addEventListener('click', () => {
-  const p = $('#affirm-add-panel');
-  p.style.display = p.style.display === 'none' ? '' : 'none';
-});
-$('#affirm-add').addEventListener('click', () => {
-  const v = $('#affirm-input').value.trim(); if(!v) return;
-  const list = store.get('affirms', []);
-  list.push(v); store.set('affirms', list);
-  $('#affirm-input').value = '';
-  affirmIdx = affirms().length - 1;
-  renderAffirm();
-});
-
 /* ================= プロフィール ================= */
 $('#profile-name').value = store.get('name', '');
 if(store.get('name','')) $('#avatar').textContent = store.get('name','A')[0];
@@ -1167,17 +1088,66 @@ $('#ed-cats').addEventListener('click', e => {
 });
 
 function addSubRow(sub){
+  // 新規追加時は「1つ前のサブ項目の終了時間」を開始時間に自動セット
+  const rows = document.querySelectorAll('#ed-subs .sub-edit');
+  const prevEnd = rows.length ? rows[rows.length - 1].querySelector('.se-end').value : $('#ed-start').value;
   const row = document.createElement('div');
   row.className = 'sub-edit';
   row.innerHTML = `
+    <span class="drag-h" title="ドラッグで並べ替え">⠿</span>
     <input type="text" class="se-name" placeholder="サブ項目名" value="${sub ? esc(sub.name) : ''}">
-    <input type="time" class="se-start" value="${sub ? fmt(sub.start) : $('#ed-start').value}">
+    <input type="time" class="se-start" value="${sub ? fmt(sub.start) : prevEnd}">
     <input type="time" class="se-end" value="${sub ? fmt(sub.end) : $('#ed-end').value}">
     <button class="sub-del" aria-label="削除">×</button>`;
-  row.querySelector('.sub-del').addEventListener('click', () => row.remove());
+  row.querySelector('.sub-del').addEventListener('click', () => { row.remove(); rechainSubRows(); });
   $('#ed-subs').appendChild(row);
 }
 $('#ed-addsub').addEventListener('click', () => addSubRow(null));
+
+// サブ項目の数珠繋ぎ: 各行の長さを保ったまま、上の終了=下の開始になるよう再計算
+function rechainSubRows(){
+  const rows = [...document.querySelectorAll('#ed-subs .sub-edit')];
+  let prevEnd = null;
+  for(const r of rows){
+    const s = r.querySelector('.se-start'), en = r.querySelector('.se-end');
+    if(!s.value || !en.value) continue;
+    const d = (toMin(en.value) - toMin(s.value) + 1440) % 1440;
+    if(prevEnd !== null){
+      s.value = prevEnd;
+      en.value = fmt((toMin(prevEnd) + d) % 1440);
+    }
+    prevEnd = en.value;
+  }
+}
+$('#ed-subs').addEventListener('change', e => {
+  if(e.target.classList.contains('se-end') || e.target.classList.contains('se-start')) rechainSubRows();
+});
+
+// ⠿ハンドルのドラッグでサブ項目を並べ替え
+let subDrag = null;
+$('#ed-subs').addEventListener('pointerdown', e => {
+  const h = e.target.closest('.drag-h');
+  if(!h) return;
+  e.preventDefault();
+  subDrag = h.closest('.sub-edit');
+  subDrag.classList.add('dragging');
+});
+document.addEventListener('pointermove', e => {
+  if(!subDrag) return;
+  const others = [...document.querySelectorAll('#ed-subs .sub-edit')].filter(r => r !== subDrag);
+  let placed = false;
+  for(const r of others){
+    const rect = r.getBoundingClientRect();
+    if(e.clientY < rect.top + rect.height / 2){ $('#ed-subs').insertBefore(subDrag, r); placed = true; break; }
+  }
+  if(!placed) $('#ed-subs').appendChild(subDrag);
+});
+document.addEventListener('pointerup', () => {
+  if(!subDrag) return;
+  subDrag.classList.remove('dragging');
+  subDrag = null;
+  rechainSubRows();
+});
 
 function openEditor(ev){
   editing = ev;
@@ -1238,8 +1208,65 @@ $('#ed-cancel').addEventListener('click', closeEditor);
 $('#editor').addEventListener('click', e => { if(e.target === $('#editor')) closeEditor(); });
 $('#fab-add').addEventListener('click', () => openEditor(null));
 
+// 予定カードの長押しドラッグで並べ替え(時間は切れ目なく数珠繋ぎで自動再計算)
+function rechainEvents(){
+  for(let i = 1; i < SCHEDULE.length; i++){
+    const prev = SCHEDULE[i - 1], e = SCHEDULE[i];
+    const d = dur(e);
+    e.start = prev.end % 1440;
+    e.end = (e.start + d) % 1440;
+    if(e.subs && e.subs.length){
+      let pEnd = e.start;
+      for(const s of e.subs){
+        const sd = (s.end - s.start + 1440) % 1440;
+        s.start = pEnd;
+        s.end = (pEnd + sd) % 1440;
+        pEnd = s.end;
+      }
+    }
+  }
+}
+let tlDrag = null, tlPress = null, tlDownY = 0, suppressClick = false;
+$('#timeline').addEventListener('pointerdown', e => {
+  const item = e.target.closest('.tl-item');
+  if(!item || e.target.closest('button, input')) return;
+  tlDownY = e.clientY;
+  clearTimeout(tlPress);
+  tlPress = setTimeout(() => {
+    tlDrag = item;
+    item.classList.add('drag-lift');
+    if(navigator.vibrate) navigator.vibrate(10);
+  }, 400);
+});
+$('#timeline').addEventListener('touchmove', e => { if(tlDrag) e.preventDefault(); }, {passive: false});
+document.addEventListener('pointermove', e => {
+  if(tlPress && Math.abs(e.clientY - tlDownY) > 12){ clearTimeout(tlPress); tlPress = null; }
+  if(!tlDrag) return;
+  const tlEl = $('#timeline');
+  const others = [...tlEl.querySelectorAll('.tl-item')].filter(r => r !== tlDrag);
+  let placed = false;
+  for(const r of others){
+    const rect = r.getBoundingClientRect();
+    if(e.clientY < rect.top + rect.height / 2){ tlEl.insertBefore(tlDrag, r); placed = true; break; }
+  }
+  if(!placed) tlEl.appendChild(tlDrag);
+});
+document.addEventListener('pointerup', () => {
+  clearTimeout(tlPress); tlPress = null;
+  if(!tlDrag) return;
+  tlDrag.classList.remove('drag-lift');
+  tlDrag = null;
+  const order = [...$('#timeline').querySelectorAll('.tl-item')].map(el => el.dataset.id);
+  SCHEDULE.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  rechainEvents();
+  suppressClick = true;
+  setTimeout(() => { suppressClick = false; }, 400);
+  persistSchedule();
+});
+
 // ○タップで完了トグル / スキップ・持ち越し / 集中タイマー / カードをタップで編集
 $('#timeline').addEventListener('click', e => {
+  if(suppressClick) return;
   const chk = e.target.closest('.s-check, .ev-check');
   if(chk){
     const r = chk.getBoundingClientRect();
@@ -1564,7 +1591,6 @@ function refreshHome(){
     store.set('done', doneData);
   }
   $('#home-date').textContent = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 (${'日月火水木金土'[d.getDay()]})`;
-  $('#diary-date').textContent = `${d.getMonth()+1}月${d.getDate()}日`;
   renderTimeline();
   renderClock();
   renderAch();
@@ -1579,8 +1605,6 @@ function tickClock(){
 setView(store.get('view', 'tl'));
 refreshHome();
 renderLegend();
-renderDiary();
-renderAffirm();
 renderTemplates();
 renderLevel();
 tickClock();
