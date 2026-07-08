@@ -152,24 +152,27 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .sub.active .s-time{color:var(--cat)}
 
 /* --- NOW 強調(順序はそのまま・その場で大きく) --- */
-.tl-item.now .tl-time{font-size:17px;color:var(--cat);font-weight:800}
+.tl-item.now .tl-time{font-size:19px;color:var(--cat);font-weight:800;text-shadow:0 0 14px color-mix(in srgb,var(--cat) 60%,transparent)}
 .tl-item.now .tl-node{
   width:14px;height:14px;left:-14px;background:var(--cat);
   box-shadow:0 0 0 5px color-mix(in srgb,var(--cat) 25%,transparent),0 0 18px var(--cat);
   animation:pulse 2s infinite;
 }
 .tl-item.now .tl-card{
-  padding:18px 16px;transform:scale(1.02);transform-origin:left center;
-  background:linear-gradient(135deg,color-mix(in srgb,var(--cat) 14%,var(--surface)),var(--surface) 70%);
-  border-color:color-mix(in srgb,var(--cat) 55%,var(--line));
-  box-shadow:0 4px 28px color-mix(in srgb,var(--cat) 28%,transparent);
+  padding:20px 16px;transform:scale(1.045);transform-origin:left center;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--cat) 24%,var(--surface)),var(--surface) 78%);
+  border:1.5px solid color-mix(in srgb,var(--cat) 85%,var(--line));
+  border-left:5px solid var(--cat);
+  box-shadow:0 6px 38px color-mix(in srgb,var(--cat) 48%,transparent);
+  animation:nowGlow 2.4s ease-in-out infinite;
 }
-.tl-item.now .title{font-size:19px}
+.tl-item.now .title{font-size:20px;font-weight:800}
 .tl-item.now .range{font-size:13px;color:var(--ink)}
 .now-badge{
   display:none;align-items:center;gap:5px;
-  background:var(--cat);color:#fff;font-size:10px;font-weight:800;letter-spacing:.1em;
-  border-radius:99px;padding:2px 9px;
+  background:var(--cat);color:#fff;font-size:11px;font-weight:800;letter-spacing:.1em;
+  border-radius:99px;padding:3px 11px;
+  box-shadow:0 0 14px color-mix(in srgb,var(--cat) 70%,transparent);
 }
 .now-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:#fff;animation:blink 1.2s infinite}
 .tl-item.now .now-badge{display:inline-flex}
@@ -191,6 +194,7 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .overdue-badge{font-size:9.5px;font-weight:800;color:#fff;background:var(--c-workout);border-radius:6px;padding:2px 7px;letter-spacing:.05em;white-space:nowrap}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 5px color-mix(in srgb,var(--cat) 25%,transparent),0 0 18px var(--cat)}50%{box-shadow:0 0 0 8px color-mix(in srgb,var(--cat) 12%,transparent),0 0 26px var(--cat)}}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes nowGlow{0%,100%{box-shadow:0 6px 38px color-mix(in srgb,var(--cat) 48%,transparent)}50%{box-shadow:0 6px 52px color-mix(in srgb,var(--cat) 68%,transparent)}}
 .tl-item.flash .tl-card{box-shadow:0 0 0 2px var(--cat),0 4px 28px color-mix(in srgb,var(--cat) 35%,transparent)}
 
 /* ============ 達成率・ビュー切り替え ============ */
@@ -353,7 +357,8 @@ textarea:focus,input:focus{border-color:var(--c-work)}
 .breath-circle.inhale{transform:scale(1.25)}
 .breath-circle.exhale{transform:scale(.85);transition-duration:8s}
 .med-timer{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;margin:18px 0 6px}
-.med-presets{display:flex;gap:8px;justify-content:center;margin:10px 0;flex-wrap:wrap}
+.med-presets{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 4px;width:100%;max-width:300px}
+.med-presets .btn{padding:9px 0;text-align:center}
 .med-presets .btn.sel{border-color:var(--c-routine);color:var(--c-routine)}
 
 /* マンスリーカレンダー */
@@ -575,7 +580,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <p style="font-size:11px;color:var(--ink-3);margin-top:6px">就寝〜起床の時間は、タイムラインと24Hグラフに「睡眠」として自動で組み込まれます。</p>
   </div>
   <p class="tagline">By ADHD. <b>For ADHD.</b></p>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.6</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.7</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
