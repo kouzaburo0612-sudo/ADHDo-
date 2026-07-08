@@ -181,6 +181,14 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .now-progress .meta{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2);margin-top:5px;font-variant-numeric:tabular-nums}
 .tl-item.past .tl-card{opacity:.55}
 .tl-item.past .tl-time{opacity:.55}
+/* 時間切れの未消化タスクは強調(pastより後に書いて上書き) */
+.tl-item.overdue .tl-card{
+  opacity:1;
+  border-color:color-mix(in srgb,var(--c-workout) 45%,var(--line));
+  background:linear-gradient(135deg,color-mix(in srgb,var(--c-workout) 7%,var(--surface)),var(--surface) 60%);
+}
+.tl-item.overdue .tl-time{opacity:1;color:var(--c-workout)}
+.overdue-badge{font-size:9.5px;font-weight:800;color:#fff;background:var(--c-workout);border-radius:6px;padding:2px 7px;letter-spacing:.05em;white-space:nowrap}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 5px color-mix(in srgb,var(--cat) 25%,transparent),0 0 18px var(--cat)}50%{box-shadow:0 0 0 8px color-mix(in srgb,var(--cat) 12%,transparent),0 0 26px var(--cat)}}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 .tl-item.flash .tl-card{box-shadow:0 0 0 2px var(--cat),0 4px 28px color-mix(in srgb,var(--cat) 35%,transparent)}
@@ -205,6 +213,8 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .s-check.on,.ev-check.on{background:var(--cat);border-color:var(--cat)}
 .ev-check{width:22px;height:22px}
 .sub-count{font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.edit-btn{background:none;border:1px solid var(--line);color:var(--ink-3);border-radius:8px;width:27px;height:27px;font-size:13px;padding:0;flex:none;line-height:1}
+.tl-item.now .edit-btn{color:var(--ink-2)}
 .tl-item.checked .title{text-decoration:line-through;opacity:.6}
 
 /* ============ 許す仕組み(スキップ/持ち越し) ============ */
@@ -565,7 +575,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <p style="font-size:11px;color:var(--ink-3);margin-top:6px">就寝〜起床の時間は、タイムラインと24Hグラフに「睡眠」として自動で組み込まれます。</p>
   </div>
   <p class="tagline">By ADHD. <b>For ADHD.</b></p>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.5</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.6</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -860,6 +870,7 @@ function confettiBurst(x, y, count = 14){
 }
 
 /* ================= タイムライン ================= */
+let subOpen = {}; // サブ項目の開閉状態(タップで切り替え。NOWは初期展開)
 function renderTimeline(){
   const n = nowMin();
   const tl = $('#timeline');
@@ -874,9 +885,12 @@ function renderTimeline(){
     const skipState = checkable ? skipStateOf(e.id) : null;
     const active = isActive(e,n), past = !active && isPast(e,n);
     const fullyDone = checkable && (hasSubs ? subDoneCount === e.subs.length : evDone);
+    const overdue = checkable && past && !fullyDone; // 時間が過ぎたのに未消化
+    // サブ項目は基本折りたたみ(NOWだけ初期展開)。タップで開閉
+    const expanded = hasSubs && (subOpen[e.id] !== undefined ? subOpen[e.id] : active);
 
     const item = document.createElement('div');
-    item.className = 'tl-item' + (active ? ' now' : past ? ' past' : '') + (evDone ? ' checked' : '') + (skipState ? ' skipped' : '');
+    item.className = 'tl-item' + (active ? ' now' : past ? ' past' : '') + (evDone ? ' checked' : '') + (skipState ? ' skipped' : '') + (overdue ? ' overdue' : '');
     item.dataset.id = e.id;
     item.style.setProperty('--cat', cat.color);
 
@@ -897,13 +911,13 @@ function renderTimeline(){
         <div class="row1">
           ${checkable && !hasSubs && !skipState ? `<button class="ev-check${evDone ? ' on' : ''}" data-key="${e.id}" aria-label="完了">${evDone ? '✓' : ''}</button>` : ''}
           <span class="title">${cat.icon} ${esc(e.title)}</span>
-          ${hasSubs && checkable && !skipState ? `<span class="sub-count">${subDoneCount}/${e.subs.length}</span>` : ''}
-          ${skipState ? `<span class="skip-badge">${skipState === 'carry' ? '📦 明日へ' : 'スキップ中'}</span>` : ''}
+          ${hasSubs && checkable ? `<span class="sub-count">${subDoneCount}/${e.subs.length} ${expanded ? '▴' : '▾'}</span>` : ''}
           <span class="now-badge">NOW</span>
-          ${skipState ? '' : '<span class="cat-tag">' + cat.name + '</span>'}
+          ${overdue ? '<span class="overdue-badge">⚠ 未消化</span>' : '<span class="cat-tag">' + cat.name + '</span>'}
+          ${e.id === '__sleep' ? '' : `<button class="edit-btn" data-edit="${e.id}" aria-label="編集">✎</button>`}
         </div>
         <div class="range">${fmt(e.start)} – ${fmt(e.end)} ・ ${durLabel(dur(e))}</div>
-        ${hasSubs && !skipState ? `<div class="subs">${e.subs.map((s,si) => {
+        ${expanded ? `<div class="subs">${e.subs.map((s,si) => {
           const key = e.id + '/' + si;
           const sd = checkable && isDone(key);
           const cls = (isActive(s,n) && active ? ' active' : '') + (sd ? ' done' : '');
@@ -1478,10 +1492,22 @@ $('#timeline').addEventListener('click', e => {
   if(skipBtn){ setSkip(skipBtn.dataset.skip, 'skip'); return; }
   const focusBtn = e.target.closest('[data-focus]');
   if(focusBtn){ openFocus(focusBtn.dataset.focus); return; }
+  const editBtn = e.target.closest('[data-edit]');
+  if(editBtn){
+    const ev = SCHEDULE.find(x => x.id === editBtn.dataset.edit);
+    if(ev) openEditor(ev);
+    return;
+  }
+  // カードのタップはサブ項目の開閉(1日の俯瞰を保つため基本は畳んでおく)
   const item = e.target.closest('.tl-item');
   if(!item) return;
   const ev = SCHEDULE.find(x => x.id === item.dataset.id);
-  if(ev) openEditor(ev);
+  if(ev && ev.subs && ev.subs.length){
+    const n2 = nowMin();
+    const cur = subOpen[ev.id] !== undefined ? subOpen[ev.id] : isActive(ev, n2);
+    subOpen[ev.id] = !cur;
+    renderTimeline();
+  }
 });
 
 /* ================= 集中タイマー(ポモドーロ) ================= */
@@ -1954,7 +1980,7 @@ const OB_SLIDES = [
   {icon:'👋', title:'ようこそ、ADHDoへ', body:'By ADHD. For ADHD.\n1日の予定を「時間の流れ」で見える化するアプリです。\n\nすでにサンプルの1日が入っています。まずは眺めてみて、あとで自分の生活に合わせて作り替えましょう。'},
   {icon:'⏰', title:'「今なにをする時間か」だけ見る', body:'今の時間帯の予定は「NOW」として大きく光ります。迷ったらNOWだけ見ればOK。\n\n終わったタスクは左の○をタップ → 紙吹雪と一緒に達成率とXPが上がります。'},
   {icon:'🌿', title:'できない日があってもいい', body:'無理な日は「今日はスキップ」— その予定は今日の達成率にカウントされず、タイムラインからも片付きます。\n\n連続記録は1日休んでも切れない設計。自分を責めないことが続けるコツです。'},
-  {icon:'✏️', title:'自分の1日に作り替えよう', body:'・カードをタップ → 予定を編集\n・カードを長押し → 上下に並べ替え\n・右下の「+」→ 新しい予定を追加\n\n時間は自動で「切れ目なく」つながるので、順番を変えるだけでOK。'},
+  {icon:'✏️', title:'自分の1日に作り替えよう', body:'・カードをタップ → サブ項目を開く/閉じる\n・✎ボタン → 予定を編集\n・カードを長押しして動かす → 並べ替え\n・右下の「+」→ 新しい予定を追加\n\n時間切れの未消化タスクは ⚠ で目立ちます。やるか、スキップで手放すか決めましょう。'},
   {icon:'🚀', title:'ほかにも', body:'・上のタブで24時間の円グラフに切り替え\n・瞑想タイマー(1〜30分)\n・カレンダーで毎日の達成率をふりかえり\n・設定でテンプレート保存・通知ON/OFF\n\nさあ、はじめよう!'},
 ];
 let obIdx = 0;
