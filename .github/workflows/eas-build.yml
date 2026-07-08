@@ -38,4 +38,6 @@ jobs:
           EXPO_ASC_ISSUER_ID: d14dbdb1-1931-46b6-881a-94cc160cb823
           EXPO_APPLE_TEAM_ID: 8332N8C6UX
           EXPO_APPLE_TEAM_TYPE: INDIVIDUAL
-        run: eas build --platform ios --profile production --non-interactive --auto-submit
+        # 新ターゲットの署名プロファイル生成は対話モード限定のため、疑似TTYで
+        # 確認プロンプトに既定値(Enter=Yes)を自動応答する。生成済みなら質問は出ない
+        run: yes "" | script -qec "eas build --platform ios --profile production --auto-submit" /dev/null
