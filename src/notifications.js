@@ -16,6 +16,12 @@ const fmt = (m) => {
   return `${String(Math.floor(mm / 60)).padStart(2, '0')}:${String(mm % 60).padStart(2, '0')}`;
 };
 
+export async function setBadgeCount(n) {
+  try {
+    await Notifications.setBadgeCountAsync(Math.max(0, n | 0));
+  } catch {}
+}
+
 export async function ensurePermission() {
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;

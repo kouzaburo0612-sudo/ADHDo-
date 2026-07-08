@@ -13,6 +13,9 @@
   --c-sleep:#9d7bf5;    /* 睡眠 = 紫 */
   --c-routine:#0da06f;  /* ルーティン = 緑 */
   --c-meeting:#84a31c;  /* ミーティング = 黄緑 */
+  --c-study:#1a9fbd;    /* 学習 = シアン */
+  --c-appt:#c94f8e;     /* アポイント = ピンク */
+  --c-other:#a1792e;    /* その他 = ブラウン */
   --brand:#7bc5ba;      /* ロゴのティール */
 
   --bg:#0d1017;
@@ -522,7 +525,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <div class="setting-row"><span>就寝時間</span><input type="time" value="23:00" style="width:132px"></div>
   </div>
   <p class="tagline">By ADHD. <b>For ADHD.</b></p>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.1</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.2</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -599,6 +602,9 @@ const CATS = {
   sleep:  {name:'睡眠',      color:'var(--c-sleep)',   hex:'#9d7bf5', icon:'🌙'},
   routine:{name:'ルーティン', color:'var(--c-routine)', hex:'#0da06f', icon:'🌿'},
   meeting:{name:'ミーティング', color:'var(--c-meeting)', hex:'#84a31c', icon:'🤝'},
+  study:  {name:'学習',      color:'var(--c-study)',   hex:'#1a9fbd', icon:'📚'},
+  appt:   {name:'アポイント', color:'var(--c-appt)',    hex:'#c94f8e', icon:'📅'},
+  other:  {name:'その他',    color:'var(--c-other)',   hex:'#a1792e', icon:'🧩'},
 };
 
 // start/end は 0:00 からの分。end < start は日付をまたぐ(睡眠)
@@ -677,6 +683,24 @@ window.__notifyTest = function(ok){
     : '通知の権限がありません。iPadの設定→通知→Expo Goで許可してください';
   el.style.color = ok ? 'var(--brand)' : 'var(--c-workout)';
 };
+
+// 時間が過ぎたのに未完了のタスク数(アプリバッジ用)
+function overdueCount(){
+  const n = nowMin();
+  let c = 0;
+  for(const e of SCHEDULE){
+    if(e.cat === 'sleep' || (doneData.skips && doneData.skips[e.id])) continue;
+    if(e.subs && e.subs.length){
+      e.subs.forEach((s, i) => { if(s.start < s.end && n >= s.end && doneData.items[e.id + '/' + i] !== true) c++; });
+    }else if(e.start < e.end && n >= e.end && doneData.items[e.id] !== true) c++;
+  }
+  const carry = store.get('carry', null);
+  if(carry && carry.date === todayKey()) c += carry.items.filter(it => !it.done).length;
+  return c;
+}
+function syncBadge(){
+  try{ window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type: 'badge', count: overdueCount()})); }catch{}
+}
 
 // ネイティブアプリに通知スケジュールを送る(ブラウザでは何もしない)
 function syncNative(){
@@ -1594,6 +1618,7 @@ function refreshHome(){
   renderTimeline();
   renderClock();
   renderAch();
+  syncBadge();
 }
 // 秒つきリアルタイム時計
 function tickClock(){

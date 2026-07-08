@@ -4,7 +4,7 @@ import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import APP_HTML from './src/appHtml';
-import { rescheduleNotifications, scheduleTestNotification, ensurePermission } from './src/notifications';
+import { rescheduleNotifications, scheduleTestNotification, ensurePermission, setBadgeCount } from './src/notifications';
 
 // アーキテクチャ: Web版(prototype/index.html)をWebViewで表示するシェル。
 // - データ: WebView内のlocalStorage + AsyncStorageへミラー(起動時に注入して復元)
@@ -48,6 +48,8 @@ export default function App() {
         rescheduleNotifications(msg.events, msg.notify).then((count) => {
           tellWebView(`window.__notifySet && window.__notifySet(${count})`);
         });
+      } else if (msg.type === 'badge') {
+        setBadgeCount(msg.count);
       } else if (msg.type === 'test') {
         scheduleTestNotification().then((ok) => {
           tellWebView(`window.__notifyTest && window.__notifyTest(${ok ? 'true' : 'false'})`);
