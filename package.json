@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
+    "@bacons/apple-targets": "^4.0.7",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "expo": "^54.0.35",
     "expo-notifications": "^0.32.17",
@@ -18,5 +19,8 @@
     "web": "expo start --web",
     "sync-html": "node scripts/sync-html.js"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "@expo/prebuild-config": "^54.0.8"
+  }
 }

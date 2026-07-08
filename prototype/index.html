@@ -580,7 +580,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <p style="font-size:11px;color:var(--ink-3);margin-top:6px">就寝〜起床の時間は、タイムラインと24Hグラフに「睡眠」として自動で組み込まれます。</p>
   </div>
   <p class="tagline">By ADHD. <b>For ADHD.</b></p>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.7</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.8</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -759,6 +759,34 @@ function overdueCount(){
 }
 function syncBadge(){
   try{ window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type: 'badge', count: overdueCount()})); }catch{}
+}
+
+// ホーム画面ウィジェット用に「今日の状態」を送る(ネイティブ側でApp Groupに保存して表示)
+function syncWidget(){
+  try{
+    if(!window.ReactNativeWebView) return;
+    let total = 0, done = 0;
+    const evs = visibleEvents().map(e => {
+      const c = CATS[e.cat] || CATS.other;
+      let evDone = 0;
+      if(e.cat !== 'sleep'){
+        if(e.subs && e.subs.length){
+          total += e.subs.length;
+          const d = e.subs.filter((s, i) => isDone(e.id + '/' + i)).length;
+          done += d;
+          evDone = d === e.subs.length ? 1 : 0;
+        }else{
+          total++;
+          if(isDone(e.id)){ done++; evDone = 1; }
+        }
+      }
+      return {title: e.title, icon: c.icon, hex: c.hex, start: e.start, end: e.end, done: evDone};
+    });
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'widget',
+      payload: {date: todayKey(), pct: total ? Math.round(done / total * 100) : 0, done, total, events: evs},
+    }));
+  }catch{}
 }
 
 // ネイティブアプリに通知スケジュールを送る(ブラウザでは何もしない)
@@ -2034,6 +2062,7 @@ function refreshHome(){
   renderClock();
   renderAch();
   syncBadge();
+  syncWidget();
 }
 // 秒つきリアルタイム時計
 function tickClock(){

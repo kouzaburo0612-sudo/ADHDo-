@@ -39,3 +39,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# @bacons/apple-targets がprebuild時に生成するファイル
+targets/widget/Info.plist
+targets/widget/generated.entitlements

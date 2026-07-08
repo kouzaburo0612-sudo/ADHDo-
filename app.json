@@ -8,13 +8,24 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "plugins": [
-      "./plugins/without-aps-environment"
+      "./plugins/without-aps-environment",
+      [
+        "@bacons/apple-targets",
+        {
+          "appleTeamId": "8332N8C6UX"
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kozaburookuda.adhdo",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.kozaburookuda.adhdo"
+        ]
       }
     },
     "android": {

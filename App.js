@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { SafeAreaView } from 'react-native';
+import { Platform, SafeAreaView } from 'react-native';
+import { ExtensionStorage } from '@bacons/apple-targets';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -11,6 +12,12 @@ import { rescheduleNotifications, scheduleTestNotification, ensurePermission, se
 // - 通知: WebViewからpostMessageされたスケジュールでネイティブのローカル通知を組む
 
 const BG = '#0d1017';
+
+// ホーム画面ウィジェットとのデータ共有(App Group)。iOSのみ
+const APP_GROUP = 'group.com.kozaburookuda.adhdo';
+let widgetStorage = null;
+try { if (Platform.OS === 'ios') widgetStorage = new ExtensionStorage(APP_GROUP); } catch {}
+let widgetReloadTimer = null;
 
 export default function App() {
   const [seedJs, setSeedJs] = useState(null);
@@ -50,6 +57,12 @@ export default function App() {
         });
       } else if (msg.type === 'badge') {
         setBadgeCount(msg.count);
+      } else if (msg.type === 'widget') {
+        if (widgetStorage) {
+          try { widgetStorage.set('today', JSON.stringify(msg.payload)); } catch {}
+          clearTimeout(widgetReloadTimer);
+          widgetReloadTimer = setTimeout(() => { try { ExtensionStorage.reloadWidget(); } catch {} }, 1500);
+        }
       } else if (msg.type === 'test') {
         scheduleTestNotification().then((ok) => {
           tellWebView(`window.__notifyTest && window.__notifyTest(${ok ? 'true' : 'false'})`);
