@@ -1,0 +1,88 @@
+name: ASC App Group Setup
+
+# App Store Connect APIで App Group を登録し、本体+ウィジェットの
+# App ID に紐付ける(EASはAPIキー認証だとこの紐付けをスキップするため)
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Restore App Store Connect API key
+        env:
+          ASC_API_KEY: ${{ secrets.ASC_API_KEY }}
+        run: printf '%s\n' "$ASC_API_KEY" > asc.p8
+
+      - name: Install deps
+        run: pip install pyjwt cryptography requests
+
+      - name: Register and assign app group
+        run: |
+          python3 << 'EOF'
+          import jwt, time, requests, json, sys
+
+          KEY_ID = '6SG3K4BN9L'
+          ISSUER = 'd14dbdb1-1931-46b6-881a-94cc160cb823'
+          GROUP = 'group.com.kozaburookuda.adhdo'
+          BUNDLES = ['com.kozaburookuda.adhdo', 'com.kozaburookuda.adhdo.widget']
+
+          key = open('asc.p8').read()
+          now = int(time.time())
+          tok = jwt.encode({'iss': ISSUER, 'iat': now - 30, 'exp': now + 1200,
+                            'aud': 'appstoreconnect-v1'},
+                           key, algorithm='ES256', headers={'kid': KEY_ID})
+          H = {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'}
+          B = 'https://api.appstoreconnect.apple.com'
+
+          def get(p):
+              r = requests.get(B + p, headers=H)
+              print('GET', p, '->', r.status_code)
+              return r
+
+          def post(p, d):
+              r = requests.post(B + p, headers=H, data=json.dumps(d))
+              print('POST', p, '->', r.status_code)
+              print(r.text[:800])
+              return r
+
+          # 1) Bundle ID のリソースIDを取得
+          r = get('/v1/bundleIds?filter[identifier]=' + ','.join(BUNDLES) + '&limit=20')
+          ids = {d['attributes']['identifier']: d['id'] for d in r.json().get('data', [])}
+          print('bundle ids:', ids)
+          if len(ids) < 2:
+              print('MISSING BUNDLE IDS'); sys.exit(1)
+
+          # 2) App Group を取得または作成
+          r = get('/v1/appGroups?filter[identifier]=' + GROUP)
+          if r.status_code == 404:
+              print('RESULT: APPGROUP_ENDPOINT_UNSUPPORTED')
+              sys.exit(1)
+          data = r.json().get('data', [])
+          if data:
+              gid = data[0]['id']
+          else:
+              r = post('/v1/appGroups', {'data': {'type': 'appGroups', 'attributes': {
+                  'identifier': GROUP, 'name': 'ADHDo App Group'}}})
+              if r.status_code not in (200, 201):
+                  print('RESULT: APPGROUP_CREATE_FAILED'); sys.exit(1)
+              gid = r.json()['data']['id']
+          print('app group id:', gid)
+
+          # 3) 各Bundle IDに APP_GROUPS capability を有効化し、グループを紐付け
+          ok = True
+          for ident, bid in ids.items():
+              payload = {'data': {
+                  'type': 'bundleIdCapabilities',
+                  'attributes': {'capabilityType': 'APP_GROUPS'},
+                  'relationships': {
+                      'bundleId': {'data': {'type': 'bundleIds', 'id': bid}},
+                      'appGroups': {'data': [{'type': 'appGroups', 'id': gid}]},
+                  }}}
+              r = post('/v1/bundleIdCapabilities', payload)
+              if r.status_code not in (200, 201):
+                  ok = False
+          print('RESULT:', 'OK' if ok else 'CAPABILITY_ASSIGN_FAILED')
+          sys.exit(0 if ok else 1)
+          EOF
