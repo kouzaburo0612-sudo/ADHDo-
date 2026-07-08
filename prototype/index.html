@@ -495,6 +495,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <p id="notify-status" style="font-size:11px;color:var(--ink-3);margin-top:8px;line-height:1.6">ネイティブ通知: 未接続(Web版では通知は使えません。Expo版で有効になります)</p>
     <div class="setting-row"><span>サウンド</span><div class="toggle on" data-key="sound"></div></div>
     <div class="setting-row"><span>NOWへ自動スクロール</span><div class="toggle on" data-key="autoscroll"></div></div>
+    <div class="setting-row"><span>使い方をもう一度見る</span><button class="btn sm" id="show-onboard">チュートリアル</button></div>
     <div class="setting-row"><span>スケジュールを初期状態に戻す</span><button class="btn" id="reset-schedule">リセット</button></div>
   </div>
   <div class="panel">
@@ -525,7 +526,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <div class="setting-row"><span>就寝時間</span><input type="time" value="23:00" style="width:132px"></div>
   </div>
   <p class="tagline">By ADHD. <b>For ADHD.</b></p>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.2</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.3</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -550,6 +551,20 @@ textarea:focus,input:focus{border-color:var(--c-work)}
       <button class="btn danger" id="ed-delete">削除</button>
       <button class="btn" id="ed-cancel">キャンセル</button>
       <button class="btn primary" id="ed-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 初回チュートリアル ============ -->
+<div class="modal center" id="onboard">
+  <div class="focus-box" style="text-align:left">
+    <div style="text-align:center;font-size:44px;margin-bottom:10px" id="ob-icon">👋</div>
+    <h3 id="ob-title" style="font-size:17px;font-weight:800;text-align:center;margin-bottom:8px"></h3>
+    <p id="ob-body" style="font-size:13.5px;color:var(--ink-2);line-height:1.8;min-height:150px;white-space:pre-line"></p>
+    <div id="ob-dots" style="display:flex;gap:6px;justify-content:center;margin:14px 0"></div>
+    <div class="focus-btn-row">
+      <button class="btn" id="ob-skip">スキップ</button>
+      <button class="btn primary" id="ob-next" style="min-width:110px">次へ</button>
     </div>
   </div>
 </div>
@@ -608,44 +623,23 @@ const CATS = {
 };
 
 // start/end は 0:00 からの分。end < start は日付をまたぐ(睡眠)
+// 初回起動時のテンプレート。ここから各自カスタマイズしていく
 const DEFAULT_SCHEDULE = [
-  {id:'am-routine', cat:'routine', title:'モーニングルーティン', start:390,  end:450, subs:[
-    {name:'起床・水分補給', start:390, end:405},
-    {name:'瞑想',           start:405, end:425},
-    {name:'シャワー・身支度', start:425, end:450},
+  {id:'am-routine', cat:'routine', title:'Morning Routine', start:420, end:510, subs:[
+    {name:'朝食&洗濯', start:420, end:460},
+    {name:'瞑想',       start:460, end:510},
   ]},
-  {id:'breakfast', cat:'meal', title:'朝食', start:450, end:480},
-  {id:'workout', cat:'workout', title:'筋トレ', start:480, end:540, subs:[
-    {name:'ウォームアップ', start:480, end:490},
-    {name:'ベンチプレス',   start:490, end:510},
-    {name:'スクワット',     start:510, end:530},
-    {name:'クールダウン',   start:530, end:540},
+  {id:'work-am', cat:'work', title:'仕事', start:600, end:720},
+  {id:'lunch', cat:'meal', title:'ランチ', start:720, end:780},
+  {id:'work-pm', cat:'work', title:'仕事', start:840, end:1020},
+  {id:'workout', cat:'workout', title:'筋トレ', start:1020, end:1110},
+  {id:'dinner', cat:'meal', title:'夕食&風呂', start:1110, end:1200},
+  {id:'work-eve', cat:'work', title:'仕事', start:1200, end:1365},
+  {id:'night-routine', cat:'routine', title:'Night Routine', start:1365, end:1410, subs:[
+    {name:'日記', start:1365, end:1380},
+    {name:'瞑想', start:1380, end:1410},
   ]},
-  {id:'work-am', cat:'work', title:'Work(午前)', start:540, end:720, subs:[
-    {name:'メール・タスク整理', start:540, end:570},
-    {name:'集中タスク',        start:570, end:690},
-    {name:'ミーティング',      start:690, end:720},
-  ]},
-  {id:'lunch', cat:'meal', title:'昼食・休憩', start:720, end:780},
-  {id:'work-pm', cat:'work', title:'Work(午後)', start:780, end:1080, subs:[
-    {name:'集中タスク',           start:780,  end:900},
-    {name:'休憩・軽いストレッチ',  start:900,  end:915},
-    {name:'タスク処理',           start:915,  end:1050},
-    {name:'振り返り・明日の計画',  start:1050, end:1080},
-  ]},
-  {id:'dinner', cat:'meal', title:'夕食', start:1080, end:1140},
-  {id:'ev-routine', cat:'routine', title:'イブニングルーティン', start:1140, end:1290, subs:[
-    {name:'散歩',     start:1140, end:1180},
-    {name:'自由時間', start:1180, end:1260},
-    {name:'片付け',   start:1260, end:1290},
-  ]},
-  {id:'night-routine', cat:'routine', title:'ナイトルーティン', start:1290, end:1380, subs:[
-    {name:'日記',     start:1290, end:1320},
-    {name:'瞑想',     start:1320, end:1340},
-    {name:'ストレッチ', start:1340, end:1360},
-    {name:'就寝準備', start:1360, end:1380},
-  ]},
-  {id:'sleep', cat:'sleep', title:'睡眠', start:1380, end:390},
+  {id:'sleep', cat:'sleep', title:'睡眠', start:1410, end:420},
 ];
 
 /* ================= ユーティリティ ================= */
@@ -1605,6 +1599,46 @@ $('#reset-schedule').addEventListener('click', () => {
   refreshHome();
   renderLegend();
 });
+
+/* ================= 初回チュートリアル ================= */
+const OB_SLIDES = [
+  {icon:'👋', title:'ようこそ、ADHDoへ', body:'By ADHD. For ADHD.\n1日の予定を「時間の流れ」で見える化するアプリです。\n\nすでにサンプルの1日が入っています。まずは眺めてみて、あとで自分の生活に合わせて作り替えましょう。'},
+  {icon:'⏰', title:'「今なにをする時間か」だけ見る', body:'今の時間帯の予定は「NOW」として大きく光ります。迷ったらNOWだけ見ればOK。\n\n終わったタスクは左の○をタップ → 紙吹雪と一緒に達成率とXPが上がります。'},
+  {icon:'🌿', title:'できない日があってもいい', body:'無理な日は「今日はスキップ」— 達成率にカウントされません。\n「明日へ送る」で持ち越しもできます。\n\n連続記録は1日休んでも切れない設計。自分を責めないことが続けるコツです。'},
+  {icon:'✏️', title:'自分の1日に作り替えよう', body:'・カードをタップ → 予定を編集\n・カードを長押し → 上下に並べ替え\n・右下の「+」→ 新しい予定を追加\n\n時間は自動で「切れ目なく」つながるので、順番を変えるだけでOK。'},
+  {icon:'🚀', title:'ほかにも', body:'・上のタブで24時間の円グラフに切り替え\n・瞑想タイマー(1〜30分)\n・カレンダーで毎日の達成率をふりかえり\n・設定でテンプレート保存・通知ON/OFF\n\nさあ、はじめよう!'},
+];
+let obIdx = 0;
+function renderOb(){
+  const s = OB_SLIDES[obIdx];
+  $('#ob-icon').textContent = s.icon;
+  $('#ob-title').textContent = s.title;
+  $('#ob-body').textContent = s.body;
+  $('#ob-dots').innerHTML = OB_SLIDES.map((_, i) =>
+    `<span style="width:8px;height:8px;border-radius:50%;background:${i === obIdx ? 'var(--brand)' : 'var(--surface-2)'}"></span>`).join('');
+  $('#ob-next').textContent = obIdx === OB_SLIDES.length - 1 ? 'はじめる' : '次へ';
+  $('#ob-skip').style.visibility = obIdx === OB_SLIDES.length - 1 ? 'hidden' : 'visible';
+}
+function closeOb(){
+  store.set('onboarded', true);
+  $('#onboard').classList.remove('show');
+}
+$('#ob-next').addEventListener('click', () => {
+  if(obIdx >= OB_SLIDES.length - 1){ closeOb(); return; }
+  obIdx++;
+  renderOb();
+});
+$('#ob-skip').addEventListener('click', closeOb);
+$('#show-onboard').addEventListener('click', () => {
+  obIdx = 0;
+  renderOb();
+  $('#onboard').classList.add('show');
+});
+if(!store.get('onboarded', false)){
+  obIdx = 0;
+  renderOb();
+  $('#onboard').classList.add('show');
+}
 
 /* ================= 起動・更新 ================= */
 function refreshHome(){
