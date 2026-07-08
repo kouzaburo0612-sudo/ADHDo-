@@ -107,7 +107,9 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .tl-head{display:flex;align-items:baseline;justify-content:space-between;margin:4px 2px 12px}
 .tl-head h2{font-size:16px;font-weight:700}
 .tl-head span{font-size:12px;color:var(--ink-3)}
-.tl{position:relative;padding-left:64px}
+.tl{position:relative;padding-left:64px;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.tl *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.tl.drag-active .tl-card,.tl.drag-active .tl-time,.tl.drag-active .tl-node{transition:none!important}
 .tl::before{
   content:"";position:absolute;left:56px;top:8px;bottom:8px;width:2px;
   background:var(--line);border-radius:2px;
@@ -277,8 +279,12 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .sub-del{background:none;border:none;color:var(--ink-3);font-size:18px;padding:2px 6px}
 .drag-h{color:var(--ink-3);font-size:15px;padding:2px 4px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;flex:none}
 .sub-edit.dragging{opacity:.55}
-.tl-item.drag-lift{z-index:30;position:relative}
-.tl-item.drag-lift .tl-card{transform:scale(1.03);border-color:var(--brand);box-shadow:0 10px 30px rgba(0,0,0,.55)}
+.tl-item.drag-lift{z-index:30;position:relative;opacity:.95}
+.tl-item.drag-lift .tl-card{border-color:var(--brand);box-shadow:0 10px 30px rgba(0,0,0,.55)}
+.drop-line{position:absolute;left:52px;right:4px;height:3px;background:var(--brand);border-radius:2px;z-index:25;box-shadow:0 0 10px var(--brand);pointer-events:none}
+#skip-wrap{margin:2px 0 20px}
+.skip-toggle{width:100%;background:none;border:1px dashed var(--line);color:var(--ink-3);border-radius:10px;padding:9px;font-size:12px;font-weight:600}
+.skip-list{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-top:8px;display:grid;gap:6px}
 .sheet-actions{display:flex;gap:10px;margin-top:20px}
 .sheet-actions .btn{flex:1;text-align:center;padding:12px}
 .btn.danger{color:var(--c-workout);border-color:color-mix(in srgb,var(--c-workout) 40%,transparent)}
@@ -426,9 +432,9 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   </div>
 
   <div id="view-tl">
-    <div id="carry-wrap"></div>
     <div class="tl-head"><h2>タイムライン</h2><button class="btn sm" id="ai-open">✨ AIプラン</button></div>
     <div class="tl" id="timeline"></div>
+    <div id="skip-wrap"></div>
     <button class="fab" id="fab-add" aria-label="予定を追加">+</button>
   </div>
 </section>
@@ -554,11 +560,12 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   </div>
   <div class="panel">
     <h3>1日の基本設定</h3>
-    <div class="setting-row"><span>起床時間</span><input type="time" value="06:30" style="width:132px"></div>
-    <div class="setting-row"><span>就寝時間</span><input type="time" value="23:00" style="width:132px"></div>
+    <div class="setting-row"><span>起床時間</span><input type="time" id="wake-time" style="width:132px"></div>
+    <div class="setting-row"><span>就寝時間</span><input type="time" id="sleep-time" style="width:132px"></div>
+    <p style="font-size:11px;color:var(--ink-3);margin-top:6px">就寝〜起床の時間は、タイムラインと24Hグラフに「睡眠」として自動で組み込まれます。</p>
   </div>
   <p class="tagline">By ADHD. <b>For ADHD.</b></p>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.4</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.5</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -685,7 +692,6 @@ const DEFAULT_SCHEDULE = [
     {name:'日記', start:1365, end:1380},
     {name:'瞑想', start:1380, end:1410},
   ]},
-  {id:'sleep', cat:'sleep', title:'睡眠', start:1410, end:420},
 ];
 
 /* ================= ユーティリティ ================= */
@@ -734,8 +740,6 @@ function overdueCount(){
       e.subs.forEach((s, i) => { if(s.start < s.end && n >= s.end && doneData.items[e.id + '/' + i] !== true) c++; });
     }else if(e.start < e.end && n >= e.end && doneData.items[e.id] !== true) c++;
   }
-  const carry = store.get('carry', null);
-  if(carry && carry.date === todayKey()) c += carry.items.filter(it => !it.done).length;
   return c;
 }
 function syncBadge(){
@@ -761,8 +765,28 @@ function syncNative(){
 
 // 編集したスケジュールは端末に保存。なければ初期スケジュール
 let SCHEDULE = store.get('schedule', null) || JSON.parse(JSON.stringify(DEFAULT_SCHEDULE));
-function persistSchedule(){
-  SCHEDULE.sort((a,b) => a.start - b.start);
+
+// 旧データ移行: 予定として入っていた睡眠は「1日の基本設定」に取り込み、予定からは外す
+(function migrateSleep(){
+  const sleeps = SCHEDULE.filter(e => e.cat === 'sleep');
+  if(!sleeps.length) return;
+  store.set('sleepAt', sleeps[0].start);
+  store.set('wake', sleeps[0].end);
+  SCHEDULE = SCHEDULE.filter(e => e.cat !== 'sleep');
+  store.set('schedule', SCHEDULE);
+})();
+
+// 睡眠は予定ではなく設定から自動生成(起床〜就寝以外=睡眠)
+const getWake = () => store.get('wake', 420);
+const getSleepAt = () => store.get('sleepAt', 1410);
+const sleepEvent = () => ({id: '__sleep', cat: 'sleep', title: '睡眠', start: getSleepAt(), end: getWake()});
+// 表示対象 = スキップ中を除いた予定 + 睡眠
+function visibleEvents(){
+  return [...SCHEDULE.filter(e => !skipStateOf(e.id)), sleepEvent()];
+}
+
+function persistSchedule(sort = true){
+  if(sort) SCHEDULE.sort((a,b) => a.start - b.start);
   store.set('schedule', SCHEDULE);
   refreshHome();
   renderLegend();
@@ -794,29 +818,11 @@ function toggleDone(key, clickPos){
 }
 
 /* ================= 許す仕組み(スキップ / 明日へ持ち越し) ================= */
-const tomorrowKey = () => { const d = new Date(Date.now() + 86400000); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; };
-function setSkip(id, mode){ // mode: 'skip' | 'carry' | null(解除)
+function setSkip(id, mode){ // mode: 'skip' | null(解除)
   if(mode) doneData.skips[id] = mode;
   else delete doneData.skips[id];
   store.set('done', doneData);
   refreshHome();
-}
-function sendToTomorrow(ev){
-  let carry = store.get('carry', null);
-  if(!carry || carry.date !== tomorrowKey()) carry = {date: tomorrowKey(), items: []};
-  carry.items.push({title: ev.title, cat: ev.cat, done: false});
-  store.set('carry', carry);
-  setSkip(ev.id, 'carry');
-}
-function renderCarry(){
-  const wrap = $('#carry-wrap');
-  const carry = store.get('carry', null);
-  if(!carry || carry.date !== todayKey() || !carry.items.length){ wrap.innerHTML = ''; return; }
-  wrap.innerHTML = `<div class="carry-panel"><h4>📦 昨日からの持ち越し</h4>${carry.items.map((it, i) => `
-    <div class="sub${it.done ? ' done' : ''}" style="padding:4px 0">
-      <button class="s-check${it.done ? ' on' : ''}" data-carry-i="${i}">${it.done ? '✓' : ''}</button>
-      <span class="s-name">${CATS[it.cat] ? CATS[it.cat].icon + ' ' : ''}${esc(it.title)}</span>
-    </div>`).join('')}</div>`;
 }
 
 /* ================= XP・レベル ================= */
@@ -858,7 +864,7 @@ function renderTimeline(){
   const n = nowMin();
   const tl = $('#timeline');
   tl.innerHTML = '';
-  for(const e of SCHEDULE){
+  for(const e of visibleEvents()){
     const cat = CATS[e.cat];
     const checkable = e.cat !== 'sleep';
     const hasSubs = !!(e.subs && e.subs.length);
@@ -878,12 +884,10 @@ function renderTimeline(){
     const pct = Math.min(100, Math.round(elapsed / dur(e) * 100));
     const remain = dur(e) - elapsed;
 
-    // スキップ/持ち越しのクイック操作(未完了カードに表示)
+    // スキップのクイック操作(未完了カードに表示)
     let quick = '';
-    if(skipState){
-      quick = `<div class="quick"><button data-unskip="${e.id}">元に戻す</button></div>`;
-    }else if(checkable && !fullyDone){
-      quick = `<div class="quick"><button data-skip="${e.id}">今日はスキップ</button><button data-carry="${e.id}">明日へ送る</button></div>`;
+    if(checkable && !fullyDone){
+      quick = `<div class="quick"><button data-skip="${e.id}">今日はスキップ</button></div>`;
     }
 
     item.innerHTML = `
@@ -917,8 +921,27 @@ function renderTimeline(){
       </div>`;
     tl.appendChild(item);
   }
-  renderCarry();
+  renderSkipped();
 }
+
+// スキップ中の予定は畳んで一覧に(タップで復帰できる)
+let showSkipped = false;
+function renderSkipped(){
+  const wrap = $('#skip-wrap');
+  const skipped = SCHEDULE.filter(e => skipStateOf(e.id));
+  if(!skipped.length){ wrap.innerHTML = ''; showSkipped = false; return; }
+  wrap.innerHTML = `
+    <button class="skip-toggle" id="skip-toggle">🙈 スキップ中の予定 ${skipped.length}件${showSkipped ? ' ▲' : ' ▼'}</button>
+    ${showSkipped ? `<div class="skip-list">${skipped.map(e => `
+      <div class="sub"><span class="s-name">${CATS[e.cat].icon} ${esc(e.title)}</span>
+      <span class="s-time">${fmt(e.start)}–${fmt(e.end)}</span>
+      <button class="btn sm" data-unskip="${e.id}">元に戻す</button></div>`).join('')}</div>` : ''}`;
+}
+$('#skip-wrap').addEventListener('click', e => {
+  const un = e.target.closest('[data-unskip]');
+  if(un){ setSkip(un.dataset.unskip, null); return; }
+  if(e.target.closest('#skip-toggle')){ showSkipped = !showSkipped; renderSkipped(); }
+});
 
 function scrollToNow(smooth=true){
   if(!store.get('set.autoscroll', true)) return;
@@ -938,9 +961,9 @@ function arcPath(rO,rI,a0,a1){
 const toDeg = m => m/1440*360;
 
 function chartSegments(){
-  // 日付またぎを分割してチャート用セグメントに
+  // 日付またぎを分割してチャート用セグメントに(スキップ中は除外・睡眠は設定から)
   const segs = [];
-  for(const e of SCHEDULE){
+  for(const e of visibleEvents()){
     if(e.start < e.end) segs.push({...e, s:e.start, t:e.end});
     else { segs.push({...e, s:e.start, t:1440}); segs.push({...e, s:0, t:e.end, wrapped:true}); }
   }
@@ -1008,7 +1031,7 @@ function renderClock(){
   const [nx0,ny0] = polar(R_IN - 2, nd), [nx1,ny1] = polar(R_OUT + 9, nd);
   html += `<line x1="${nx0}" y1="${ny0}" x2="${nx1}" y2="${ny1}" stroke="#fff" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>`;
   html += `<circle cx="${nx1}" cy="${ny1}" r="4.5" fill="#fff"/>`;
-  const cur = SCHEDULE.find(e => isActive(e, n));
+  const cur = visibleEvents().find(e => isActive(e, n));
   if(cur) html += `<circle cx="${nx1}" cy="${ny1}" r="8" fill="none" stroke="${CATS[cur.cat].hex}" stroke-width="2"><animate attributeName="r" values="6;11;6" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0;1" dur="2s" repeatCount="indefinite"/></circle>`;
 
   svg.innerHTML = html;
@@ -1016,6 +1039,7 @@ function renderClock(){
   // 中央表示
   const d = new Date();
   $('#cc-time').textContent = fmt(n);
+  // (curは上でvisibleEvents基準で取得済み)
   $('#cc-day').textContent = `${d.getMonth()+1}/${d.getDate()} ${'日月火水木金土'[d.getDay()]}曜日`;
   if(cur){
     const c = CATS[cur.cat];
@@ -1028,7 +1052,8 @@ function renderClock(){
   // タップで詳細&タイムラインへ
   svg.querySelectorAll('.seg').forEach(p => p.addEventListener('click', ev => {
     ev.stopPropagation();
-    const e = SCHEDULE.find(x => x.id === p.dataset.id);
+    const e = visibleEvents().find(x => x.id === p.dataset.id);
+    if(!e) return;
     const tip = $('#chart-tip');
     tip.innerHTML = `<b style="color:${CATS[e.cat].hex}">${CATS[e.cat].icon} ${esc(e.title)}</b> <span class="t">${fmt(e.start)}–${fmt(e.end)} (${durLabel(dur(e))})</span>`;
     tip.classList.add('show');
@@ -1049,7 +1074,7 @@ function renderClock(){
 
 function renderLegend(){
   const totals = {};
-  for(const e of SCHEDULE) totals[e.cat] = (totals[e.cat] || 0) + dur(e);
+  for(const e of visibleEvents()) totals[e.cat] = (totals[e.cat] || 0) + dur(e);
   $('#legend').innerHTML = Object.entries(CATS).filter(([k]) => totals[k]).map(([k,c]) =>
     `<span class="item"><span class="dot" style="background:${c.hex}"></span>${c.name} <b>${(totals[k]/60).toFixed(totals[k]%60?1:0)}h</b></span>`
   ).join('');
@@ -1127,6 +1152,12 @@ $('#profile-name').addEventListener('input', e => {
   store.set('name', e.target.value);
   $('#avatar').textContent = (e.target.value || 'A')[0];
 });
+// 起床・就寝時間(睡眠はここから自動生成)
+$('#wake-time').value = fmt(getWake());
+$('#sleep-time').value = fmt(getSleepAt());
+$('#wake-time').addEventListener('change', e => { if(e.target.value){ store.set('wake', toMin(e.target.value)); refreshHome(); renderLegend(); syncNative(); } });
+$('#sleep-time').addEventListener('change', e => { if(e.target.value){ store.set('sleepAt', toMin(e.target.value)); refreshHome(); renderLegend(); syncNative(); } });
+
 document.querySelectorAll('.toggle').forEach(t => {
   const k = 'set.' + t.dataset.key;
   t.classList.toggle('on', store.get(k, true));
@@ -1143,7 +1174,7 @@ let editing = null;
 let edCat = 'routine';
 
 function renderCatChips(){
-  $('#ed-cats').innerHTML = Object.entries(CATS).map(([k,c]) =>
+  $('#ed-cats').innerHTML = Object.entries(CATS).filter(([k]) => k !== 'sleep').map(([k,c]) =>
     `<button class="cat-chip${k===edCat?' sel':''}" data-cat="${k}" ${k===edCat?`style="background:${c.hex}"`:''}>${c.icon} ${c.name}</button>`
   ).join('');
 }
@@ -1165,29 +1196,92 @@ function addSubRow(sub){
     <input type="time" class="se-start" value="${sub ? fmt(sub.start) : prevEnd}">
     <input type="time" class="se-end" value="${sub ? fmt(sub.end) : $('#ed-end').value}">
     <button class="sub-del" aria-label="削除">×</button>`;
-  row.querySelector('.sub-del').addEventListener('click', () => { row.remove(); rechainSubRows(); });
+  row.querySelector('.sub-del').addEventListener('click', () => { row.remove(); normalizeSubRows(null); });
   $('#ed-subs').appendChild(row);
+  row.dataset.ps = row.querySelector('.se-start').value;
+  row.dataset.pe = row.querySelector('.se-end').value;
+  if(!sub) normalizeSubRows(null);
 }
 $('#ed-addsub').addEventListener('click', () => addSubRow(null));
 
-// サブ項目の数珠繋ぎ: 各行の長さを保ったまま、上の終了=下の開始になるよう再計算
-function rechainSubRows(){
-  const rows = [...document.querySelectorAll('#ed-subs .sub-edit')];
+// サブ項目の時間ルール:
+// - 基本は数珠繋ぎ(終了を変えると後続がその分だけスライド。間隔は保持)
+// - 開始を遅らせて「間隔」を作るのもOK(その行以降が丸ごとスライド)
+// - 重なりは自動で解消、大項目の時間範囲は絶対に超えない
+function subRows(){ return [...document.querySelectorAll('#ed-subs .sub-edit')]; }
+function rowTimes(r){
+  const s = r.querySelector('.se-start').value, e = r.querySelector('.se-end').value;
+  return (s && e) ? [toMin(s), toMin(e)] : null;
+}
+function writeRow(r, s, e){
+  r.querySelector('.se-start').value = fmt(s);
+  r.querySelector('.se-end').value = fmt(e);
+  r.dataset.ps = fmt(s);
+  r.dataset.pe = fmt(e);
+}
+function normalizeSubRows(changedRow, which){
+  const rows = subRows();
+  const evS = $('#ed-start').value ? toMin($('#ed-start').value) : 0;
+  const evE = $('#ed-end').value ? toMin($('#ed-end').value) : 1439;
+  const idx = changedRow ? rows.indexOf(changedRow) : -1;
+
+  // 変更行より後ろを、変更量ぶんスライド(間隔は保持)
+  if(changedRow){
+    const t = rowTimes(changedRow);
+    if(t){
+      let delta = 0;
+      if(which === 'end' && changedRow.dataset.pe) delta = t[1] - toMin(changedRow.dataset.pe);
+      if(which === 'start' && changedRow.dataset.ps){
+        delta = t[0] - toMin(changedRow.dataset.ps);
+        writeRow(changedRow, t[0], t[1] + delta); // 開始を動かしたら長さを保って終了も移動
+      }
+      if(delta){
+        for(let i = idx + 1; i < rows.length; i++){
+          const ti = rowTimes(rows[i]);
+          if(ti) writeRow(rows[i], ti[0] + delta, ti[1] + delta);
+        }
+      }
+    }
+  }
+
+  // 重なり解消 → 大項目の範囲にクランプ
   let prevEnd = null;
   for(const r of rows){
-    const s = r.querySelector('.se-start'), en = r.querySelector('.se-end');
-    if(!s.value || !en.value) continue;
-    const d = (toMin(en.value) - toMin(s.value) + 1440) % 1440;
-    if(prevEnd !== null){
-      s.value = prevEnd;
-      en.value = fmt((toMin(prevEnd) + d) % 1440);
+    let t = rowTimes(r);
+    if(!t) continue;
+    let [s, e] = t;
+    if(e < s) e = s;
+    if(prevEnd !== null && s < prevEnd){ const d = e - s; s = prevEnd; e = s + d; } // 重なりは詰める(間隔はOK)
+    if(evS < evE){ // 大項目の範囲内に収める
+      s = Math.min(Math.max(s, evS), evE);
+      e = Math.min(Math.max(e, s), evE);
     }
-    prevEnd = en.value;
+    writeRow(r, s, e);
+    prevEnd = e;
   }
 }
+// ドラッグ並べ替え後は「数珠繋ぎ」で組み直す(先頭行の開始が基準)
+function rechainSubRows(){
+  const rows = subRows();
+  let prevEnd = null;
+  for(const r of rows){
+    const t = rowTimes(r);
+    if(!t) continue;
+    const d = Math.max(0, t[1] - t[0]);
+    if(prevEnd === null){ writeRow(r, t[0], t[0] + d); prevEnd = t[0] + d; }
+    else { writeRow(r, prevEnd, prevEnd + d); prevEnd += d; }
+  }
+  normalizeSubRows(null);
+}
 $('#ed-subs').addEventListener('change', e => {
-  if(e.target.classList.contains('se-end') || e.target.classList.contains('se-start')) rechainSubRows();
+  const row = e.target.closest('.sub-edit');
+  if(!row) return;
+  if(e.target.classList.contains('se-end')) normalizeSubRows(row, 'end');
+  else if(e.target.classList.contains('se-start')) normalizeSubRows(row, 'start');
 });
+// 大項目の時間を変えたら範囲クランプをかけ直す
+$('#ed-start').addEventListener('change', () => normalizeSubRows(null));
+$('#ed-end').addEventListener('change', () => normalizeSubRows(null));
 
 // ⠿ハンドルのドラッグでサブ項目を並べ替え
 let subDrag = null;
@@ -1244,11 +1338,15 @@ $('#ed-save').addEventListener('click', () => {
   const start = toMin($('#ed-start').value), end = toMin($('#ed-end').value);
   if(start === end) return edError('開始と終了が同じ時間です');
 
-  const subs = [...document.querySelectorAll('#ed-subs .sub-edit')].map(r => ({
-    name: r.querySelector('.se-name').value.trim(),
-    start: r.querySelector('.se-start').value ? toMin(r.querySelector('.se-start').value) : start,
-    end: r.querySelector('.se-end').value ? toMin(r.querySelector('.se-end').value) : end,
-  })).filter(s => s.name);
+  const subs = [...document.querySelectorAll('#ed-subs .sub-edit')].map(r => {
+    let ss = r.querySelector('.se-start').value ? toMin(r.querySelector('.se-start').value) : start;
+    let se = r.querySelector('.se-end').value ? toMin(r.querySelector('.se-end').value) : end;
+    if(start < end){ // サブ項目は大項目の範囲を絶対に超えない
+      ss = Math.min(Math.max(ss, start), end);
+      se = Math.min(Math.max(se, ss), end);
+    }
+    return { name: r.querySelector('.se-name').value.trim(), start: ss, end: se };
+  }).filter(s => s.name);
 
   if(editing){
     Object.assign(editing, {title, cat: edCat, start, end});
@@ -1274,60 +1372,97 @@ $('#ed-cancel').addEventListener('click', closeEditor);
 $('#editor').addEventListener('click', e => { if(e.target === $('#editor')) closeEditor(); });
 $('#fab-add').addEventListener('click', () => openEditor(null));
 
-// 予定カードの長押しドラッグで並べ替え(時間は切れ目なく数珠繋ぎで自動再計算)
-function rechainEvents(){
-  for(let i = 1; i < SCHEDULE.length; i++){
-    const prev = SCHEDULE[i - 1], e = SCHEDULE[i];
+// 予定カードの長押しドラッグで並べ替え
+// - ドラッグ中はカードが指に追従し、挿入位置はティールのラインで表示(表示は崩れない)
+// - 離した時に並べ替え確定。各予定の「長さ」と「予定間の間隔」は保ったまま時間を再計算
+function applyReorder(from, to){
+  const vis = SCHEDULE.filter(e => !skipStateOf(e.id));
+  const skipped = SCHEDULE.filter(e => skipStateOf(e.id));
+  if(!vis.length || from === to || from < 0 || to < 0) return;
+  const anchor = vis[0].start;
+  const gaps = vis.map((e, i) => i === 0 ? 0 : (e.start - vis[i-1].end + 1440) % 1440);
+  const moved = vis.splice(from, 1)[0];
+  vis.splice(to, 0, moved);
+  let cur = anchor;
+  vis.forEach((e, i) => {
     const d = dur(e);
-    e.start = prev.end % 1440;
-    e.end = (e.start + d) % 1440;
-    if(e.subs && e.subs.length){
-      let pEnd = e.start;
-      for(const s of e.subs){
-        const sd = (s.end - s.start + 1440) % 1440;
-        s.start = pEnd;
-        s.end = (pEnd + sd) % 1440;
-        pEnd = s.end;
-      }
-    }
-  }
+    const start = i === 0 ? anchor : (cur + gaps[i]) % 1440;
+    const shift = (start - e.start + 1440) % 1440;
+    if(shift && e.subs) e.subs.forEach(s => { s.start = (s.start + shift) % 1440; s.end = (s.end + shift) % 1440; });
+    e.start = start;
+    e.end = (start + d) % 1440;
+    cur = e.end;
+  });
+  SCHEDULE = [...vis, ...skipped];
+  persistSchedule(false);
 }
-let tlDrag = null, tlPress = null, tlDownY = 0, suppressClick = false;
+
+let tlDrag = null, tlPress = null, tlDownX = 0, tlDownY = 0, dragIdx = -1, dropIdx = -1, dropLine = null, suppressClick = false;
+const tlItems = () => [...$('#timeline').querySelectorAll('.tl-item')].filter(el => el.dataset.id !== '__sleep');
+
+function positionDropLine(){
+  const items = tlItems();
+  if(!dropLine || !items.length) return;
+  let y;
+  if(dropIdx >= items.length){
+    const last = items[items.length - 1];
+    y = last.offsetTop + last.offsetHeight + 3;
+  }else{
+    y = items[dropIdx].offsetTop - 9;
+  }
+  dropLine.style.top = y + 'px';
+}
+
 $('#timeline').addEventListener('pointerdown', e => {
   const item = e.target.closest('.tl-item');
-  if(!item || e.target.closest('button, input')) return;
-  tlDownY = e.clientY;
+  if(!item || item.dataset.id === '__sleep' || e.target.closest('button, input')) return;
+  tlDownX = e.clientX; tlDownY = e.clientY;
   clearTimeout(tlPress);
   tlPress = setTimeout(() => {
     tlDrag = item;
+    dragIdx = tlItems().indexOf(item);
+    dropIdx = dragIdx;
+    $('#timeline').classList.add('drag-active');
+    document.querySelector('.tl').classList.add('drag-active');
     item.classList.add('drag-lift');
+    dropLine = document.createElement('div');
+    dropLine.className = 'drop-line';
+    $('#timeline').appendChild(dropLine);
+    positionDropLine();
     if(navigator.vibrate) navigator.vibrate(10);
-  }, 400);
+  }, 350);
 });
 $('#timeline').addEventListener('touchmove', e => { if(tlDrag) e.preventDefault(); }, {passive: false});
 document.addEventListener('pointermove', e => {
-  if(tlPress && Math.abs(e.clientY - tlDownY) > 12){ clearTimeout(tlPress); tlPress = null; }
+  if(tlPress && Math.hypot(e.clientX - tlDownX, e.clientY - tlDownY) > 12){ clearTimeout(tlPress); tlPress = null; }
   if(!tlDrag) return;
-  const tlEl = $('#timeline');
-  const others = [...tlEl.querySelectorAll('.tl-item')].filter(r => r !== tlDrag);
-  let placed = false;
-  for(const r of others){
-    const rect = r.getBoundingClientRect();
-    if(e.clientY < rect.top + rect.height / 2){ tlEl.insertBefore(tlDrag, r); placed = true; break; }
+  // カードは指に追従(DOMは動かさないので表示は崩れない)
+  tlDrag.querySelector('.tl-card').style.transform = `translateY(${e.clientY - tlDownY}px) scale(1.02)`;
+  const items = tlItems();
+  dropIdx = items.length;
+  for(let i = 0; i < items.length; i++){
+    if(items[i] === tlDrag) continue;
+    const r = items[i].getBoundingClientRect();
+    if(e.clientY < r.top + r.height / 2){ dropIdx = i; break; }
   }
-  if(!placed) tlEl.appendChild(tlDrag);
+  positionDropLine();
 });
 document.addEventListener('pointerup', () => {
   clearTimeout(tlPress); tlPress = null;
   if(!tlDrag) return;
+  tlDrag.querySelector('.tl-card').style.transform = '';
   tlDrag.classList.remove('drag-lift');
-  tlDrag = null;
-  const order = [...$('#timeline').querySelectorAll('.tl-item')].map(el => el.dataset.id);
-  SCHEDULE.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-  rechainEvents();
+  $('#timeline').classList.remove('drag-active');
+  document.querySelector('.tl').classList.remove('drag-active');
+  if(dropLine){ dropLine.remove(); dropLine = null; }
+  const from = dragIdx;
+  let to = dropIdx;
+  if(to > from) to--;
+  tlDrag = null; dragIdx = -1; dropIdx = -1;
   suppressClick = true;
   setTimeout(() => { suppressClick = false; }, 400);
-  persistSchedule();
+  if(to === from || to < 0){ renderTimeline(); return; }
+  applyReorder(from, to);
 });
 
 // ○タップで完了トグル / スキップ・持ち越し / 集中タイマー / カードをタップで編集
@@ -1341,37 +1476,12 @@ $('#timeline').addEventListener('click', e => {
   }
   const skipBtn = e.target.closest('[data-skip]');
   if(skipBtn){ setSkip(skipBtn.dataset.skip, 'skip'); return; }
-  const carryBtn = e.target.closest('[data-carry]');
-  if(carryBtn){
-    const ev = SCHEDULE.find(x => x.id === carryBtn.dataset.carry);
-    if(ev) sendToTomorrow(ev);
-    return;
-  }
-  const unskipBtn = e.target.closest('[data-unskip]');
-  if(unskipBtn){ setSkip(unskipBtn.dataset.unskip, null); return; }
   const focusBtn = e.target.closest('[data-focus]');
   if(focusBtn){ openFocus(focusBtn.dataset.focus); return; }
   const item = e.target.closest('.tl-item');
   if(!item) return;
   const ev = SCHEDULE.find(x => x.id === item.dataset.id);
   if(ev) openEditor(ev);
-});
-
-// 持ち越しタスクのチェック
-$('#carry-wrap').addEventListener('click', e => {
-  const b = e.target.closest('[data-carry-i]');
-  if(!b) return;
-  const carry = store.get('carry', null);
-  if(!carry) return;
-  const it = carry.items[+b.dataset.carryI];
-  it.done = !it.done;
-  store.set('carry', carry);
-  addXP(it.done ? 10 : -10);
-  if(it.done){
-    const r = b.getBoundingClientRect();
-    confettiBurst(r.left + r.width/2, r.top + r.height/2);
-  }
-  refreshHome();
 });
 
 /* ================= 集中タイマー(ポモドーロ) ================= */
@@ -1453,12 +1563,6 @@ function renderAch(){
       total++;
       if(isDone(e.id)) done++;
     }
-  }
-  // 持ち越しタスクも達成率に含める
-  const carry = store.get('carry', null);
-  if(carry && carry.date === todayKey()){
-    total += carry.items.length;
-    done += carry.items.filter(it => it.done).length;
   }
   const pct = total ? Math.round(done / total * 100) : 0;
   $('#ach-pct').textContent = pct + '%';
@@ -1571,7 +1675,7 @@ function autoApplyTemplate(){
   const day = new Date().getDay();
   const t = store.get('templates', [null, null, null]).find(t => t && t.days && t.days.includes(day));
   if(!t) return;
-  SCHEDULE = JSON.parse(JSON.stringify(t.schedule));
+  SCHEDULE = JSON.parse(JSON.stringify(t.schedule)).filter(e => e.cat !== 'sleep');
   store.set('schedule', SCHEDULE);
 }
 $('#tpl-list').addEventListener('click', e => {
@@ -1600,7 +1704,7 @@ $('#tpl-list').addEventListener('click', e => {
   }else if(b.dataset.tplLoad != null){
     const t = tpls[+b.dataset.tplLoad];
     if(!t || !confirm(`「${t.name}」を読み込みますか?\n今のスケジュールは置き換わります`)) return;
-    SCHEDULE = JSON.parse(JSON.stringify(t.schedule));
+    SCHEDULE = JSON.parse(JSON.stringify(t.schedule)).filter(e => e.cat !== 'sleep');
     persistSchedule();
     renderTemplates();
     alert(`「${t.name}」を読み込みました`);
@@ -1748,7 +1852,7 @@ $('#ai-key').addEventListener('input', e => store.set('aikey', e.target.value.tr
 
 function freeGaps(){
   const covered = [];
-  for(const e of SCHEDULE){
+  for(const e of visibleEvents()){
     if(e.start < e.end) covered.push([e.start, e.end]);
     else { covered.push([e.start, 1440]); covered.push([0, e.end]); }
   }
@@ -1849,7 +1953,7 @@ ${tasks}
 const OB_SLIDES = [
   {icon:'👋', title:'ようこそ、ADHDoへ', body:'By ADHD. For ADHD.\n1日の予定を「時間の流れ」で見える化するアプリです。\n\nすでにサンプルの1日が入っています。まずは眺めてみて、あとで自分の生活に合わせて作り替えましょう。'},
   {icon:'⏰', title:'「今なにをする時間か」だけ見る', body:'今の時間帯の予定は「NOW」として大きく光ります。迷ったらNOWだけ見ればOK。\n\n終わったタスクは左の○をタップ → 紙吹雪と一緒に達成率とXPが上がります。'},
-  {icon:'🌿', title:'できない日があってもいい', body:'無理な日は「今日はスキップ」— 達成率にカウントされません。\n「明日へ送る」で持ち越しもできます。\n\n連続記録は1日休んでも切れない設計。自分を責めないことが続けるコツです。'},
+  {icon:'🌿', title:'できない日があってもいい', body:'無理な日は「今日はスキップ」— その予定は今日の達成率にカウントされず、タイムラインからも片付きます。\n\n連続記録は1日休んでも切れない設計。自分を責めないことが続けるコツです。'},
   {icon:'✏️', title:'自分の1日に作り替えよう', body:'・カードをタップ → 予定を編集\n・カードを長押し → 上下に並べ替え\n・右下の「+」→ 新しい予定を追加\n\n時間は自動で「切れ目なく」つながるので、順番を変えるだけでOK。'},
   {icon:'🚀', title:'ほかにも', body:'・上のタブで24時間の円グラフに切り替え\n・瞑想タイマー(1〜30分)\n・カレンダーで毎日の達成率をふりかえり\n・設定でテンプレート保存・通知ON/OFF\n\nさあ、はじめよう!'},
 ];
