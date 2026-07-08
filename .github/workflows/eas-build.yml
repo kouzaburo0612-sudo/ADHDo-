@@ -39,5 +39,6 @@ jobs:
           EXPO_APPLE_TEAM_ID: 8332N8C6UX
           EXPO_APPLE_TEAM_TYPE: INDIVIDUAL
         # 新ターゲットの署名プロファイル生成は対話モード限定のため、疑似TTYで
-        # 確認プロンプトに既定値(Enter=Yes)を自動応答する。生成済みなら質問は出ない
-        run: yes "" | script -qec "eas build --platform ios --profile production --auto-submit" /dev/null
+        # 確認プロンプトに既定値(Enter=Yes)を自動応答する。生成済みなら質問は出ない。
+        # CI/GITHUB_ACTIONS変数があるとEAS CLIが強制的に非対話モードになるため外す
+        run: yes "" | script -qec "env -u CI -u GITHUB_ACTIONS eas build --platform ios --profile production --auto-submit" /dev/null
