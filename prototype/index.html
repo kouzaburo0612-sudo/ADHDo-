@@ -314,6 +314,10 @@ nav.footer button.active svg{stroke-width:2.2}
 }
 .btn.primary{background:var(--brand);border-color:var(--brand);color:#0d1017;font-weight:700}
 .btn.sm{padding:6px 11px;font-size:12px}
+.tpl-days{display:flex;gap:5px;padding:2px 0 10px;border-bottom:1px solid var(--line);align-items:center}
+.tpl-days .lbl{font-size:10px;color:var(--ink-3);margin-right:2px}
+.day-chip{width:28px;height:28px;border-radius:50%;padding:0;font-size:11px;font-weight:700;background:var(--surface-2);border:1px solid var(--line);color:var(--ink-3)}
+.day-chip.on{background:var(--brand);border-color:var(--brand);color:#0d1017}
 textarea,input[type=text],input[type=time]{
   width:100%;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);
   border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none;
@@ -423,7 +427,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
 
   <div id="view-tl">
     <div id="carry-wrap"></div>
-    <div class="tl-head"><h2>タイムライン</h2><span>○完了 / タップ編集 / 長押しで並べ替え</span></div>
+    <div class="tl-head"><h2>タイムライン</h2><button class="btn sm" id="ai-open">✨ AIプラン</button></div>
     <div class="tl" id="timeline"></div>
     <button class="fab" id="fab-add" aria-label="予定を追加">+</button>
   </div>
@@ -467,6 +471,13 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   <div class="cal-grid" id="cal-dow"></div>
   <div class="cal-grid" id="cal-grid" style="margin-top:6px"></div>
   <div class="panel" style="margin-top:16px">
+    <h3>📊 今週のレビュー</h3>
+    <div class="ach-top" style="margin-top:4px"><span>今週の平均達成率</span><b id="wk-avg">–</b></div>
+    <div class="ach-top" style="margin-top:8px"><span>完了タスク数</span><b id="wk-done">–</b></div>
+    <div class="ach-top" style="margin-top:8px"><span>ベストの日</span><b id="wk-best">–</b></div>
+    <p id="wk-note" style="font-size:11px;color:var(--ink-3);margin-top:8px"></p>
+  </div>
+  <div class="panel">
     <div class="ach-top"><span>🔥 連続記録(1日休んでも切れません)</span><b id="cal-streak">–</b></div>
     <div class="ach-top" style="margin-top:10px"><span>直近7日の平均達成率</span><b id="cal-week">–</b></div>
   </div>
@@ -491,6 +502,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   <div class="panel">
     <h3>設定</h3>
     <div class="setting-row"><span>リマインダー通知</span><div class="toggle on" data-key="notify"></div></div>
+    <div class="setting-row"><span>サブ項目も通知する</span><div class="toggle on" data-key="subnotify"></div></div>
     <div class="setting-row"><span>通知のテスト</span><button class="btn sm" id="notify-test">5秒後に通知</button></div>
     <p id="notify-status" style="font-size:11px;color:var(--ink-3);margin-top:8px;line-height:1.6">ネイティブ通知: 未接続(Web版では通知は使えません。Expo版で有効になります)</p>
     <div class="setting-row"><span>サウンド</span><div class="toggle on" data-key="sound"></div></div>
@@ -501,9 +513,29 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   <div class="panel">
     <h3>スケジュールテンプレート</h3>
     <p style="font-size:12.5px;color:var(--ink-2);line-height:1.7;margin-bottom:6px">
-      今のスケジュールを保存して、いつでも呼び出せます(3つまで)。「平日用」「休日用」などに。
+      今のスケジュールを保存して、いつでも呼び出せます(3つまで)。曜日を選ぶと、その曜日になった時に自動で読み込まれます。
     </p>
     <div id="tpl-list"></div>
+  </div>
+  <div class="panel">
+    <h3>✨ AIプランニング</h3>
+    <p style="font-size:12.5px;color:var(--ink-2);line-height:1.7;margin-bottom:10px">
+      AnthropicのAPIキーを入れると、ホームの「✨AIプラン」でタスクを空き時間に自動配置できます。キーは端末内にのみ保存されます。
+    </p>
+    <input type="text" id="ai-key" placeholder="sk-ant-..." autocomplete="off">
+    <p style="font-size:11px;color:var(--ink-3);margin-top:8px">キーの発行: console.anthropic.com → API Keys(従量課金)</p>
+  </div>
+  <div class="panel">
+    <h3>💾 バックアップと復元</h3>
+    <p style="font-size:12.5px;color:var(--ink-2);line-height:1.7;margin-bottom:10px">
+      スケジュール・チェック履歴・XPなど全データを文字として書き出します。メモアプリ等に保管し、機種変更時などに貼り戻して復元してください。
+    </p>
+    <textarea id="backup-text" rows="3" placeholder="「書き出す」を押すとここにデータが出ます / 復元は保管していた文字列を貼って「復元する」"></textarea>
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <button class="btn primary" id="backup-export" style="flex:1">書き出す(コピー)</button>
+      <button class="btn" id="backup-import" style="flex:1">復元する</button>
+    </div>
+    <p id="backup-status" style="font-size:12px;color:var(--brand);margin-top:8px;display:none"></p>
   </div>
   <div class="panel">
     <h3>Googleカレンダー連携</h3>
@@ -526,7 +558,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <div class="setting-row"><span>就寝時間</span><input type="time" value="23:00" style="width:132px"></div>
   </div>
   <p class="tagline">By ADHD. <b>For ADHD.</b></p>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.3</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.4</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -551,6 +583,20 @@ textarea:focus,input:focus{border-color:var(--c-work)}
       <button class="btn danger" id="ed-delete">削除</button>
       <button class="btn" id="ed-cancel">キャンセル</button>
       <button class="btn primary" id="ed-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ AIプランニング ============ -->
+<div class="modal center" id="aiplan">
+  <div class="focus-box" style="text-align:left">
+    <h3 style="font-size:16px;font-weight:800;margin-bottom:6px">✨ AIプランニング</h3>
+    <p style="font-size:12px;color:var(--ink-2);margin-bottom:10px">今日やることを箇条書きで書くと、AIが空き時間に自動で配置します。</p>
+    <textarea id="ai-tasks" rows="5" placeholder="例:&#10;・企画書のたたき台を作る&#10;・美容院の予約&#10;・英語の宿題30分"></textarea>
+    <p id="ai-status" style="font-size:12px;color:var(--ink-2);margin-top:10px;min-height:18px"></p>
+    <div class="focus-btn-row" style="margin-top:8px">
+      <button class="btn" id="ai-close">閉じる</button>
+      <button class="btn primary" id="ai-run" style="min-width:120px">配置する</button>
     </div>
   </div>
 </div>
@@ -703,9 +749,11 @@ function syncNative(){
     window.ReactNativeWebView.postMessage(JSON.stringify({
       type: 'schedule',
       notify: store.get('set.notify', true),
+      notifySubs: store.get('set.subnotify', true),
       events: SCHEDULE.filter(e => e.cat !== 'sleep').map(e => ({
         title: e.title, start: e.start, end: e.end,
         firstSub: e.subs && e.subs.length ? e.subs[0].name : null,
+        subs: (e.subs || []).filter(s => s.start !== e.start).map(s => ({name: s.name, start: s.start})),
       })),
     }));
   }catch{}
@@ -1085,7 +1133,7 @@ document.querySelectorAll('.toggle').forEach(t => {
   t.addEventListener('click', () => {
     t.classList.toggle('on');
     store.set(k, t.classList.contains('on'));
-    if(t.dataset.key === 'notify') syncNative(); // 通知ON/OFFを即ネイティブに反映
+    if(t.dataset.key === 'notify' || t.dataset.key === 'subnotify') syncNative(); // 通知設定を即ネイティブに反映
   });
 });
 
@@ -1471,6 +1519,32 @@ function renderCalendar(){
     if(rec){ wSum += rec.pct; wCnt++; }
   }
   $('#cal-week').textContent = wCnt ? Math.round(wSum / wCnt) + '%' : '–';
+
+  // 今週のレビュー(月曜はじまり・先週比つき)
+  function weekStats(offset){
+    const now = new Date();
+    const dow = (now.getDay() + 6) % 7;
+    let sum = 0, cnt = 0, done = 0, best = null;
+    for(let i = 0; i < 7; i++){
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow - offset * 7 + i);
+      const rec = hist[`${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`];
+      if(rec){
+        sum += rec.pct; cnt++; done += rec.done;
+        if(!best || rec.pct > best.pct) best = {pct: rec.pct, day: '月火水木金土日'[i]};
+      }
+    }
+    return {avg: cnt ? Math.round(sum / cnt) : null, cnt, done, best};
+  }
+  const tw = weekStats(0), lw = weekStats(1);
+  $('#wk-avg').textContent = tw.avg === null ? '–' : tw.avg + '%';
+  $('#wk-done').textContent = tw.cnt ? `${tw.done}個` : '–';
+  $('#wk-best').textContent = tw.best ? `${tw.best.day}曜日(${tw.best.pct}%)` : '–';
+  let note = tw.cnt ? `記録 ${tw.cnt}/7日` : 'チェックを付けると自動で記録されます';
+  if(tw.avg !== null && lw.avg !== null){
+    const diff = tw.avg - lw.avg;
+    note += diff >= 0 ? ` ・ 先週より +${diff}pt 🎉` : ` ・ 先週より ${diff}pt(気にしすぎなくてOK)`;
+  }
+  $('#wk-note').textContent = note;
 }
 $('#cal-prev').addEventListener('click', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); renderCalendar(); });
 $('#cal-next').addEventListener('click', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderCalendar(); });
@@ -1479,15 +1553,41 @@ $('#cal-next').addEventListener('click', () => { calMonth = new Date(calMonth.ge
 function renderTemplates(){
   const tpls = store.get('templates', [null, null, null]);
   $('#tpl-list').innerHTML = tpls.map((t, i) => `
-    <div class="setting-row">
+    <div class="setting-row" style="border-bottom:none">
       <span style="font-size:13px">${t ? '📋 ' + esc(t.name) : `スロット${i + 1}(空き)`}</span>
       <span style="display:flex;gap:6px">
         <button class="btn sm" data-tpl-save="${i}">${t ? '上書き' : '保存'}</button>
         ${t ? `<button class="btn sm primary" data-tpl-load="${i}">読み込み</button><button class="btn sm danger" data-tpl-del="${i}">削除</button>` : ''}
       </span>
-    </div>`).join('');
+    </div>
+    ${t ? `<div class="tpl-days" data-tpl="${i}"><span class="lbl">自動</span>${'日月火水木金土'.split('').map((d, di) =>
+      `<button class="day-chip${(t.days || []).includes(di) ? ' on' : ''}" data-day="${di}">${d}</button>`).join('')}</div>` : ''}`).join('');
+}
+
+// 曜日が変わった時、その曜日に割り当てたテンプレートを自動で読み込む
+function autoApplyTemplate(){
+  if(store.get('tplAutoApplied', '') === todayKey()) return;
+  store.set('tplAutoApplied', todayKey());
+  const day = new Date().getDay();
+  const t = store.get('templates', [null, null, null]).find(t => t && t.days && t.days.includes(day));
+  if(!t) return;
+  SCHEDULE = JSON.parse(JSON.stringify(t.schedule));
+  store.set('schedule', SCHEDULE);
 }
 $('#tpl-list').addEventListener('click', e => {
+  const dayBtn = e.target.closest('.day-chip');
+  if(dayBtn){
+    const i = +dayBtn.closest('.tpl-days').dataset.tpl;
+    const di = +dayBtn.dataset.day;
+    const tpls = store.get('templates', [null, null, null]);
+    const days = tpls[i].days || [];
+    tpls[i].days = days.includes(di) ? days.filter(d => d !== di) : [...days, di];
+    // 同じ曜日は1テンプレートだけ
+    tpls.forEach((t, j) => { if(t && j !== i && t.days) t.days = t.days.filter(d => d !== di || !tpls[i].days.includes(di)); });
+    store.set('templates', tpls);
+    renderTemplates();
+    return;
+  }
   const b = e.target.closest('button'); if(!b) return;
   const tpls = store.get('templates', [null, null, null]);
   if(b.dataset.tplSave != null){
@@ -1600,6 +1700,151 @@ $('#reset-schedule').addEventListener('click', () => {
   renderLegend();
 });
 
+/* ================= バックアップと復元 ================= */
+function backupStatus(msg, ok = true){
+  const el = $('#backup-status');
+  el.style.display = 'block';
+  el.style.color = ok ? 'var(--brand)' : 'var(--c-workout)';
+  el.textContent = msg;
+}
+$('#backup-export').addEventListener('click', () => {
+  const data = {};
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(k && k.startsWith('adhdo.')) data[k] = localStorage.getItem(k);
+  }
+  const text = 'ADHDO-BACKUP:' + btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+  const ta = $('#backup-text');
+  ta.value = text;
+  ta.select();
+  let copied = false;
+  try{ copied = document.execCommand('copy'); }catch{}
+  if(navigator.clipboard) navigator.clipboard.writeText(text).then(() => backupStatus('✓ 書き出してコピーしました。メモアプリ等に貼って保管してください')).catch(() => {});
+  backupStatus(copied ? '✓ 書き出してコピーしました。メモアプリ等に貼って保管してください' : '✓ 書き出しました。全選択してコピーし、保管してください');
+});
+$('#backup-import').addEventListener('click', () => {
+  const raw = $('#backup-text').value.trim();
+  if(!raw) return backupStatus('復元する文字列を貼り付けてください', false);
+  try{
+    const b64 = raw.startsWith('ADHDO-BACKUP:') ? raw.slice(13) : raw;
+    const data = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    const keys = Object.keys(data).filter(k => k.startsWith('adhdo.'));
+    if(!keys.length) throw new Error('no keys');
+    if(!confirm(`${keys.length}件のデータを復元します。今のデータは上書きされます。よろしいですか?`)) return;
+    keys.forEach(k => {
+      localStorage.setItem(k, data[k]);
+      try{ window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'kv', key:k, value:data[k]})) }catch{}
+    });
+    backupStatus('✓ 復元しました。再読み込みします…');
+    setTimeout(() => location.reload(), 800);
+  }catch{
+    backupStatus('復元できませんでした。書き出した文字列を丸ごと貼り付けてください', false);
+  }
+});
+
+/* ================= AIプランニング ================= */
+$('#ai-key').value = store.get('aikey', '');
+$('#ai-key').addEventListener('input', e => store.set('aikey', e.target.value.trim()));
+
+function freeGaps(){
+  const covered = [];
+  for(const e of SCHEDULE){
+    if(e.start < e.end) covered.push([e.start, e.end]);
+    else { covered.push([e.start, 1440]); covered.push([0, e.end]); }
+  }
+  covered.sort((a, b) => a[0] - b[0]);
+  const gaps = [];
+  let cur = 0;
+  for(const [s, t] of covered){
+    if(s > cur) gaps.push([cur, s]);
+    cur = Math.max(cur, t);
+  }
+  if(cur < 1440) gaps.push([cur, 1440]);
+  const n = nowMin();
+  return gaps.map(([s, t]) => [Math.max(s, n), t]).filter(([s, t]) => t - s >= 15);
+}
+
+$('#ai-open').addEventListener('click', () => {
+  $('#ai-status').textContent = store.get('aikey', '') ? '' : '先に「プロフィール&設定 → AIプランニング」でAPIキーを設定してください';
+  $('#aiplan').classList.add('show');
+});
+$('#ai-close').addEventListener('click', () => $('#aiplan').classList.remove('show'));
+$('#aiplan').addEventListener('click', e => { if(e.target === $('#aiplan')) $('#aiplan').classList.remove('show'); });
+
+$('#ai-run').addEventListener('click', async () => {
+  const key = store.get('aikey', '');
+  const tasks = $('#ai-tasks').value.trim();
+  const st = $('#ai-status');
+  if(!key){ st.textContent = 'APIキーが未設定です(設定画面で入力してください)'; return; }
+  if(!tasks){ st.textContent = 'やることを書いてください'; return; }
+  const gaps = freeGaps();
+  if(!gaps.length){ st.textContent = '今日はもう空き時間がありません。明日の朝にどうぞ'; return; }
+  st.textContent = '✨ AIが配置を考えています…';
+  $('#ai-run').disabled = true;
+  try{
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1500,
+        system: 'あなたはADHD当事者のためのスケジュールアシスタント。タスクを空き時間に無理なく配置する。出力はJSON配列のみ。説明文やコードブロック記号は出力しない。',
+        messages: [{role: 'user', content:
+`今日の空き時間: ${gaps.map(g => fmt(g[0]) + '-' + (g[1] === 1440 ? '24:00' : fmt(g[1]))).join(', ')}
+使えるカテゴリ: work(仕事), study(学習), workout(筋トレ), meal(食事), routine(ルーティン), meeting(ミーティング), appt(アポイント), other(その他)
+
+やることリスト:
+${tasks}
+
+ルール:
+- 必ず空き時間の範囲内にだけ配置する(重複禁止)
+- 各タスクに現実的な所要時間を割り当てる。大きいタスクは無理に全部入れない
+- タスク間は詰め込みすぎず、5-10分の余白があると良い
+- この形式のJSON配列のみを出力: [{"title":"タスク名","cat":"work","start":"HH:MM","end":"HH:MM"}]`}],
+      }),
+    });
+    if(!res.ok){
+      const err = await res.json().catch(() => ({}));
+      throw new Error(res.status === 401 ? 'APIキーが無効です。設定を確認してください' : (err.error && err.error.message) || `エラー(${res.status})`);
+    }
+    const data = await res.json();
+    let text = (data.content && data.content[0] && data.content[0].text || '').trim();
+    text = text.replace(/^```json?\s*/i, '').replace(/```\s*$/, '');
+    const items = JSON.parse(text);
+    if(!Array.isArray(items) || !items.length) throw new Error('配置できるタスクがありませんでした');
+    let added = 0;
+    for(const it of items){
+      if(!it.title || !it.start || !it.end) continue;
+      SCHEDULE.push({
+        id: 'ai' + Date.now() + '-' + added,
+        title: String(it.title).slice(0, 40),
+        cat: CATS[it.cat] ? it.cat : 'other',
+        start: toMin(it.start),
+        end: toMin(it.end),
+      });
+      added++;
+    }
+    if(!added) throw new Error('配置できるタスクがありませんでした');
+    SCHEDULE.sort((a, b) => a.start - b.start);
+    persistSchedule();
+    st.textContent = '';
+    $('#aiplan').classList.remove('show');
+    $('#ai-tasks').value = '';
+    confettiBurst(innerWidth / 2, innerHeight / 3, 24);
+    setTimeout(() => scrollToNow(), 300);
+  }catch(err){
+    st.textContent = String(err.message || err).includes('Failed to fetch')
+      ? 'ネットワークに接続できませんでした(Web版のclaude.ai上ではAIは使えません。アプリ版でお試しください)'
+      : (err.message || 'エラーが発生しました');
+  }
+  $('#ai-run').disabled = false;
+});
+
 /* ================= 初回チュートリアル ================= */
 const OB_SLIDES = [
   {icon:'👋', title:'ようこそ、ADHDoへ', body:'By ADHD. For ADHD.\n1日の予定を「時間の流れ」で見える化するアプリです。\n\nすでにサンプルの1日が入っています。まずは眺めてみて、あとで自分の生活に合わせて作り替えましょう。'},
@@ -1647,6 +1892,7 @@ function refreshHome(){
   if(doneData.date !== todayKey()){
     doneData = {date: todayKey(), items: {}, skips: {}};
     store.set('done', doneData);
+    autoApplyTemplate();
   }
   $('#home-date').textContent = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 (${'日月火水木金土'[d.getDay()]})`;
   renderTimeline();
@@ -1661,6 +1907,7 @@ function tickClock(){
     `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
 }
 
+autoApplyTemplate();
 setView(store.get('view', 'tl'));
 refreshHome();
 renderLegend();

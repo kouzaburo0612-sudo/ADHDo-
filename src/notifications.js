@@ -58,7 +58,7 @@ export async function scheduleTestNotification() {
 // - 予定開始時刻: 「◯◯の時間です。まずは最初のサブ項目から」
 // - 5分前: 切り替え予告(ADHDの作業切り替え支援)
 // 戻り値: セットした通知の件数(-1 = 権限なし)
-export async function rescheduleNotifications(events, notify) {
+export async function rescheduleNotifications(events, notify, notifySubs) {
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
     if (!notify || !events || !events.length) return 0;
@@ -67,8 +67,10 @@ export async function rescheduleNotifications(events, notify) {
     if (!ok) return -1;
     await ensureChannel();
 
+    const MAX = 60; // iOSのローカル通知は64件まで。余裕を持って60件で打ち切る
     let count = 0;
     for (const e of events) {
+      if (count >= MAX) break;
       await Notifications.scheduleNotificationAsync({
         content: {
           title: `${e.title} の時間です`,
@@ -96,6 +98,27 @@ export async function rescheduleNotifications(events, notify) {
         },
       });
       count++;
+    }
+
+    // サブ項目の開始時刻にも通知(設定でON/OFF可・件数上限まで)
+    if (notifySubs) {
+      for (const e of events) {
+        for (const s of e.subs || []) {
+          if (count >= MAX) break;
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: `▶ ${s.name}`,
+              body: `「${e.title}」の次のステップ`,
+            },
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.DAILY,
+              hour: Math.floor(s.start / 60),
+              minute: s.start % 60,
+            },
+          });
+          count++;
+        }
+      }
     }
     return count;
   } catch (err) {

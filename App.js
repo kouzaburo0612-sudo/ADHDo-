@@ -45,7 +45,7 @@ export default function App() {
       if (msg.type === 'kv') {
         AsyncStorage.setItem(msg.key, msg.value).catch(() => {});
       } else if (msg.type === 'schedule') {
-        rescheduleNotifications(msg.events, msg.notify).then((count) => {
+        rescheduleNotifications(msg.events, msg.notify, msg.notifySubs).then((count) => {
           tellWebView(`window.__notifySet && window.__notifySet(${count})`);
         });
       } else if (msg.type === 'badge') {
