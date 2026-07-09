@@ -1,0 +1,51 @@
+name: MH 0. EAS Project Init (初回のみ)
+
+# Master Health のEASプロジェクトを作成し、projectId を app.json に書き込んで
+# master-healthブランチにコミットする。初回に1度だけ実行すればよい。
+# mainに置くが、ビルド対象は常に claude/master-health-ios-06hrvw ブランチ。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  init:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: master-health
+    steps:
+      - name: Checkout (master-healthブランチを固定でチェックアウト)
+        uses: actions/checkout@v4
+        with:
+          ref: claude/master-health-ios-06hrvw
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Create EAS project and write projectId
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas project:init --non-interactive --force
+
+      - name: Commit projectId back to the master-health branch
+        run: |
+          if git diff --quiet app.json; then
+            echo "projectId already present; nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app.json
+          git commit -m "MH: EAS projectId を登録 (project:init)"
+          git push origin HEAD:claude/master-health-ios-06hrvw
