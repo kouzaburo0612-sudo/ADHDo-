@@ -3,9 +3,13 @@ name: MH 1. EAS Build & TestFlight
 # 手動実行: EASでMaster HealthのiOS本番ビルド → TestFlightへ自動提出。
 # mainに置くが、ビルド対象は常に claude/master-health-ios-06hrvw ブランチのコード。
 #
-# 非対話モード(--non-interactive)で実行。対話モードだとEASはApple IDログインを
-# 求めてしまうが、非対話モードなら App Store Connect APIキー(Admin権限)で
-# Appleに認証し、証明書・プロビジョニングプロファイルの生成から提出まで自動化する。
+# iOS署名クレデンシャルはこのワークフローが全自動で用意する:
+#   1. 過去に生成済みなら EAS環境変数(sensitive)から取得して再利用
+#   2. なければ App Store Connect API(Adminキー)で配布証明書と
+#      HealthKit対応のApp Store用プロビジョニングプロファイルを直接生成し、
+#      EAS環境変数に保存(以降のビルドで再利用)
+#   3. credentials.json を組み立て、credentialsSource: local でビルド
+# これによりApple IDの対話ログイン(2FA)が一切不要になる。
 on:
   workflow_dispatch:
 
@@ -45,10 +49,174 @@ jobs:
             exit 1
           fi
 
+      - name: Ensure iOS signing credentials (自動生成 or 再利用)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          ASC_KEY_ID: ${{ secrets.MH_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.MH_ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          mkdir -p ios-credentials
+
+          strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
+
+          # EAS環境変数は値長制限対策で3000文字チャンクに分割して保存する
+          fetch_chunks() {
+            local name="$1" out="" i=0 raw val
+            while raw=$(eas env:get --variable-name "${name}_${i}" --variable-environment production --format short --non-interactive 2>/dev/null); do
+              raw=$(printf '%s' "$raw" | strip_ansi)
+              val="${raw#"${name}_${i}="}"
+              [ -z "$val" ] && break
+              out="${out}${val}"
+              i=$((i+1))
+            done
+            [ -n "$out" ] || return 1
+            printf '%s' "$out"
+          }
+
+          store_chunks() {
+            local name="$1" value="$2" i=0 part
+            while [ -n "$value" ]; do
+              part="${value:0:3000}"
+              value="${value:3000}"
+              eas env:create --environment production --name "${name}_${i}" --value "$part" --type string --visibility sensitive --scope project --force --non-interactive >/dev/null
+              i=$((i+1))
+            done
+            echo "stored ${name} (${i} chunk(s))"
+          }
+
+          if P12_B64=$(fetch_chunks MH_IOS_P12B64) && P12_PW=$(fetch_chunks MH_IOS_P12PW) && PROFILE_B64=$(fetch_chunks MH_IOS_PROFILE); then
+            echo "保存済みのiOS署名クレデンシャルを再利用します"
+          else
+            echo "iOS署名クレデンシャルを新規生成します (App Store Connect API)"
+            openssl genrsa -out ios-credentials/key.pem 2048
+            openssl req -new -key ios-credentials/key.pem -out ios-credentials/cert.csr -subj "/CN=Master Health Distribution"
+
+            python3 -m pip install --quiet --break-system-packages pyjwt cryptography requests 2>/dev/null \
+              || python3 -m pip install --quiet pyjwt cryptography requests
+
+            cat > /tmp/mh_asc.py <<'PYEOF'
+          import base64, json, os, sys, time
+          import jwt, requests
+
+          KEY_ID = os.environ['ASC_KEY_ID']
+          ISSUER = os.environ['ASC_ISSUER_ID']
+          BUNDLE = 'com.nash.masterhealth'
+
+          key = open('asc_api_key.p8').read()
+          now = int(time.time())
+          tok = jwt.encode({'iss': ISSUER, 'iat': now - 30, 'exp': now + 1200,
+                            'aud': 'appstoreconnect-v1'},
+                           key, algorithm='ES256', headers={'kid': KEY_ID})
+          H = {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'}
+          B = 'https://api.appstoreconnect.apple.com'
+
+          def get(p):
+              r = requests.get(B + p, headers=H)
+              print('GET', p, '->', r.status_code)
+              return r
+
+          def post(p, d):
+              r = requests.post(B + p, headers=H, data=json.dumps(d))
+              print('POST', p, '->', r.status_code)
+              if r.status_code not in (200, 201):
+                  print(r.text[:1200])
+              return r
+
+          # 1) Bundle ID (なければ登録)
+          r = get('/v1/bundleIds?filter[identifier]=' + BUNDLE + '&limit=20')
+          r.raise_for_status()
+          bid = None
+          for d in r.json().get('data', []):
+              if d['attributes']['identifier'] == BUNDLE:
+                  bid = d['id']
+          if bid is None:
+              r = post('/v1/bundleIds', {'data': {'type': 'bundleIds', 'attributes': {
+                  'identifier': BUNDLE, 'name': 'Master Health', 'platform': 'IOS'}}})
+              if r.status_code not in (200, 201):
+                  sys.exit('FATAL: bundle ID registration failed')
+              bid = r.json()['data']['id']
+          print('bundleId resource:', bid)
+
+          # 2) HealthKit capability (既に有効ならPOSTは失敗してもよい。検証で担保)
+          post('/v1/bundleIdCapabilities', {'data': {
+              'type': 'bundleIdCapabilities',
+              'attributes': {'capabilityType': 'HEALTHKIT'},
+              'relationships': {'bundleId': {'data': {'type': 'bundleIds', 'id': bid}}}}})
+          r = get('/v1/bundleIds/' + bid + '/bundleIdCapabilities?limit=50')
+          caps = [d['attributes'].get('capabilityType') for d in r.json().get('data', [])]
+          print('capabilities:', caps)
+          if 'HEALTHKIT' not in caps:
+              sys.exit('FATAL: HEALTHKIT capability could not be enabled')
+
+          # 3) 配布証明書 (CSRから生成)
+          csr = open('ios-credentials/cert.csr').read()
+          r = post('/v1/certificates', {'data': {'type': 'certificates', 'attributes': {
+              'certificateType': 'DISTRIBUTION', 'csrContent': csr}}})
+          if r.status_code not in (200, 201):
+              r2 = get('/v1/certificates?filter[certificateType]=DISTRIBUTION&limit=10')
+              print('existing DISTRIBUTION certs:',
+                    [(d['id'], d['attributes'].get('displayName')) for d in r2.json().get('data', [])])
+              sys.exit('FATAL: certificate creation failed (上のレスポンス参照。枚数上限の可能性)')
+          cert = r.json()['data']
+          open('ios-credentials/cert.der', 'wb').write(
+              base64.b64decode(cert['attributes']['certificateContent']))
+          print('certificate created:', cert['id'], cert['attributes'].get('displayName'))
+
+          # 4) App Store用プロビジョニングプロファイル
+          r = post('/v1/profiles', {'data': {
+              'type': 'profiles',
+              'attributes': {'name': 'Master Health AppStore ' + str(now),
+                             'profileType': 'IOS_APP_STORE'},
+              'relationships': {
+                  'bundleId': {'data': {'type': 'bundleIds', 'id': bid}},
+                  'certificates': {'data': [{'type': 'certificates', 'id': cert['id']}]},
+              }}})
+          if r.status_code not in (200, 201):
+              sys.exit('FATAL: profile creation failed')
+          prof = r.json()['data']
+          open('ios-credentials/profile.mobileprovision', 'wb').write(
+              base64.b64decode(prof['attributes']['profileContent']))
+          print('profile created:', prof['id'], prof['attributes']['name'])
+          print('RESULT: OK')
+          PYEOF
+
+            sed -i 's/^          //' /tmp/mh_asc.py
+            python3 /tmp/mh_asc.py
+
+            openssl x509 -inform der -in ios-credentials/cert.der -out ios-credentials/cert.pem
+            P12_PW=$(openssl rand -hex 16)
+            # node-forge(EAS CLI)が読めるよう -legacy (3DES) でp12を作る
+            openssl pkcs12 -export -legacy -inkey ios-credentials/key.pem -in ios-credentials/cert.pem \
+              -out ios-credentials/dist.p12 -passout "pass:${P12_PW}" 2>/dev/null \
+              || openssl pkcs12 -export -inkey ios-credentials/key.pem -in ios-credentials/cert.pem \
+                   -out ios-credentials/dist.p12 -passout "pass:${P12_PW}"
+            P12_B64=$(base64 -w0 ios-credentials/dist.p12)
+            PROFILE_B64=$(base64 -w0 ios-credentials/profile.mobileprovision)
+            store_chunks MH_IOS_P12B64 "$P12_B64"
+            store_chunks MH_IOS_P12PW "$P12_PW"
+            store_chunks MH_IOS_PROFILE "$PROFILE_B64"
+          fi
+
+          echo "::add-mask::$P12_PW"
+          printf '%s' "$P12_B64" | base64 -d > ios-credentials/dist.p12
+          printf '%s' "$PROFILE_B64" | base64 -d > ios-credentials/profile.mobileprovision
+          cat > credentials.json <<EOF
+          {
+            "ios": {
+              "provisioningProfilePath": "ios-credentials/profile.mobileprovision",
+              "distributionCertificate": {
+                "path": "ios-credentials/dist.p12",
+                "password": "${P12_PW}"
+              }
+            }
+          }
+          EOF
+          echo "credentials.json ready"
+
       - name: Build on EAS and auto-submit to TestFlight
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          # App Store Connect APIキー(Admin権限)でApple認証・証明書生成・提出を行う
           EXPO_ASC_API_KEY_PATH: ./asc_api_key.p8
           EXPO_ASC_KEY_ID: ${{ secrets.MH_ASC_KEY_ID }}
           EXPO_ASC_ISSUER_ID: ${{ secrets.MH_ASC_ISSUER_ID }}
