@@ -3,10 +3,9 @@ name: MH 1. EAS Build & TestFlight
 # 手動実行: EASでMaster HealthのiOS本番ビルド → TestFlightへ自動提出。
 # mainに置くが、ビルド対象は常に claude/master-health-ios-06hrvw ブランチのコード。
 #
-# 初回はiOS署名クレデンシャル(配布証明書・プロビジョニングプロファイル)が
-# 存在しないためEASが生成する。生成にはApple認証が必要で、それを
-# Apple ID + アプリ用パスワード(EXPO_APPLE_ID / EXPO_APPLE_APP_SPECIFIC_PASSWORD)で
-# 自動化する。提出はApp Store Connect APIキーを使う。
+# iOS署名クレデンシャル(配布証明書・プロビジョニングプロファイル)の生成・提出を
+# App Store Connect APIキー(Admin権限)で行う。Admin権限ならEASがこのキーで
+# Appleに認証し、証明書生成からTestFlight提出までApple ID入力なしで完了する。
 on:
   workflow_dispatch:
 
@@ -49,10 +48,7 @@ jobs:
       - name: Build on EAS and auto-submit to TestFlight
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          # 証明書・プロファイル生成用のApple認証(Apple ID + アプリ用パスワード)
-          EXPO_APPLE_ID: ${{ secrets.MH_APPLE_ID }}
-          EXPO_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.MH_APPLE_APP_SPECIFIC_PASSWORD }}
-          # 提出用のApp Store Connect APIキー
+          # App Store Connect APIキー(Admin権限)でApple認証・証明書生成・提出を行う
           EXPO_ASC_API_KEY_PATH: ./asc_api_key.p8
           EXPO_ASC_KEY_ID: ${{ secrets.MH_ASC_KEY_ID }}
           EXPO_ASC_ISSUER_ID: ${{ secrets.MH_ASC_ISSUER_ID }}
@@ -62,6 +58,6 @@ jobs:
           EAS_SKIP_AUTO_FINGERPRINT: "1"
         # 初回のクレデンシャル生成は対話モード限定のため、CI/GITHUB_ACTIONS変数を
         # 外して対話モードにし、確認プロンプト(Y/n)には疑似TTYで既定値(Enter=Yes)を
-        # 自動応答。Apple認証はEXPO_APPLE_ID/パスワードで自動化されるためApple IDの
+        # 自動応答。Apple認証はAdmin権限のAPIキーで自動化されるため、Apple IDの
         # 手入力プロンプトは出ない。
         run: yes "" | script -qec "env -u CI -u GITHUB_ACTIONS eas build --platform ios --profile production --auto-submit --no-wait" /dev/null
