@@ -2,16 +2,17 @@ name: MH 1. EAS Build & TestFlight
 
 # 手動実行: EASでMaster HealthのiOS本番ビルド → TestFlightへ自動提出。
 # mainに置くが、ビルド対象は常に claude/master-health-ios-06hrvw ブランチのコード。
-# - App Store Connect APIキーでApple認証(署名・プロビジョニングは全自動)
-# - 新規App IDの作成や証明書生成の確認プロンプトは疑似TTY + 既定値応答で通す
-# - --no-wait でジョブは投入後すぐ終了(進捗は MH 2. Status で確認)
+#
+# 非対話モード(--non-interactive)で実行し、App Store Connect APIキーで
+# EASがApple認証する。これによりiOS署名証明書・プロビジョニング
+# プロファイルの生成からTestFlight提出まで、Apple IDの対話入力なしで完了する。
 on:
   workflow_dispatch:
 
 jobs:
   build-and-submit:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: master-health
@@ -54,6 +55,6 @@ jobs:
           EXPO_APPLE_TEAM_TYPE: ${{ vars.MH_APPLE_TEAM_TYPE || 'INDIVIDUAL' }}
           EXPO_PUBLIC_ANTHROPIC_API_KEY: ${{ secrets.MH_ANTHROPIC_API_KEY }}
           EAS_SKIP_AUTO_FINGERPRINT: "1"
-        # CI/GITHUB_ACTIONS変数があるとEAS CLIが強制的に非対話モードになるため外し、
-        # 疑似TTYで確認プロンプトに既定値(Enter=Yes)を自動応答する。
-        run: yes "" | script -qec "env -u CI -u GITHUB_ACTIONS eas build --platform ios --profile production --auto-submit --no-wait" /dev/null
+        # 非対話モード。App Store Connect APIキーでEASがApple認証し、
+        # 証明書・プロビジョニングプロファイルの生成からTestFlight提出まで自動で行う。
+        run: eas build --platform ios --profile production --auto-submit --non-interactive --no-wait
