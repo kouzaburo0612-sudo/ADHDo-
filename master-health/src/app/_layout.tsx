@@ -1,0 +1,52 @@
+import { DarkTheme, ThemeProvider } from 'expo-router';
+import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { StatusBar } from 'expo-status-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
+import { Colors } from '@/constants/theme';
+
+const theme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    background: Colors.bg,
+    card: Colors.surface,
+    text: Colors.text,
+    border: Colors.border,
+    primary: Colors.accent,
+  },
+};
+
+export default function RootLayout() {
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider value={theme}>
+        <StatusBar style="light" />
+        <NativeTabs
+          backgroundColor={Colors.bg}
+          indicatorColor={Colors.surfaceRaised}
+          iconColor={Colors.textSecondary}
+          tintColor={Colors.accent}
+          labelStyle={{ color: Colors.textSecondary, selected: { color: Colors.accent } }}
+        >
+          <NativeTabs.Trigger name="index">
+            <NativeTabs.Trigger.Label>今日</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon sf={{ default: 'heart.text.square', selected: 'heart.text.square.fill' }} />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="history">
+            <NativeTabs.Trigger.Label>トレンド</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon sf="chart.xyaxis.line" />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="coach">
+            <NativeTabs.Trigger.Label>コーチ</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon sf={{ default: 'sparkles', selected: 'sparkles' }} />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="settings">
+            <NativeTabs.Trigger.Label>設定</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
+          </NativeTabs.Trigger>
+        </NativeTabs>
+      </ThemeProvider>
+    </GestureHandlerRootView>
+  );
+}

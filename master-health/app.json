@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "Master Health",
+    "slug": "master-health",
+    "owner": "kozaburos-team",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "masterhealth",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0F1319",
+    "ios": {
+      "bundleIdentifier": "com.nash.masterhealth",
+      "supportsTablet": false,
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.nash.masterhealth",
+      "adaptiveIcon": {
+        "backgroundColor": "#0F1319",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0F1319",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 96
+        }
+      ],
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "WithingsとOura RingがApple Healthに記録した体組成・睡眠・心拍などのデータを読み取り、健康ダッシュボードとして表示するために使用します。",
+          "NSHealthUpdateUsageDescription": false,
+          "background": false
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
