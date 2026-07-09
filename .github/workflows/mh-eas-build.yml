@@ -131,11 +131,25 @@ jobs:
               _lines[0] == '-----BEGIN PRIVATE KEY-----',
               _lines[-1] == '-----END PRIVATE KEY-----'), flush=True)
           now = int(time.time())
-          tok = jwt.encode({'iss': ISSUER, 'iat': now - 30, 'exp': now + 1200,
-                            'aud': 'appstoreconnect-v1'},
-                           key, algorithm='ES256', headers={'kid': KEY_ID})
-          H = {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'}
           B = 'https://api.appstoreconnect.apple.com'
+
+          def make_headers(payload):
+              t = jwt.encode(payload, key, algorithm='ES256', headers={'kid': KEY_ID})
+              return {'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json'}
+
+          # チームキー(iss)→ダメなら個人キー(sub)の順で認証を試す
+          H = make_headers({'iss': ISSUER, 'iat': now - 30, 'exp': now + 900,
+                            'aud': 'appstoreconnect-v1'})
+          probe = requests.get(B + '/v1/bundleIds?limit=1', headers=H, timeout=60)
+          print('auth probe (team key):', probe.status_code, flush=True)
+          if probe.status_code == 401:
+              H = make_headers({'sub': 'user', 'iat': now - 30, 'exp': now + 900,
+                                'aud': 'appstoreconnect-v1'})
+              probe = requests.get(B + '/v1/bundleIds?limit=1', headers=H, timeout=60)
+              print('auth probe (individual key):', probe.status_code, flush=True)
+          if probe.status_code == 401:
+              print(probe.text[:600], flush=True)
+              sys.exit('FATAL: AUTH_MISMATCH - Key ID / Issuer ID / p8 の組み合わせがAppleに認められません。同一キーの3点セットか確認が必要です。')
 
           def get(p):
               r = requests.get(B + p, headers=H, timeout=60)
