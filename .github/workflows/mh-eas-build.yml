@@ -113,14 +113,23 @@ jobs:
             || python3 -m pip install --quiet pyjwt cryptography requests
 
           cat > /tmp/mh_asc.py <<'PYEOF'
-          import base64, json, os, sys, time
+          import base64, json, os, re, sys, time
           import jwt, requests
 
-          KEY_ID = os.environ['ASC_KEY_ID']
-          ISSUER = os.environ['ASC_ISSUER_ID']
+          KEY_ID = os.environ['ASC_KEY_ID'].strip()
+          ISSUER = os.environ['ASC_ISSUER_ID'].strip()
           BUNDLE = 'com.nash.masterhealth'
 
-          key = open('asc_api_key.p8').read()
+          key = open('asc_api_key.p8').read().replace('\r\n', '\n').strip() + '\n'
+          _lines = key.strip().splitlines()
+          print('diag: KEY_ID len=%d format_ok=%s prefix=%s' % (
+              len(KEY_ID), bool(re.fullmatch(r'[A-Z0-9]{10}', KEY_ID)), KEY_ID[:2]), flush=True)
+          print('diag: ISSUER len=%d uuid_format_ok=%s' % (
+              len(ISSUER), bool(re.fullmatch(r'[0-9a-f-]{36}', ISSUER))), flush=True)
+          print('diag: p8 lines=%d header_ok=%s footer_ok=%s' % (
+              len(_lines),
+              _lines[0] == '-----BEGIN PRIVATE KEY-----',
+              _lines[-1] == '-----END PRIVATE KEY-----'), flush=True)
           now = int(time.time())
           tok = jwt.encode({'iss': ISSUER, 'iat': now - 30, 'exp': now + 1200,
                             'aud': 'appstoreconnect-v1'},
@@ -131,6 +140,8 @@ jobs:
           def get(p):
               r = requests.get(B + p, headers=H, timeout=60)
               print('GET', p, '->', r.status_code, flush=True)
+              if r.status_code >= 400:
+                  print(r.text[:1200], flush=True)
               return r
 
           def post(p, d):
