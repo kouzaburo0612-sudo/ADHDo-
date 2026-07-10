@@ -259,16 +259,21 @@ jobs:
               bid = r.json()['data']['id']
           print('bundleId resource:', bid, flush=True)
 
-          # 2) HealthKit capability (既に有効ならPOST失敗してもよい。検証で担保)
-          post('/v1/bundleIdCapabilities', {'data': {
+          # 2) HealthKit capability (POST成功=有効。既に有効な場合のみGETで再確認。
+          #    このrelationshipのGETはlimitパラメータ非対応なので付けない)
+          r = post('/v1/bundleIdCapabilities', {'data': {
               'type': 'bundleIdCapabilities',
               'attributes': {'capabilityType': 'HEALTHKIT'},
               'relationships': {'bundleId': {'data': {'type': 'bundleIds', 'id': bid}}}}})
-          r = get('/v1/bundleIds/' + bid + '/bundleIdCapabilities?limit=50')
-          caps = [d['attributes'].get('capabilityType') for d in r.json().get('data', [])]
-          print('capabilities:', caps, flush=True)
-          if 'HEALTHKIT' not in caps:
+          cap_ok = r.status_code in (200, 201)
+          if not cap_ok:
+              r = get('/v1/bundleIds/' + bid + '/bundleIdCapabilities')
+              caps = [d['attributes'].get('capabilityType') for d in r.json().get('data', [])]
+              print('capabilities:', caps, flush=True)
+              cap_ok = 'HEALTHKIT' in caps
+          if not cap_ok:
               sys.exit('FATAL: HEALTHKIT capability could not be enabled')
+          print('HEALTHKIT capability: OK', flush=True)
 
           # 3) 配布証明書 (CSRから生成)
           csr = open('ios-credentials/cert.csr').read()
