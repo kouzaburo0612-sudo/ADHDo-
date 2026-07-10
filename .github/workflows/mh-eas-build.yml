@@ -53,16 +53,28 @@ jobs:
           set -euo pipefail
           strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
           fetch_chunks() {
+            # eas env:get の出力から "NAME_i=値" の行だけを厳密に抽出する。
+            # (存在しない変数でもexit 0でメッセージが出る場合があり、
+            #  素通しすると後段のbase64が壊れるため)
             local name="$1" out="" i=0 raw val
-            while [ $i -lt 30 ] && raw=$(timeout 120 eas env:get --variable-name "${name}_${i}" --variable-environment production --format short --non-interactive </dev/null 2>/dev/null); do
-              raw=$(printf '%s' "$raw" | strip_ansi)
-              val="${raw#"${name}_${i}="}"
+            while [ $i -lt 30 ]; do
+              raw=$(timeout 120 eas env:get --variable-name "${name}_${i}" --variable-environment production --format short --non-interactive </dev/null 2>/dev/null || true)
+              val=$(printf '%s' "$raw" | strip_ansi | tr -d '\r' | sed -n "s/^${name}_${i}=//p" | tr -d '\n')
               [ -z "$val" ] && break
               out="${out}${val}"
               i=$((i+1))
             done
             [ -n "$out" ] || return 1
             printf '%s' "$out"
+          }
+          b64_diag() {
+            # base64文字列の健全性チェック(値そのものは出力しない)
+            local label="$1" s="$2" bad
+            bad=$(printf '%s' "$s" | tr -d 'A-Za-z0-9+/=' | wc -c)
+            echo "[diag] ${label}: len=$(printf '%s' "$s" | wc -c) badchars=${bad}"
+            if [ "$bad" -gt 0 ]; then
+              printf '%s' "$s" | tr -d 'A-Za-z0-9+/=' | head -c 120 | od -c | head -6
+            fi
           }
           store_chunks() {
             local name="$1" value="$2" i=0 part
@@ -77,7 +89,9 @@ jobs:
           if [ -n "${ENC_CREDS:-}" ]; then
             echo "[resolve] 注入されたクレデンシャルを復号"
             PRIV_B64=$(fetch_chunks MH_BOOT_PRIV) || { echo "::error::bootstrap秘密鍵がありません。先にMH 9を実行してください"; exit 1; }
+            b64_diag "MH_BOOT_PRIV" "$PRIV_B64"
             printf '%s' "$PRIV_B64" | base64 -d > /tmp/boot_priv.pem
+            openssl pkey -in /tmp/boot_priv.pem -noout 2>/dev/null && echo "[diag] bootstrap秘密鍵: 形式OK" || { echo "::error::bootstrap秘密鍵の復元に失敗(EAS env:getの出力が壊れている可能性)"; exit 1; }
             RSA_B64="${ENC_CREDS%%.*}"
             AES_B64="${ENC_CREDS#*.}"
             printf '%s' "$RSA_B64" | base64 -d > /tmp/wrapped_key.bin
