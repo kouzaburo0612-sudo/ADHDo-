@@ -17,6 +17,10 @@ on:
         description: '暗号化クレデンシャル(内部用・省略可)'
         required: false
         default: ''
+      submit_build_id:
+        description: '既存ビルドをTestFlightへ提出する場合のビルドID(省略時は新規ビルド)'
+        required: false
+        default: ''
 
 jobs:
   build-and-submit:
@@ -356,10 +360,65 @@ jobs:
             echo "::warning::チームIDを検出できず、既定値(68995AYXDQ)を使用します"
           fi
 
+      - name: Resolve ascAppId (App Store Connectのアプリレコード)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --break-system-packages pyjwt cryptography requests 2>/dev/null \
+            || python3 -m pip install --quiet pyjwt cryptography requests
+          cat > /tmp/mh_ascapp.py <<'PYEOF'
+          import os, time
+          import jwt, requests
+
+          KEY_ID = os.environ['ASC_KEY_ID'].strip()
+          ISSUER = os.environ['ASC_ISSUER_ID'].strip()
+          BUNDLE = 'com.nash.masterhealth'
+          B = 'https://api.appstoreconnect.apple.com'
+          key = open('asc_api_key.p8').read()
+
+          now = int(time.time())
+          tok = jwt.encode({'iss': ISSUER, 'exp': now + 900, 'aud': 'appstoreconnect-v1', 'iat': now},
+                           key, algorithm='ES256', headers={'kid': KEY_ID, 'typ': 'JWT'})
+          H = {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'}
+
+          def find_app():
+              r = requests.get(B + '/v1/apps?filter[bundleId]=' + BUNDLE, headers=H, timeout=60)
+              print('GET /v1/apps ->', r.status_code, flush=True)
+              if r.status_code != 200:
+                  print(r.text[:400], flush=True)
+                  return None
+              data = r.json().get('data', [])
+              return data[0]['id'] if data else None
+
+          appid = find_app()
+          if not appid:
+              # 公式APIではアプリレコード作成は基本的に不可だが、ダメ元で試す
+              body = {'data': {'type': 'apps', 'attributes': {
+                  'name': 'Master Health', 'primaryLocale': 'ja',
+                  'sku': 'masterhealth', 'bundleId': BUNDLE}}}
+              r = requests.post(B + '/v1/apps', headers=H, json=body, timeout=60)
+              print('POST /v1/apps ->', r.status_code, r.text[:300], flush=True)
+              appid = find_app()
+          if appid:
+              print('ascAppId:', appid, flush=True)
+              open('/tmp/mh_asc_app_id', 'w').write(str(appid))
+          else:
+              print('NO_APP_RECORD: App Store Connectにアプリレコードがありません', flush=True)
+          PYEOF
+          python3 /tmp/mh_ascapp.py
+          if [ -f /tmp/mh_asc_app_id ]; then
+            python3 -c "import json;d=json.load(open('eas.json'));d.setdefault('submit',{}).setdefault('production',{}).setdefault('ios',{})['ascAppId']=open('/tmp/mh_asc_app_id').read().strip();json.dump(d,open('eas.json','w'),indent=2)"
+            echo "eas.json に ascAppId を設定しました"
+          else
+            echo "::warning::アプリレコード未作成のため、提出はスキップされます(ビルドのみ)"
+          fi
+
       - name: Build on EAS and auto-submit to TestFlight
         timeout-minutes: 15
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          SUBMIT_BUILD_ID: ${{ inputs.submit_build_id }}
           EXPO_ASC_API_KEY_PATH: ./asc_api_key.p8
           EXPO_APPLE_TEAM_TYPE: ${{ vars.MH_APPLE_TEAM_TYPE || 'INDIVIDUAL' }}
           EXPO_PUBLIC_ANTHROPIC_API_KEY: ${{ secrets.MH_ANTHROPIC_API_KEY }}
@@ -371,4 +430,13 @@ jobs:
           export EXPO_APPLE_TEAM_ID="$TEAM_ID"
           export EXPO_ASC_KEY_ID="$ASC_KEY_ID"
           export EXPO_ASC_ISSUER_ID="$ASC_ISSUER_ID"
-          eas build --platform ios --profile production --auto-submit --non-interactive --no-wait </dev/null
+          if [ -n "${SUBMIT_BUILD_ID:-}" ]; then
+            [ -f /tmp/mh_asc_app_id ] || { echo "::error::ascAppIdが解決できないため提出できません"; exit 1; }
+            echo "既存ビルド ${SUBMIT_BUILD_ID} をTestFlightへ提出します"
+            eas submit --platform ios --profile production --id "$SUBMIT_BUILD_ID" --non-interactive --no-wait </dev/null
+          elif [ -f /tmp/mh_asc_app_id ]; then
+            eas build --platform ios --profile production --auto-submit --non-interactive --no-wait </dev/null
+          else
+            echo "アプリレコードが無いため、提出なしでビルドのみ実行します"
+            eas build --platform ios --profile production --non-interactive --no-wait </dev/null
+          fi
