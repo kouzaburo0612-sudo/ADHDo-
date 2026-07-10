@@ -5,8 +5,6 @@
  * 手動リフレッシュのみ再生成を許可。thinkingオフ + effort低で
  * 短い日本語アドバイスに最適化する。
  */
-import Anthropic from '@anthropic-ai/sdk';
-
 import { getReport, saveReport, type ReportRow } from '@/lib/db';
 import { todayKey, formatKeyJa } from '@/lib/dates';
 import { formatValue, METRICS, type MetricKey } from '@/lib/metrics';
@@ -47,33 +45,54 @@ export function buildDataSummary(days: DaySummary[]): string {
   return lines.join('\n');
 }
 
+/**
+ * Messages APIを直接fetchで叩く。
+ * (公式SDKはNode専用モジュール(node:fs)に依存しており、
+ *  React Native/Metroではバンドルできないため)
+ */
 async function callClaude(userPrompt: string): Promise<string> {
   const apiKey = await getApiKey();
   if (!apiKey) throw new Error('NO_API_KEY');
 
-  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+  let res: Response;
   try {
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1024,
-      thinking: { type: 'disabled' },
-      output_config: { effort: 'low' },
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userPrompt }],
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 1024,
+        thinking: { type: 'disabled' },
+        output_config: { effort: 'low' },
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userPrompt }],
+      }),
     });
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n')
-      .trim();
-    if (!text) throw new Error('EMPTY_RESPONSE');
-    return text;
-  } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError) throw new Error('BAD_API_KEY');
-    if (e instanceof Anthropic.RateLimitError) throw new Error('RATE_LIMITED');
-    if (e instanceof Anthropic.APIConnectionError) throw new Error('NETWORK');
-    throw e;
+  } catch {
+    throw new Error('NETWORK');
   }
+
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('BAD_API_KEY');
+    if (res.status === 429) throw new Error('RATE_LIMITED');
+    throw new Error(`API_ERROR_${res.status}`);
+  }
+
+  const data: {
+    content?: { type: string; text?: string }[];
+  } = await res.json();
+  const text = (data.content ?? [])
+    .filter((b) => b.type === 'text' && typeof b.text === 'string')
+    .map((b) => b.text)
+    .join('\n')
+    .trim();
+  if (!text) throw new Error('EMPTY_RESPONSE');
+  return text;
 }
 
 /** 今日のコンディション解説(1日1回。force=trueで再生成) */
