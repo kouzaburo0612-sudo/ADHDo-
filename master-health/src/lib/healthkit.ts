@@ -17,6 +17,7 @@ import {
   queryCategorySamples,
   queryQuantitySamples,
   queryStatisticsCollectionForQuantity,
+  queryWorkoutSamples,
 } from '@kingstinct/react-native-healthkit';
 import type { ObjectTypeIdentifier } from '@kingstinct/react-native-healthkit';
 
@@ -45,6 +46,7 @@ export const READ_TYPES = [
   'HKQuantityTypeIdentifierActiveEnergyBurned',
   'HKQuantityTypeIdentifierBasalEnergyBurned',
   'HKCategoryTypeIdentifierSleepAnalysis',
+  'HKWorkoutTypeIdentifier',
 ] as const satisfies readonly ObjectTypeIdentifier[];
 
 export function healthAvailable(): boolean {
@@ -149,6 +151,25 @@ export async function fetchDailyMetrics(startDate: Date): Promise<MetricRow[]> {
     } catch (e) {
       console.warn(`HK fetch failed: ${spec.metric}`, e);
     }
+  }
+
+  // ワークアウト(EAT): その日のワークアウト消費kcalの合計
+  try {
+    const workouts = await queryWorkoutSamples({
+      limit: -1,
+      ascending: true,
+      filter: { date: { startDate: anchor, endDate } },
+    });
+    const byDay = new Map<string, number>();
+    for (const w of workouts) {
+      const kcal = w.totalEnergyBurned?.quantity;
+      if (kcal == null || kcal <= 0) continue;
+      const key = toKey(new Date(w.startDate));
+      byDay.set(key, (byDay.get(key) ?? 0) + kcal);
+    }
+    for (const [date, value] of byDay) rows.push({ date, metric: 'workout_energy', value });
+  } catch (e) {
+    console.warn('HK fetch failed: workout_energy', e);
   }
 
   // 睡眠

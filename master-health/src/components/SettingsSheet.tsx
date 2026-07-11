@@ -16,8 +16,9 @@ import { lastSyncDate, syncHealthData } from '@/lib/sync';
 import {
   DEFAULT_SETTINGS, getApiKey, loadSettings, saveSettings, setApiKey, type Settings,
 } from '@/lib/settings';
+import { currentTdee } from '@/lib/chat';
 import { getProfile, saveProfile, DEFAULT_PROFILE, type UserProfile } from '@/lib/store';
-import { balanceSeries } from '@/utils/deficit';
+import { balanceSeries, type TdeeParts } from '@/utils/deficit';
 
 /** モーダル(My Bodyの⚙)とタブ内ルート(More→設定)の両方から使う本体 */
 export function SettingsBody() {
@@ -29,17 +30,26 @@ export function SettingsBody() {
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [avgTdee, setAvgTdee] = useState<number | null>(null);
+  const [avgParts, setAvgParts] = useState<TdeeParts | null>(null);
+  const [reverseTdee, setReverseTdee] = useState<number | null>(null);
 
   useEffect(() => {
     loadSettings().then(setSettings);
     getProfile().then(setProfile);
     getApiKey().then((k) => setKeySet(k != null));
     lastSyncDate().then(setLastSync);
-    // 直近7日の平均TDEE(消費)
+    // 直近7日の平均TDEE(消費)と内訳
     balanceSeries(7).then((s) => {
-      const burns = s.map((d) => d.burn).filter((b): b is number => b != null);
-      setAvgTdee(burns.length ? Math.round(burns.reduce((a, b) => a + b, 0) / burns.length) : null);
+      const withBurn = s.filter((d) => d.burn != null && d.parts != null);
+      if (withBurn.length === 0) { setAvgTdee(null); setAvgParts(null); return; }
+      const n = withBurn.length;
+      const sum = (f: (p: TdeeParts) => number) =>
+        Math.round(withBurn.reduce((a, d) => a + f(d.parts!), 0) / n);
+      setAvgParts({ bmr: sum((p) => p.bmr), neat: sum((p) => p.neat), eat: sum((p) => p.eat), dit: sum((p) => p.dit) });
+      setAvgTdee(Math.round(withBurn.reduce((a, d) => a + d.burn!, 0) / n));
     }).catch(() => {});
+    // 逆算TDEE(体重変化ベース。食事記録14日以上で算出される)
+    currentTdee().then((t) => setReverseTdee(t.reverse)).catch(() => {});
   }, []);
 
   const updateProfile = useCallback((patch: Partial<UserProfile>) => {
@@ -97,6 +107,17 @@ export function SettingsBody() {
               <Text style={styles.tdeeUnit}> kcal/日</Text>
             </Text>
             <Text style={styles.tdeeLabel}>今週の平均TDEE(消費カロリー)</Text>
+            {avgParts != null && (
+              <Text style={styles.tdeeBreakdown}>
+                基礎代謝 {avgParts.bmr.toLocaleString()} + 歩行 {avgParts.neat.toLocaleString()} + 運動 {avgParts.eat.toLocaleString()} + 食事熱 {avgParts.dit.toLocaleString()}
+              </Text>
+            )}
+            {reverseTdee != null && (
+              <Text style={styles.tdeeBreakdown}>
+                逆算TDEE(体重変化ベース): {reverseTdee.toLocaleString()} kcal/日
+                {avgTdee != null && Math.abs(reverseTdee - avgTdee) > 200 ? ' ・ 乖離が大きいため逆算値を優先' : ''}
+              </Text>
+            )}
             <Text style={styles.tdeeHint}>これより少なく食べれば痩せ、多く食べれば太ります</Text>
           </Card>
 
@@ -300,6 +321,7 @@ const styles = StyleSheet.create({
   },
   tdeeUnit: { fontSize: Type.body, color: Colors.textSecondary, fontWeight: '400' },
   tdeeLabel: { color: Colors.text, fontSize: Type.body, fontWeight: '600', marginTop: 4 },
+  tdeeBreakdown: { color: Colors.textSecondary, fontSize: Type.caption, marginTop: 4, fontVariant: ['tabular-nums'] },
   tdeeHint: { color: Colors.textFaint, fontSize: Type.caption, marginTop: 4 },
   sectionHead: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

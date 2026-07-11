@@ -26,6 +26,13 @@ export async function syncHealthData(force = false): Promise<{ synced: number }>
     await kvSet('metrics_v22', 'done');
   }
 
+  // v3.6で追加したワークアウト消費(EAT)を過去分まで取り込む一度きり全再同期
+  const v36 = await kvGet('metrics_v36');
+  if (!v36) {
+    force = true;
+    await kvSet('metrics_v36', 'done');
+  }
+
   const last = await kvGet(LAST_SYNC_KEY);
   let start: Date;
   if (!last || force) {

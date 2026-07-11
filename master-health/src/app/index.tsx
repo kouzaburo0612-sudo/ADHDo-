@@ -300,6 +300,11 @@ export default function MyBodyScreen() {
                         {' ・ '}ここまでの収支 {bal! > 0 ? '+' : '−'}{Math.abs(bal!).toLocaleString()}kcal
                       </Text>
                     )}
+                    {day?.balance?.parts && (
+                      <Text style={styles.vsHint}>
+                        TDEE内訳: 基礎代謝 {day.balance.parts.bmr.toLocaleString()} + 歩行 {day.balance.parts.neat.toLocaleString()} + 運動 {day.balance.parts.eat.toLocaleString()} + 食事熱 {day.balance.parts.dit.toLocaleString()}
+                      </Text>
+                    )}
                     <Text style={styles.vsHint}>
                       {deficit ? '消費が摂取を上回った分だけ、脂肪が減ります' : '摂取が消費を上回った分は、脂肪として蓄えられます'}
                     </Text>

@@ -22,6 +22,7 @@ export type MetricKey =
   | 'flights'
   | 'exercise_time'
   | 'active_energy'
+  | 'workout_energy'
   | 'basal_energy';
 
 export interface MetricDef {
@@ -59,6 +60,7 @@ export const METRICS: Record<MetricKey, MetricDef> = {
   flights:       { key: 'flights',       label: '上った階数',  unit: '階',    decimals: 0, higherIsBetter: true,  aggregation: 'sum' },
   exercise_time: { key: 'exercise_time', label: 'エクササイズ', unit: '分',   decimals: 0, higherIsBetter: true,  aggregation: 'sum' },
   active_energy: { key: 'active_energy', label: 'アクティブカロリー', unit: 'kcal', decimals: 0, higherIsBetter: true, aggregation: 'sum' },
+  workout_energy: { key: 'workout_energy', label: 'ワークアウト消費', unit: 'kcal', decimals: 0, higherIsBetter: true, aggregation: 'sum' },
   basal_energy:  { key: 'basal_energy',  label: '基礎消費',    unit: 'kcal',  decimals: 0, higherIsBetter: null,  aggregation: 'sum' },
 };
 
@@ -67,14 +69,14 @@ export const METRIC_ORDER: MetricKey[] = [
   'body_fat', 'weight', 'lean_mass', 'bmi',
   'sleep_total', 'sleep_deep', 'sleep_rem', 'sleep_core',
   'hrv', 'rhr', 'heart_rate', 'walking_hr', 'spo2', 'vo2max', 'wrist_temp', 'resp_rate',
-  'steps', 'distance', 'flights', 'exercise_time', 'active_energy', 'basal_energy',
+  'steps', 'distance', 'flights', 'exercise_time', 'active_energy', 'workout_energy', 'basal_energy',
 ];
 
 /** My Body画面の詳細リスト表示順(睡眠 → 心肺 → 活動 → 体組成補助) */
 export const BODY_DETAIL_ORDER: MetricKey[] = [
   'sleep_total', 'sleep_deep', 'sleep_rem', 'sleep_core',
   'hrv', 'rhr', 'heart_rate', 'walking_hr', 'spo2', 'resp_rate', 'wrist_temp', 'vo2max',
-  'steps', 'distance', 'flights', 'exercise_time', 'active_energy', 'basal_energy',
+  'steps', 'distance', 'flights', 'exercise_time', 'active_energy', 'workout_energy', 'basal_energy',
   'lean_mass', 'bmi',
 ];
 

@@ -174,9 +174,10 @@ export default function HistoryScreen() {
                     計算式: 実績消費 {goal.avgBurn.toLocaleString()} − 必要赤字 {goal.requiredDailyDeficit.toLocaleString()}(脂肪1kg ≈ 7,200kcal)
                   </Text>
                 )}
-                {goal.bmr != null && goal.targetIntakeKcal < goal.bmr && (
+                {goal.intakeClamped && (
                   <Text style={styles.intakeWarn}>
-                    ⚠️ 基礎代謝({goal.bmr.toLocaleString()}kcal)を下回っています。このペースは速すぎるため、目標日を後ろにずらすのがおすすめです
+                    ⚠️ 逆算した目標摂取が基礎代謝({goal.bmr?.toLocaleString()}kcal)を下回ったため、基礎代謝を下限にしています。この期日での達成は難しく、
+                    {goal.achievableDate ? `達成可能日の目安は ${fmtShortDate(goal.achievableDate)} です` : '目標日を後ろにずらすのがおすすめです'}
                   </Text>
                 )}
               </View>
@@ -225,7 +226,10 @@ export default function HistoryScreen() {
                     }]}>
                       {pf.onTrackProbability}%
                     </Text>
-                    <Text style={styles.goalSub}>期日{pf.deadline ? ` ${fmtShortDate(pf.deadline)} ` : ''}達成確率</Text>
+                    <Text style={styles.goalSub}>
+                      期日{pf.deadline ? ` ${fmtShortDate(pf.deadline)} ` : ''}達成確率
+                      {pf.probabilityIsReference ? '(参考値)' : ''}
+                    </Text>
                   </View>
                 )}
               </View>
@@ -245,8 +249,13 @@ export default function HistoryScreen() {
                   今のペースをキープすれば期日達成です 🔥
                 </Text>
               )}
-              {pf.loggedDays < 3 && (
-                <Text style={styles.goalSub}>まだ記録が少ないため概算です。記録を続けると精度が上がります</Text>
+              {pf.projectionBasis === 'weight_trend' && (
+                <Text style={styles.goalSub}>予測は体重の7日移動平均トレンドに基づいています</Text>
+              )}
+              {pf.lowConfidence && (
+                <Text style={[styles.goalSub, { color: Colors.warn }]}>
+                  ⚠️ データ不足(食事記録{pf.loggedDays}日分)・信頼度低。記録を続けると精度が上がります
+                </Text>
               )}
             </>
           )}

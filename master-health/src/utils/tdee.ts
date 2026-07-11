@@ -12,7 +12,7 @@
  *    - DIT: 食事誘発性熱産生 = 摂取kcal × 0.10
  *
  * 2. 逆算ベース (reverse):
- *    TDEE = 平均摂取kcal - (体重変化ペース kg/日 × 7700 kcal/kg)
+ *    TDEE = 平均摂取kcal - (体重変化ペース kg/日 × 7200 kcal/kg)
  *    - 体重は7日移動平均の傾き(最小二乗)を使い、単日ノイズを除去
  *    - 摂取記録が14日以上蓄積されるまでは信頼できないため無効
  *
@@ -89,8 +89,8 @@ export function computeTdee(input: TdeeInput): TdeeResult {
       .filter((p): p is { x: number; y: number } => p != null);
     const reg = linearRegression(maPoints);
     if (reg) {
-      // 体脂肪1kg ≈ 7700kcal。増量中は摂取>TDEE、減量中は摂取<TDEE
-      reverse = Math.round(avgIntake - reg.slope * 7700);
+      // 体脂肪1kg ≈ 7200kcal(アプリ全体で統一)。増量中は摂取>TDEE、減量中は摂取<TDEE
+      reverse = Math.round(avgIntake - reg.slope * 7200);
     }
   }
 
