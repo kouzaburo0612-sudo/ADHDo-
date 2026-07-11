@@ -85,19 +85,24 @@ export async function rescheduleNotifications(events, notify, notifySubs) {
       });
       count++;
 
-      const pre = (e.start - 5 + 1440) % 1440;
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: `5分後: ${e.title}`,
-          body: 'そろそろ切り替えの準備をしよう',
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour: Math.floor(pre / 60),
-          minute: pre % 60,
-        },
-      });
-      count++;
+      // 事前通知は予定ごとに分数を設定できる(null=なし / 既定5分前)
+      const preMin = e.pre === undefined ? 5 : e.pre;
+      if (preMin !== null && preMin > 0) {
+        const pre = (e.start - preMin + 1440) % 1440;
+        const label = preMin >= 60 ? `${Math.floor(preMin / 60)}時間${preMin % 60 ? preMin % 60 + '分' : ''}` : `${preMin}分`;
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `${label}後: ${e.title}`,
+            body: 'そろそろ切り替えの準備をしよう',
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DAILY,
+            hour: Math.floor(pre / 60),
+            minute: pre % 60,
+          },
+        });
+        count++;
+      }
     }
 
     // サブ項目の開始時刻にも通知(設定でON/OFF可・件数上限まで)

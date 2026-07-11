@@ -104,47 +104,47 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .legend b{color:var(--ink);font-weight:600}
 
 /* ============ タイムライン ============ */
-.tl-head{display:flex;align-items:baseline;justify-content:space-between;margin:4px 2px 12px}
+.tl-head{display:flex;align-items:baseline;justify-content:space-between;margin:2px 2px 8px}
 .tl-head h2{font-size:16px;font-weight:700}
 .tl-head span{font-size:12px;color:var(--ink-3)}
-.tl{position:relative;padding-left:64px;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.tl{position:relative;padding-left:54px;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .tl *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .tl.drag-active .tl-card,.tl.drag-active .tl-time,.tl.drag-active .tl-node{transition:none!important}
 .tl::before{
-  content:"";position:absolute;left:56px;top:8px;bottom:8px;width:2px;
+  content:"";position:absolute;left:46px;top:8px;bottom:8px;width:2px;
   background:var(--line);border-radius:2px;
 }
-.tl-item{position:relative;margin-bottom:14px}
+.tl-item{position:relative;margin-bottom:7px}
 .tl-time{
-  position:absolute;left:-64px;top:14px;width:48px;text-align:right;
-  font-size:13px;font-weight:600;color:var(--ink-2);
+  position:absolute;left:-54px;top:9px;width:38px;text-align:right;
+  font-size:11px;font-weight:600;color:var(--ink-2);
   font-variant-numeric:tabular-nums;transition:all .3s;
 }
 .tl-node{
-  position:absolute;left:-12px;top:19px;width:10px;height:10px;border-radius:50%;
+  position:absolute;left:-11px;top:12px;width:8px;height:8px;border-radius:50%;
   background:var(--surface);border:2px solid var(--cat);z-index:2;transition:all .3s;
 }
 .tl-card{
-  background:var(--surface);border:1px solid var(--line);border-radius:14px;
-  padding:13px 14px;border-left:4px solid var(--cat);
+  background:var(--surface);border:1px solid var(--line);border-radius:11px;
+  padding:7px 10px;border-left:3px solid var(--cat);
   transition:all .35s ease;
 }
-.tl-card .row1{display:flex;align-items:center;gap:8px}
-.tl-card .title{font-size:15px;font-weight:700;flex:1}
-.tl-card .range{font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tl-card .row1{display:flex;align-items:center;gap:7px}
+.tl-card .title{font-size:12.5px;font-weight:700;flex:1;line-height:1.3}
+.tl-card .range{font-size:10px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:1px}
 .tl-card .cat-tag{
-  font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--cat);
+  font-size:8.5px;font-weight:700;letter-spacing:.04em;color:var(--cat);
   border:1px solid color-mix(in srgb,var(--cat) 45%,transparent);
-  border-radius:6px;padding:1px 7px;
+  border-radius:5px;padding:1px 6px;
 }
-.subs{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;display:grid;gap:5px}
+.subs{margin-top:7px;border-top:1px dashed var(--line);padding-top:6px;display:grid;gap:4px}
 .sub{
-  display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);
+  display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-2);
   transition:opacity .3s;
 }
 .sub .s-dot{width:6px;height:6px;border-radius:50%;background:var(--ink-3);flex:none;transition:all .3s}
 .sub .s-name{flex:1}
-.sub .s-time{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.sub .s-time{font-size:10.5px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
 .sub.done{opacity:.45}
 .sub.done .s-name{text-decoration:line-through}
 .sub.active{color:var(--ink);font-weight:600}
@@ -152,36 +152,36 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .sub.active .s-time{color:var(--cat)}
 
 /* --- NOW 強調(順序はそのまま・その場で大きく) --- */
-.tl-item.now .tl-time{font-size:19px;color:var(--cat);font-weight:800;text-shadow:0 0 14px color-mix(in srgb,var(--cat) 60%,transparent)}
+.tl-item.now .tl-time{font-size:13.5px;color:var(--cat);font-weight:800;text-shadow:0 0 14px color-mix(in srgb,var(--cat) 60%,transparent)}
 .tl-item.now .tl-node{
   width:14px;height:14px;left:-14px;background:var(--cat);
   box-shadow:0 0 0 5px color-mix(in srgb,var(--cat) 25%,transparent),0 0 18px var(--cat);
   animation:pulse 2s infinite;
 }
 .tl-item.now .tl-card{
-  padding:20px 16px;transform:scale(1.045);transform-origin:left center;
+  padding:11px 12px;transform:scale(1.035);transform-origin:left center;
   background:linear-gradient(135deg,color-mix(in srgb,var(--cat) 24%,var(--surface)),var(--surface) 78%);
   border:1.5px solid color-mix(in srgb,var(--cat) 85%,var(--line));
   border-left:5px solid var(--cat);
   box-shadow:0 6px 38px color-mix(in srgb,var(--cat) 48%,transparent);
   animation:nowGlow 2.4s ease-in-out infinite;
 }
-.tl-item.now .title{font-size:20px;font-weight:800}
-.tl-item.now .range{font-size:13px;color:var(--ink)}
+.tl-item.now .title{font-size:15.5px;font-weight:800}
+.tl-item.now .range{font-size:11px;color:var(--ink)}
 .now-badge{
-  display:none;align-items:center;gap:5px;
-  background:var(--cat);color:#fff;font-size:11px;font-weight:800;letter-spacing:.1em;
-  border-radius:99px;padding:3px 11px;
+  display:none;align-items:center;gap:4px;
+  background:var(--cat);color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.08em;
+  border-radius:99px;padding:2px 9px;
   box-shadow:0 0 14px color-mix(in srgb,var(--cat) 70%,transparent);
 }
 .now-badge::before{content:"";width:6px;height:6px;border-radius:50%;background:#fff;animation:blink 1.2s infinite}
 .tl-item.now .now-badge{display:inline-flex}
 .tl-item.now .cat-tag{display:none}
-.now-progress{display:none;margin-top:12px}
+.now-progress{display:none;margin-top:8px}
 .tl-item.now .now-progress{display:block}
 .now-progress .bar{height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden}
 .now-progress .fill{height:100%;background:var(--cat);border-radius:99px;transition:width .5s}
-.now-progress .meta{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2);margin-top:5px;font-variant-numeric:tabular-nums}
+.now-progress .meta{display:flex;justify-content:space-between;font-size:10px;color:var(--ink-2);margin-top:5px;font-variant-numeric:tabular-nums}
 .tl-item.past .tl-card{opacity:.55}
 .tl-item.past .tl-time{opacity:.55}
 /* 時間切れの未消化タスクは強調(pastより後に書いて上書き) */
@@ -210,14 +210,14 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 
 /* 完了チェック */
 .s-check,.ev-check{
-  width:20px;height:20px;border-radius:50%;flex:none;padding:0;
+  width:17px;height:17px;border-radius:50%;flex:none;padding:0;
   border:1.5px solid var(--ink-3);background:none;color:#fff;font-size:12px;line-height:1;
   display:flex;align-items:center;justify-content:center;transition:all .2s;
 }
 .s-check.on,.ev-check.on{background:var(--cat);border-color:var(--cat)}
-.ev-check{width:22px;height:22px}
-.sub-count{font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
-.edit-btn{background:none;border:1px solid var(--line);color:var(--ink-3);border-radius:8px;width:27px;height:27px;font-size:13px;padding:0;flex:none;line-height:1}
+.ev-check{width:19px;height:19px}
+.sub-count{font-size:10px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.edit-btn{background:none;border:1px solid var(--line);color:var(--ink-3);border-radius:7px;width:22px;height:22px;font-size:11px;padding:0;flex:none;line-height:1}
 .tl-item.now .edit-btn{color:var(--ink-2)}
 .tl-item.checked .title{text-decoration:line-through;opacity:.6}
 
@@ -252,18 +252,12 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
   background:var(--surface);border:1px solid var(--line);border-radius:20px;
   padding:28px 22px;width:100%;max-width:340px;text-align:center;
 }
-.focus-phase{font-size:11px;color:var(--ink-3);letter-spacing:.12em;font-weight:700}
-.focus-task-name{font-size:14px;font-weight:700;margin-top:4px}
-.focus-time{font-size:56px;font-weight:800;font-variant-numeric:tabular-nums;margin:8px 0 4px}
-.focus-hint{font-size:11.5px;color:var(--ink-2);margin-bottom:14px}
 .focus-btn-row{display:flex;gap:10px;justify-content:center}
-.focus-presets{display:flex;gap:8px;justify-content:center;margin-bottom:14px}
-.focus-presets .btn.sel{border-color:var(--brand);color:var(--brand)}
 .focus-open{
-  margin-top:10px;width:100%;
+  margin-top:8px;width:100%;
   background:color-mix(in srgb,var(--cat) 18%,var(--surface-2));
   border:1px solid color-mix(in srgb,var(--cat) 45%,transparent);
-  color:var(--ink);border-radius:10px;padding:9px;font-size:13px;font-weight:700;
+  color:var(--ink);border-radius:9px;padding:6px;font-size:12px;font-weight:700;
 }
 
 /* ============ 予定エディタ ============ */
@@ -338,28 +332,79 @@ nav.footer button.active svg{stroke-width:2.2}
 .tpl-days .lbl{font-size:10px;color:var(--ink-3);margin-right:2px}
 .day-chip{width:28px;height:28px;border-radius:50%;padding:0;font-size:11px;font-weight:700;background:var(--surface-2);border:1px solid var(--line);color:var(--ink-3)}
 .day-chip.on{background:var(--brand);border-color:var(--brand);color:#0d1017}
-textarea,input[type=text],input[type=time]{
+textarea,input[type=text],input[type=time],select{
   width:100%;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);
   border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none;
 }
 textarea:focus,input:focus{border-color:var(--c-work)}
 
-/* 瞑想 */
-.breath-stage{display:flex;flex-direction:column;align-items:center;padding:30px 0 10px}
-.breath-circle{
-  width:170px;height:170px;border-radius:50%;
-  background:radial-gradient(circle at 35% 30%,color-mix(in srgb,var(--c-routine) 45%,var(--surface-2)),var(--surface-2));
-  border:2px solid var(--c-routine);
-  display:flex;align-items:center;justify-content:center;
-  font-size:16px;font-weight:700;
-  transition:transform 4s ease-in-out;box-shadow:0 0 40px color-mix(in srgb,var(--c-routine) 25%,transparent);
+/* Now(今の予定に集中する画面) */
+.now-scr-head{display:flex;align-items:center;justify-content:space-between;margin:18px 0 14px}
+.now-nav{background:var(--surface);border:1px solid var(--line);color:var(--ink-2);width:38px;height:38px;border-radius:12px;font-size:20px;line-height:1;padding:0}
+.now-scr-badge{
+  display:inline-flex;align-items:center;font-size:12px;font-weight:800;letter-spacing:.08em;
+  color:#fff;background:var(--cat,var(--brand));border-radius:99px;padding:5px 14px;
+  box-shadow:0 0 16px color-mix(in srgb,var(--cat,var(--brand)) 55%,transparent);
 }
-.breath-circle.inhale{transform:scale(1.25)}
-.breath-circle.exhale{transform:scale(.85);transition-duration:8s}
-.med-timer{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;margin:18px 0 6px}
-.med-presets{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 4px;width:100%;max-width:300px}
-.med-presets .btn{padding:9px 0;text-align:center}
-.med-presets .btn.sel{border-color:var(--c-routine);color:var(--c-routine)}
+.now-scr-title{font-size:30px;font-weight:800;line-height:1.25;margin:2px 2px 4px}
+.now-scr-range{font-size:14px;color:var(--ink-2);font-variant-numeric:tabular-nums;margin:0 2px 16px;display:flex;align-items:center;gap:10px}
+.now-steps{display:grid;gap:9px;margin-bottom:16px}
+.now-step{
+  display:flex;align-items:center;gap:12px;
+  background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:15px 14px;
+}
+.now-step .ns-num{width:18px;text-align:center;font-size:12px;color:var(--ink-3);font-weight:700;flex:none}
+.now-step .ns-name{flex:1;font-size:15px;font-weight:700}
+.now-step .ns-dur{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.now-step .ns-check{
+  width:26px;height:26px;border-radius:50%;flex:none;padding:0;
+  border:1.5px solid var(--ink-3);background:none;color:#fff;font-size:14px;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+}
+.now-step.done{opacity:.55}
+.now-step.done .ns-name{text-decoration:line-through}
+.now-step .ns-check.on{background:var(--brand);border-color:var(--brand)}
+.now-start{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--footer-h) + 16px);z-index:40;
+  width:calc(100% - 32px);max-width:448px;
+  background:var(--cat,var(--brand));border:none;color:#fff;border-radius:99px;
+  padding:16px;font-size:15.5px;font-weight:800;
+  box-shadow:0 8px 26px color-mix(in srgb,var(--cat,var(--brand)) 50%,transparent);
+}
+.now-done-msg{text-align:center;color:var(--ink-2);font-size:14px;font-weight:700;padding:14px}
+
+/* 集中モード(サブ項目を時間で自動送り) */
+#fmode{position:fixed;inset:0;z-index:80;background:var(--bg);display:none;flex-direction:column;align-items:center;padding:18px 20px calc(20px + env(safe-area-inset-bottom));overflow-y:auto}
+#fmode.show{display:flex}
+.fm-head{width:100%;display:flex;align-items:center;justify-content:space-between}
+.fm-chip{font-size:12px;font-weight:700;color:var(--ink-2);background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:6px 14px}
+.fm-x{background:var(--surface);border:1px solid var(--line);color:var(--ink-2);width:38px;height:38px;border-radius:50%;font-size:15px;padding:0}
+.fm-title{font-size:26px;font-weight:800;margin-top:22px;text-align:center;line-height:1.3}
+.fm-range{font-size:13px;color:var(--ink-3);font-variant-numeric:tabular-nums;margin:6px 0 20px}
+.fm-ring{width:250px;height:250px;border-radius:50%;padding:7px;flex:none;display:flex}
+.fm-ring-in{
+  flex:1;border-radius:50%;background:var(--surface);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+}
+.fm-icon{font-size:42px}
+.fm-time{font-size:46px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
+.fm-adjust{display:flex;align-items:center;gap:4px;background:var(--surface-2);border-radius:99px;padding:2px 6px;margin-top:4px}
+.fm-adjust button{background:none;border:none;color:var(--ink-2);font-size:17px;padding:2px 8px;line-height:1}
+.fm-adjust span{font-size:11px;color:var(--ink-3)}
+.fm-controls{display:flex;align-items:center;gap:26px;margin-top:24px}
+.fm-side{background:none;border:none;color:var(--ink-2);font-size:26px;padding:6px}
+.fm-main{
+  width:74px;height:74px;border-radius:50%;border:none;background:var(--brand);color:#0d1017;
+  font-size:30px;font-weight:800;box-shadow:0 8px 24px color-mix(in srgb,var(--brand) 45%,transparent);
+}
+.fm-next{margin-top:18px;font-size:14px;font-weight:700;color:var(--ink)}
+.fm-next-tag{font-size:11px;color:var(--ink-3);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:2px 7px;margin-right:6px}
+.fm-bottom{
+  margin-top:auto;width:100%;display:flex;justify-content:space-between;align-items:center;
+  background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;
+  font-size:13px;color:var(--ink-2);font-weight:700;
+}
+.fm-bottom b{color:var(--ink);font-size:16px;font-variant-numeric:tabular-nums}
 
 /* マンスリーカレンダー */
 .cal-nav{display:flex;align-items:center;justify-content:space-between;margin:8px 0 14px}
@@ -454,31 +499,9 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   </div>
 </section>
 
-<!-- ============ 瞑想 ============ -->
-<section class="screen" id="scr-meditate">
-  <header class="app"><h1>瞑想</h1><div class="date">呼吸に意識を向けましょう</div></header>
-  <div class="panel">
-    <div class="breath-stage">
-      <div class="breath-circle" id="breath-circle"><span id="breath-label">準備OK</span></div>
-      <div class="med-timer" id="med-timer">3:00</div>
-      <div class="med-presets" id="med-presets">
-        <button class="btn" data-min="1">1分</button>
-        <button class="btn sel" data-min="3">3分</button>
-        <button class="btn" data-min="5">5分</button>
-        <button class="btn" data-min="10">10分</button>
-        <button class="btn" data-min="20">20分</button>
-        <button class="btn" data-min="30">30分</button>
-      </div>
-      <div style="display:flex;gap:10px;margin-top:8px">
-        <button class="btn primary" id="med-start">開始</button>
-        <button class="btn" id="med-reset">リセット</button>
-      </div>
-    </div>
-  </div>
-  <div class="panel">
-    <h3>やり方</h3>
-    <p style="font-size:13px;color:var(--ink-2)">円が大きくなったら4秒かけて吸い、4秒止めて、8秒かけてゆっくり吐きます。考えごとが浮かんでも大丈夫。気づいたら呼吸に戻るだけでOK。</p>
-  </div>
+<!-- ============ Now(今の予定に集中) ============ -->
+<section class="screen" id="scr-now">
+  <div id="now-body"></div>
 </section>
 
 <!-- ============ マンスリー達成率カレンダー ============ -->
@@ -517,7 +540,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <div style="max-width:260px;margin:14px auto 0;text-align:left">
       <div class="ach-top" style="font-size:11px"><span id="xp-level" style="color:var(--brand);font-weight:800">Lv.1</span><span id="xp-count" style="color:var(--ink-3)">0 XP</span></div>
       <div class="xp-bar"><div class="xp-fill" id="xp-fill" style="width:0%"></div></div>
-      <p style="font-size:10.5px;color:var(--ink-3);margin-top:5px">タスク完了で+10XP、集中タイマー完走で+20XP。100XPごとにレベルアップ</p>
+      <p style="font-size:10.5px;color:var(--ink-3);margin-top:5px">タスク完了で+10XP、集中モード完走で+20XP。100XPごとにレベルアップ</p>
     </div>
   </div>
   <div class="panel">
@@ -580,7 +603,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <p style="font-size:11px;color:var(--ink-3);margin-top:6px">就寝〜起床の時間は、タイムラインと24Hグラフに「睡眠」として自動で組み込まれます。</p>
   </div>
   <p class="tagline">By ADHD. <b>For ADHD.</b></p>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.8</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.9</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -597,10 +620,22 @@ textarea:focus,input:focus{border-color:var(--c-work)}
       <span style="color:var(--ink-3)">→</span>
       <input type="time" id="ed-end" value="10:00">
     </div>
+    <div class="f-label">事前通知(開始の何分前に知らせるか)</div>
+    <select id="ed-pre">
+      <option value="">なし(開始時刻のみ)</option>
+      <option value="5">5分前</option>
+      <option value="10">10分前</option>
+      <option value="15">15分前</option>
+      <option value="30">30分前</option>
+      <option value="60">1時間前</option>
+      <option value="120">2時間前</option>
+      <option value="180">3時間前</option>
+    </select>
     <div class="f-label">サブ項目(任意)</div>
     <div id="ed-subs"></div>
     <button class="btn" id="ed-addsub" style="width:100%">+ サブ項目を追加</button>
     <p class="ed-error" id="ed-error"></p>
+    <button class="btn" id="ed-skip" style="width:100%;margin-top:14px">🙈 今日はスキップ(達成率にカウントしない)</button>
     <div class="sheet-actions">
       <button class="btn danger" id="ed-delete">削除</button>
       <button class="btn" id="ed-cancel">キャンセル</button>
@@ -637,23 +672,28 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   </div>
 </div>
 
-<!-- ============ 集中タイマー ============ -->
-<div class="modal center" id="focus">
-  <div class="focus-box">
-    <div class="focus-phase" id="focus-phase">FOCUS</div>
-    <div class="focus-task-name" id="focus-task"></div>
-    <div class="focus-time" id="focus-time">25:00</div>
-    <p class="focus-hint" id="focus-hint">まずは始めるだけでOK。終わったら5分休憩</p>
-    <div class="focus-presets" id="focus-presets">
-      <button class="btn sm" data-fmin="15">15分</button>
-      <button class="btn sm sel" data-fmin="25">25分</button>
-      <button class="btn sm" data-fmin="45">45分</button>
-    </div>
-    <div class="focus-btn-row">
-      <button class="btn primary" id="focus-start">開始</button>
-      <button class="btn" id="focus-close">閉じる</button>
+<!-- ============ 集中モード ============ -->
+<div id="fmode">
+  <div class="fm-head">
+    <span class="fm-chip">● Focus</span>
+    <button class="fm-x" id="fm-close" aria-label="終了">✕</button>
+  </div>
+  <div class="fm-title" id="fm-title"></div>
+  <div class="fm-range" id="fm-range"></div>
+  <div class="fm-ring" id="fm-ring">
+    <div class="fm-ring-in">
+      <div class="fm-icon" id="fm-icon">🌿</div>
+      <div class="fm-time" id="fm-time">15:00</div>
+      <div class="fm-adjust"><button id="fm-minus" aria-label="1分減らす">−</button><span>1m</span><button id="fm-plus" aria-label="1分増やす">＋</button></div>
     </div>
   </div>
+  <div class="fm-controls">
+    <button class="fm-side" id="fm-pause" aria-label="一時停止">Ⅱ</button>
+    <button class="fm-main" id="fm-done" aria-label="完了して次へ">✓</button>
+    <button class="fm-side" id="fm-skip" aria-label="スキップして次へ">⏭</button>
+  </div>
+  <div class="fm-next" id="fm-next"></div>
+  <div class="fm-bottom"><span id="fm-evname"></span><span>全体終了 <b id="fm-endinfo">--:--</b></span></div>
 </div>
 
 <!-- ============ フッターナビ ============ -->
@@ -662,9 +702,9 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></svg>
     ホーム
   </button>
-  <button data-scr="meditate">
-    <svg viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="2.2"/><path d="M12 8v4.5"/><path d="M6 20c1-4 3.5-6 6-6s5 2 6 6"/><path d="M4.5 15.5c2 .8 3.5 2 4 4.5M19.5 15.5c-2 .8-3.5 2-4 4.5"/></svg>
-    瞑想
+  <button data-scr="now">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10.2 8.6l5.6 3.4-5.6 3.4z"/></svg>
+    Now
   </button>
   <button data-scr="calendar">
     <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 10h17M8 2.5V6M16 2.5V6"/><path d="M7.5 14h2M11 14h2M14.5 14h2M7.5 17.5h2M11 17.5h2"/></svg>
@@ -799,6 +839,7 @@ function syncNative(){
       notifySubs: store.get('set.subnotify', true),
       events: SCHEDULE.filter(e => e.cat !== 'sleep').map(e => ({
         title: e.title, start: e.start, end: e.end,
+        pre: e.pre === undefined ? 5 : e.pre, // 事前通知の分数(null=なし)
         firstSub: e.subs && e.subs.length ? e.subs[0].name : null,
         subs: (e.subs || []).filter(s => s.start !== e.start).map(s => ({name: s.name, start: s.start})),
       })),
@@ -931,12 +972,6 @@ function renderTimeline(){
     const pct = Math.min(100, Math.round(elapsed / dur(e) * 100));
     const remain = dur(e) - elapsed;
 
-    // スキップのクイック操作(未完了カードに表示)
-    let quick = '';
-    if(checkable && !fullyDone){
-      quick = `<div class="quick"><button data-skip="${e.id}">今日はスキップ</button></div>`;
-    }
-
     item.innerHTML = `
       <div class="tl-time">${fmt(e.start)}</div>
       <div class="tl-node"></div>
@@ -962,9 +997,8 @@ function renderTimeline(){
         <div class="now-progress">
           <div class="bar"><div class="fill" style="width:${pct}%"></div></div>
           <div class="meta"><span>${pct}% 経過</span><span>あと ${durLabel(remain)}</span></div>
-          ${checkable ? `<button class="focus-open" data-focus="${esc(e.title)}">▶ 集中タイマーで始める</button>` : ''}
+          ${checkable ? `<button class="focus-open" data-focus="${e.id}">▶ 集中モードで始める</button>` : ''}
         </div>
-        ${quick}
       </div>`;
     tl.appendChild(item);
   }
@@ -1133,63 +1167,76 @@ document.querySelectorAll('nav.footer button').forEach(btn => {
     document.querySelectorAll('nav.footer button').forEach(b => b.classList.toggle('active', b === btn));
     document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'scr-' + btn.dataset.scr));
     if(btn.dataset.scr === 'home'){ refreshHome(); setTimeout(() => scrollToNow(), 60); }
+    else if(btn.dataset.scr === 'now'){ nowScrOffset = 0; renderNowScreen(); window.scrollTo(0,0); }
     else if(btn.dataset.scr === 'calendar'){ renderCalendar(); window.scrollTo(0,0); }
     else window.scrollTo(0,0);
   });
 });
 
-/* ================= 瞑想 ================= */
-let medTotal = 180, medLeft = 180, medTimer = null, breathTimer = null;
-const medFmt = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
-function medRender(){ $('#med-timer').textContent = medFmt(medLeft); }
-function breathLoop(){
-  const c = $('#breath-circle'), l = $('#breath-label');
-  const phases = [['吸って…',4000,'inhale'],['止めて',4000,'inhale'],['吐いて…',8000,'exhale']];
-  let i = 0;
-  const step = () => {
-    const [label,ms,cls] = phases[i % 3];
-    l.textContent = label;
-    c.classList.remove('inhale','exhale');
-    if(cls) c.classList.add(cls);
-    i++;
-    breathTimer = setTimeout(step, ms);
-  };
-  step();
+/* ================= Now(今の予定だけ見る画面) ================= */
+let nowScrOffset = 0; // 0=今(または次の)予定。‹›で前後に移動
+function nowTargets(){ return visibleEvents().filter(e => e.cat !== 'sleep'); }
+function nowSteps(e){
+  if(e.subs && e.subs.length)
+    return e.subs.map((sub, i) => ({key: e.id + '/' + i, name: sub.name, planned: Math.max(1, (sub.end - sub.start + 1440) % 1440)}));
+  return [{key: e.id, name: e.title, planned: Math.max(1, dur(e))}];
 }
-$('#med-start').addEventListener('click', () => {
-  if(medTimer){ // 一時停止
-    clearInterval(medTimer); clearTimeout(breathTimer); medTimer = null;
-    $('#med-start').textContent = '再開';
-    $('#breath-circle').classList.remove('inhale','exhale');
-    $('#breath-label').textContent = '一時停止中';
+function renderNowScreen(){
+  const body = $('#now-body');
+  const list = nowTargets();
+  if(!list.length){
+    body.innerHTML = '<div class="panel" style="text-align:center;padding:44px 20px;margin-top:20px">今日の予定がありません。<br>ホームの「+」から追加しましょう</div>';
     return;
   }
-  $('#med-start').textContent = '一時停止';
-  breathLoop();
-  medTimer = setInterval(() => {
-    medLeft--;
-    medRender();
-    if(medLeft <= 0){
-      clearInterval(medTimer); clearTimeout(breathTimer); medTimer = null;
-      $('#breath-circle').classList.remove('inhale','exhale');
-      $('#breath-label').textContent = 'おつかれさま 🌿';
-      $('#med-start').textContent = '開始';
-      medLeft = medTotal;
-      setTimeout(medRender, 1500);
-    }
-  }, 1000);
-});
-$('#med-reset').addEventListener('click', () => {
-  clearInterval(medTimer); clearTimeout(breathTimer); medTimer = null;
-  medLeft = medTotal; medRender();
-  $('#med-start').textContent = '開始';
-  $('#breath-circle').classList.remove('inhale','exhale');
-  $('#breath-label').textContent = '準備OK';
-});
-$('#med-presets').addEventListener('click', e => {
-  const b = e.target.closest('button'); if(!b) return;
-  document.querySelectorAll('#med-presets .btn').forEach(x => x.classList.toggle('sel', x === b));
-  medTotal = medLeft = +b.dataset.min * 60; medRender();
+  const n = nowMin();
+  let base = list.findIndex(e => isActive(e, n));
+  if(base === -1){ // 進行中がなければ「次に始まる予定」
+    let best = 1e9;
+    list.forEach((e, i) => { const d = (e.start - n + 1440) % 1440; if(d < best){ best = d; base = i; } });
+  }
+  const idx = ((base + nowScrOffset) % list.length + list.length) % list.length;
+  const e = list[idx];
+  const cat = CATS[e.cat];
+  const active = isActive(e, n) && nowScrOffset === 0;
+  const steps = nowSteps(e);
+  const remainMin = steps.filter(st => !isDone(st.key)).reduce((a, st) => a + st.planned, 0);
+  body.innerHTML = `
+    <div class="now-scr-head">
+      <button class="now-nav" data-nownav="-1" aria-label="前の予定">‹</button>
+      <span class="now-scr-badge" style="--cat:${cat.hex}">${active ? '● NOW' : fmt(e.start) + ' から'}</span>
+      <button class="now-nav" data-nownav="1" aria-label="次の予定">›</button>
+    </div>
+    <div class="now-scr-title">${cat.icon} ${esc(e.title)}</div>
+    <div class="now-scr-range">${fmt(e.start)} – ${fmt(e.end)}(${durLabel(dur(e))})<button class="edit-btn" data-nowedit="${e.id}" aria-label="編集">✎</button></div>
+    <div class="now-steps">
+      ${steps.map((st, i) => `
+        <div class="now-step${isDone(st.key) ? ' done' : ''}">
+          <span class="ns-num">${i + 1}</span>
+          <span class="ns-name">${esc(st.name)}</span>
+          <span class="ns-dur">${durLabel(st.planned)}</span>
+          <button class="ns-check${isDone(st.key) ? ' on' : ''}" data-key="${st.key}" aria-label="完了">${isDone(st.key) ? '✓' : ''}</button>
+        </div>`).join('')}
+    </div>
+    <div style="height:76px"></div>
+    ${remainMin
+      ? `<button class="now-start" style="--cat:${cat.hex}" data-fstart="${e.id}">▶ 集中モードで開始(${fmt((n + remainMin) % 1440)} に完了)</button>`
+      : '<div class="now-done-msg">この予定は全部完了!🎉</div>'}
+  `;
+}
+$('#now-body').addEventListener('click', ev => {
+  const nav = ev.target.closest('[data-nownav]');
+  if(nav){ nowScrOffset += +nav.dataset.nownav; renderNowScreen(); return; }
+  const chk = ev.target.closest('.ns-check');
+  if(chk){
+    const r = chk.getBoundingClientRect();
+    toggleDone(chk.dataset.key, {x: r.left + r.width/2, y: r.top + r.height/2});
+    renderNowScreen();
+    return;
+  }
+  const ed = ev.target.closest('[data-nowedit]');
+  if(ed){ const t = SCHEDULE.find(x => x.id === ed.dataset.nowedit); if(t) openEditor(t); return; }
+  const st = ev.target.closest('[data-fstart]');
+  if(st) openFocusMode(st.dataset.fstart);
 });
 
 /* ================= プロフィール ================= */
@@ -1364,6 +1411,8 @@ function openEditor(ev){
   renderCatChips();
   $('#ed-start').value = ev ? fmt(ev.start) : '09:00';
   $('#ed-end').value = ev ? fmt(ev.end) : '10:00';
+  $('#ed-pre').value = ev ? (ev.pre === null ? '' : String(ev.pre ?? 5)) : '5';
+  $('#ed-skip').style.display = ev && !skipStateOf(ev.id) ? 'block' : 'none';
   $('#ed-subs').innerHTML = '';
   (ev && ev.subs ? ev.subs : []).forEach(addSubRow);
   $('#ed-delete').style.display = ev ? 'block' : 'none';
@@ -1384,6 +1433,7 @@ $('#ed-save').addEventListener('click', () => {
   if(!$('#ed-start').value || !$('#ed-end').value) return edError('開始と終了の時間を入力してください');
   const start = toMin($('#ed-start').value), end = toMin($('#ed-end').value);
   if(start === end) return edError('開始と終了が同じ時間です');
+  const pre = $('#ed-pre').value === '' ? null : +$('#ed-pre').value;
 
   const subs = [...document.querySelectorAll('#ed-subs .sub-edit')].map(r => {
     let ss = r.querySelector('.se-start').value ? toMin(r.querySelector('.se-start').value) : start;
@@ -1396,10 +1446,10 @@ $('#ed-save').addEventListener('click', () => {
   }).filter(s => s.name);
 
   if(editing){
-    Object.assign(editing, {title, cat: edCat, start, end});
+    Object.assign(editing, {title, cat: edCat, start, end, pre});
     if(subs.length) editing.subs = subs; else delete editing.subs;
   }else{
-    const e = {id: 'ev' + Date.now(), title, cat: edCat, start, end};
+    const e = {id: 'ev' + Date.now(), title, cat: edCat, start, end, pre};
     if(subs.length) e.subs = subs;
     SCHEDULE.push(e);
   }
@@ -1415,6 +1465,11 @@ $('#ed-delete').addEventListener('click', () => {
   closeEditor();
 });
 
+$('#ed-skip').addEventListener('click', () => {
+  if(!editing) return;
+  setSkip(editing.id, 'skip');
+  closeEditor();
+});
 $('#ed-cancel').addEventListener('click', closeEditor);
 $('#editor').addEventListener('click', e => { if(e.target === $('#editor')) closeEditor(); });
 $('#fab-add').addEventListener('click', () => openEditor(null));
@@ -1521,10 +1576,8 @@ $('#timeline').addEventListener('click', e => {
     toggleDone(chk.dataset.key, {x: r.left + r.width/2, y: r.top + r.height/2});
     return;
   }
-  const skipBtn = e.target.closest('[data-skip]');
-  if(skipBtn){ setSkip(skipBtn.dataset.skip, 'skip'); return; }
   const focusBtn = e.target.closest('[data-focus]');
-  if(focusBtn){ openFocus(focusBtn.dataset.focus); return; }
+  if(focusBtn){ openFocusMode(focusBtn.dataset.focus); return; }
   const editBtn = e.target.closest('[data-edit]');
   if(editBtn){
     const ev = SCHEDULE.find(x => x.id === editBtn.dataset.edit);
@@ -1543,61 +1596,86 @@ $('#timeline').addEventListener('click', e => {
   }
 });
 
-/* ================= 集中タイマー(ポモドーロ) ================= */
-let focusLeft = 25*60, focusTotal = 25*60, focusTimer = null, focusPhase = 'work';
-const fFmt = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
-function focusRender(){
-  $('#focus-time').textContent = fFmt(focusLeft);
-  $('#focus-phase').textContent = focusPhase === 'work' ? 'FOCUS' : 'BREAK ☕';
+/* ================= 集中モード(Routinery式: 時間が来たら次のサブ項目へ) ================= */
+let fm = null; // {ev, steps, idx, left(秒), planned(秒), timer, paused}
+function openFocusMode(evId){
+  const e = SCHEDULE.find(x => x.id === evId);
+  if(!e) return;
+  let steps = nowSteps(e).filter(st => !isDone(st.key));
+  if(!steps.length) steps = nowSteps(e); // 全部済みでももう一周できる
+  fm = {ev: e, steps, idx: 0, timer: null, paused: false};
+  fmLoadStep();
+  $('#fmode').classList.add('show');
+  fmStart();
 }
-function openFocus(taskName){
-  $('#focus-task').textContent = taskName || '';
-  focusPhase = 'work';
-  focusLeft = focusTotal;
-  $('#focus-hint').textContent = 'まずは始めるだけでOK。終わったら5分休憩';
-  $('#focus-start').textContent = '開始';
-  focusRender();
-  $('#focus').classList.add('show');
+function fmLoadStep(){
+  const st = fm.steps[fm.idx];
+  fm.left = st.planned * 60;
+  fm.planned = st.planned * 60;
 }
-function stopFocus(){ clearInterval(focusTimer); focusTimer = null; }
-$('#focus-presets').addEventListener('click', e => {
-  const b = e.target.closest('button'); if(!b) return;
-  document.querySelectorAll('#focus-presets .btn').forEach(x => x.classList.toggle('sel', x === b));
-  focusTotal = +b.dataset.fmin * 60;
-  if(focusPhase === 'work' && !focusTimer){ focusLeft = focusTotal; focusRender(); }
-});
-$('#focus-start').addEventListener('click', () => {
-  if(focusTimer){ stopFocus(); $('#focus-start').textContent = '再開'; return; }
-  $('#focus-start').textContent = '一時停止';
-  focusTimer = setInterval(() => {
-    focusLeft--;
-    focusRender();
-    if(focusLeft > 0) return;
-    stopFocus();
-    if(focusPhase === 'work'){
-      addXP(20);
-      confettiBurst(innerWidth/2, innerHeight/2, 30);
-      focusPhase = 'break';
-      focusLeft = 5*60;
-      $('#focus-hint').textContent = 'おつかれさま!+20XP 🎉 5分休憩しよう';
-      $('#focus-start').textContent = '一時停止';
-      focusRender();
-      focusTimer = setInterval(() => {
-        focusLeft--;
-        focusRender();
-        if(focusLeft <= 0){
-          stopFocus();
-          $('#focus-hint').textContent = '休憩おわり。次の一歩へ 🌿';
-          $('#focus-start').textContent = '開始';
-          focusPhase = 'work';
-          focusLeft = focusTotal;
-        }
-      }, 1000);
-    }
+function fmStart(){
+  clearInterval(fm.timer);
+  fm.paused = false;
+  fm.timer = setInterval(() => {
+    if(!fm) return;
+    fm.left--;
+    if(fm.left <= 0){ fmNext(true); return; } // 時間が来たら完了扱いで自動遷移
+    fmRender();
   }, 1000);
-});
-$('#focus-close').addEventListener('click', () => { stopFocus(); $('#focus').classList.remove('show'); $('#focus-start').textContent = '開始'; });
-$('#focus').addEventListener('click', e => { if(e.target === $('#focus')){ stopFocus(); $('#focus').classList.remove('show'); $('#focus-start').textContent = '開始'; } });
+  fmRender();
+}
+function fmPause(){ clearInterval(fm.timer); fm.timer = null; fm.paused = true; fmRender(); }
+function fmNext(markDone){
+  const st = fm.steps[fm.idx];
+  if(markDone && !isDone(st.key)){
+    doneData.items[st.key] = true;
+    store.set('done', doneData);
+    addXP(10);
+  }
+  if(fm.idx >= fm.steps.length - 1){ fmFinish(); return; }
+  fm.idx++;
+  fmLoadStep();
+  if(fm.paused) fmRender(); else fmStart();
+}
+function fmFinish(){
+  clearInterval(fm.timer);
+  addXP(20);
+  confettiBurst(innerWidth/2, innerHeight/2, 34);
+  fmClose();
+}
+function fmClose(){
+  if(fm) clearInterval(fm.timer);
+  fm = null;
+  $('#fmode').classList.remove('show');
+  refreshHome();
+  if($('#scr-now').classList.contains('active')) renderNowScreen();
+}
+function fmRender(){
+  if(!fm) return;
+  const st = fm.steps[fm.idx];
+  const cat = CATS[fm.ev.cat];
+  const n = nowMin();
+  $('#fm-title').textContent = st.name;
+  $('#fm-range').textContent = `${fmt(n)} → ${fmt((n + Math.ceil(fm.left / 60)) % 1440)}`;
+  $('#fm-icon').textContent = cat.icon;
+  $('#fm-time').textContent = `${Math.floor(fm.left / 60)}:${String(fm.left % 60).padStart(2, '0')}`;
+  const pct = Math.max(0, Math.min(100, Math.round((1 - fm.left / fm.planned) * 100)));
+  $('#fm-ring').style.background = `conic-gradient(${cat.hex} ${pct}%, var(--surface-2) 0)`;
+  $('#fm-pause').textContent = fm.paused ? '▶' : 'Ⅱ';
+  const next = fm.steps[fm.idx + 1];
+  $('#fm-next').innerHTML = next
+    ? `<span class="fm-next-tag">次へ</span>${esc(next.name)}`
+    : '<span class="fm-next-tag">ラスト</span>これで最後!';
+  const totalLeft = fm.left + fm.steps.slice(fm.idx + 1).reduce((a, x) => a + x.planned * 60, 0);
+  $('#fm-endinfo').textContent = fmt((n + Math.ceil(totalLeft / 60)) % 1440);
+  $('#fm-evname').textContent = `${cat.icon} ${fm.ev.title}`;
+}
+$('#fm-pause').addEventListener('click', () => { if(!fm) return; fm.paused ? fmStart() : fmPause(); });
+$('#fm-done').addEventListener('click', () => fm && fmNext(true));
+$('#fm-skip').addEventListener('click', () => fm && fmNext(false));
+$('#fm-close').addEventListener('click', () => { if(fm && confirm('集中モードを終了しますか?')) fmClose(); });
+$('#fm-minus').addEventListener('click', () => { if(!fm) return; fm.left = Math.max(10, fm.left - 60); fmRender(); });
+$('#fm-plus').addEventListener('click', () => { if(!fm) return; fm.left += 60; fm.planned = Math.max(fm.planned, fm.left); fmRender(); });
 
 // タイムライン / 24Hグラフ 切り替え
 function setView(v){
@@ -2012,9 +2090,9 @@ ${tasks}
 const OB_SLIDES = [
   {icon:'👋', title:'ようこそ、ADHDoへ', body:'By ADHD. For ADHD.\n1日の予定を「時間の流れ」で見える化するアプリです。\n\nすでにサンプルの1日が入っています。まずは眺めてみて、あとで自分の生活に合わせて作り替えましょう。'},
   {icon:'⏰', title:'「今なにをする時間か」だけ見る', body:'今の時間帯の予定は「NOW」として大きく光ります。迷ったらNOWだけ見ればOK。\n\n終わったタスクは左の○をタップ → 紙吹雪と一緒に達成率とXPが上がります。'},
-  {icon:'🌿', title:'できない日があってもいい', body:'無理な日は「今日はスキップ」— その予定は今日の達成率にカウントされず、タイムラインからも片付きます。\n\n連続記録は1日休んでも切れない設計。自分を責めないことが続けるコツです。'},
+  {icon:'🌿', title:'できない日があってもいい', body:'無理な日は ✎編集 の中の「今日はスキップ」— その予定は今日の達成率にカウントされず、タイムラインからも片付きます。\n\n連続記録は1日休んでも切れない設計。自分を責めないことが続けるコツです。'},
   {icon:'✏️', title:'自分の1日に作り替えよう', body:'・カードをタップ → サブ項目を開く/閉じる\n・✎ボタン → 予定を編集\n・カードを長押しして動かす → 並べ替え\n・右下の「+」→ 新しい予定を追加\n\n時間切れの未消化タスクは ⚠ で目立ちます。やるか、スキップで手放すか決めましょう。'},
-  {icon:'🚀', title:'ほかにも', body:'・上のタブで24時間の円グラフに切り替え\n・瞑想タイマー(1〜30分)\n・カレンダーで毎日の達成率をふりかえり\n・設定でテンプレート保存・通知ON/OFF\n\nさあ、はじめよう!'},
+  {icon:'🎯', title:'NowタブとFocusモード', body:'・Nowタブ: 「今やる予定」だけを大きく表示\n・▶集中モード: サブ項目ごとのタイマーが動き、時間が来たら自動で次へ進みます\n・予定ごとに「何分前に通知するか」も設定OK\n・カレンダーで毎日の達成率をふりかえり\n\nさあ、はじめよう!'},
 ];
 let obIdx = 0;
 function renderOb(){
