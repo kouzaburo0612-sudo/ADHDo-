@@ -24,6 +24,7 @@
       }
     },
     "plugins": [
+      "./plugins/with-no-push-entitlement.js",
       "expo-router",
       "expo-sqlite",
       "expo-secure-store",
