@@ -12,6 +12,13 @@ const INCREMENTAL_DAYS = 14;
 export async function syncHealthData(force = false): Promise<{ synced: number }> {
   if (!healthAvailable()) return { synced: 0 };
 
+  // 体脂肪率の単位バグ(0-1小数のまま保存されていた)修正後の一度きり全再同期
+  const migrated = await kvGet('pct_fix_v1');
+  if (!migrated) {
+    force = true;
+    await kvSet('pct_fix_v1', 'done');
+  }
+
   const last = await kvGet(LAST_SYNC_KEY);
   let start: Date;
   if (!last || force) {

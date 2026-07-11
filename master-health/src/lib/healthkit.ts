@@ -121,7 +121,9 @@ export async function fetchDailyMetrics(startDate: Date): Promise<MetricRow[]> {
       });
       const byDay = new Map<string, number>();
       for (const s of samples) {
-        byDay.set(toKey(new Date(s.startDate)), s.quantity); // 昇順なので最後の値が残る
+        // HealthKitの'%'単位は0〜1の小数で返る(0.202 = 20.2%)ため100倍する
+        const v = spec.unit === '%' ? s.quantity * 100 : s.quantity;
+        byDay.set(toKey(new Date(s.startDate)), v); // 昇順なので最後の値が残る
       }
       for (const [date, value] of byDay) rows.push({ date, metric: spec.metric, value });
     } catch (e) {
