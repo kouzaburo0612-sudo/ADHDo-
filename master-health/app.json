@@ -8,7 +8,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "masterhealth",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#0F1319",
+    "backgroundColor": "#0C1310",
     "ios": {
       "bundleIdentifier": "com.nash.masterhealth",
       "supportsTablet": false,
@@ -20,7 +20,7 @@
     "android": {
       "package": "com.nash.masterhealth",
       "adaptiveIcon": {
-        "backgroundColor": "#0F1319",
+        "backgroundColor": "#0C1310",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       }
     },
@@ -31,7 +31,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0F1319",
+          "backgroundColor": "#0C1310",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 96
         }

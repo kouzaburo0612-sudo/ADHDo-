@@ -17,6 +17,7 @@ import {
   type ExerciseSet, type FoodTemplate,
 } from '@/lib/store';
 import { computeBudget } from '@/utils/budget';
+import { balanceSeries, calorieBank } from '@/utils/deficit';
 import { simulateGoal } from '@/utils/simulator';
 import { computeTdee, type TdeeInput } from '@/utils/tdee';
 import { mean } from '@/utils/stats';
@@ -218,6 +219,28 @@ async function buildSystemPrompt(): Promise<string> {
   const goals = profile.goals.map((g) => `${g.label ?? g.metric}: 目標${g.targetValue} 期限${g.deadline}`).join(' / ') || '未設定';
   const flags = profile.dietaryFlags.map((f) => `${f.ingredient}(${f.severity})`).join('、') || 'なし';
 
+  // 今日の収支とカロリー貯金(ゲーム化の文脈)
+  let balanceLine = '';
+  try {
+    const [bal] = (await balanceSeries(1)).slice(-1);
+    const bank = await calorieBank();
+    if (bal?.balance != null) {
+      balanceLine = `\n- 今日の収支: ${bal.balance <= 0 ? `${-bal.balance}kcalの赤字(良い)` : `${bal.balance}kcalの黒字(食べ過ぎ)`}`;
+    }
+    balanceLine += `\n- カロリー貯金: 累積${bank.bankedKcal}kcal(脂肪${bank.fatKgEquivalent}kg相当)、連続赤字${bank.streakDays}日`;
+  } catch { /* 補助情報 */ }
+
+  // 今日のストレス報告
+  let stressLine = '';
+  try {
+    const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const stress = await (await import('@/lib/store')).listStressLogs(dayStart.toISOString(), today.toISOString());
+    if (stress.length > 0) {
+      const labels = ['', '快調', 'ふつう', 'やや疲れ', 'つらい', '限界'];
+      stressLine = `\n- 今日のストレス報告: ${stress.map((s) => `${labels[s.level] ?? s.level}${s.note ? `(${s.note})` : ''}`).join('、')}`;
+    }
+  } catch { /* 補助情報 */ }
+
   return `あなたはMaster Healthアプリの中核AIアシスタント。ユーザーの健康記録・照会・分析を自然な日本語チャットで担当する。
 
 ## ユーザー情報
@@ -229,7 +252,7 @@ async function buildSystemPrompt(): Promise<string> {
 ## 直近実績
 - 今日の摂取: ${Math.round(todayIntake.kcal)}kcal (P${Math.round(todayIntake.protein)}g F${Math.round(todayIntake.fat)}g C${Math.round(todayIntake.carbs)}g)
 - 体重7日平均: ${weightMa != null ? weightMa.toFixed(1) + 'kg' : 'データなし'}
-- 実績TDEE: 活動ベース${tdee.activity ?? '算出中'} / 逆算ベース${tdee.reverse ?? `不可(食事記録${tdee.loggedDays}/14日)`}
+- 実績TDEE: 活動ベース${tdee.activity ?? '算出中'} / 逆算ベース${tdee.reverse ?? `不可(食事記録${tdee.loggedDays}/14日)`}${balanceLine}${stressLine}
 ${budget ? `- 今週の収支: 予算${budget.budget} / 消費${budget.consumed} / 残り${budget.remaining}kcal (残り${budget.daysLeft}日、日割り${budget.perDayRecommended}kcal)` : ''}
 
 ## 今日アプリに記録済みの食事(これが正)
@@ -244,8 +267,10 @@ ${templates.map((t) => `- ${t.name}${t.aliases.length ? ` (別名: ${t.aliases.j
 - 数値根拠を示す。曖昧な励ましより具体的な数字
 - 「いつもの」等の曖昧な表現はテンプレートの別名と照合する
 - 食事の自由入力はあなたがPFCを概算し、is_estimate=trueでlog_mealを呼ぶ
-- 記録は必ず1件ずつツールを呼ぶ(まとめて複数を1回の応答で呼ばない)。承認されたら次の1件に進む
+- あなたはツールを呼ばない限り何も記録できない。「記録します」「記録しますね」と言うだけの応答は禁止。記録の意思があるなら同じ応答の中で必ずlog_meal等のツールを呼ぶ
+- 記録は必ず1件ずつツールを呼ぶ(まとめて複数を1回の応答で呼ばない)。承認されたら残りの件も1件ずつツールを呼び、全件終わるまで続ける
 - 記録系ツールは確認カードで承認されてから確定する。承認前に「記録しました」と言わない
+- カロリー赤字はユーザーの楽しみ。赤字が出た日は具体的な数字(貯金額・脂肪換算)で褒める
 - 記録済みかどうかはquery_recentで確認してから答える(推測で「記録されていません」と言わない)
 - 回避食材が食事に含まれる場合は必ず指摘する
 - 医学的診断はしない。今日の日付: ${todayKey}`;

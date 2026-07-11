@@ -1,4 +1,6 @@
-/** 報告: 食事の記録。写真AI分析 or 手入力。今日の合計と一覧もここで見る */
+/**
+ * 報告: 食事(写真AI分析 or 手入力)・運動(HealthKit自動 + 手動)・ストレスの3種。
+ */
 import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useState } from 'react';
 import {
@@ -7,22 +9,68 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Card, SectionTitle } from '@/components/ui';
+import { Card, Chip, SectionTitle, Segmented } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { adviceErrorMessage } from '@/lib/ai';
+import { getDay } from '@/lib/db';
+import { todayKey } from '@/lib/dates';
+import { formatValue } from '@/lib/metrics';
 import {
-  addMealLog, dailyIntake, deleteMealLog, listMealLogs, localDateKey, newId, type MealLog,
+  addMealLog, addStressLog, addWorkoutLog, dailyIntake, deleteMealLog, deleteStressLog,
+  deleteWorkoutLog, listMealLogs, listStressLogs, listWorkoutLogs, localDateKey, newId,
+  type ExerciseSet, type MealLog, type StressLog, type WorkoutLog,
 } from '@/lib/store';
 import { estimateFoodFromPhoto, type FoodEstimate } from '@/lib/vision';
 
+type Tab = 'meal' | 'workout' | 'stress';
+
+const STRESS_LEVELS = [
+  { level: 1, emoji: '😌', label: '快調' },
+  { level: 2, emoji: '🙂', label: 'ふつう' },
+  { level: 3, emoji: '😥', label: 'やや疲れ' },
+  { level: 4, emoji: '😰', label: 'つらい' },
+  { level: 5, emoji: '🤯', label: '限界' },
+];
+
+const CARDIO_PRESETS = ['ウォーキング', 'ランニング', 'サイクリング', '水泳', 'ヨガ', 'サウナ'];
+
 export default function ReportScreen() {
   const insets = useSafeAreaInsets();
+  const [tab, setTab] = useState<Tab>('meal');
+
+  return (
+    <ScrollView
+      style={styles.root}
+      contentContainerStyle={{ paddingTop: insets.top + Spacing.md, padding: Spacing.md, paddingBottom: 120 }}
+      keyboardShouldPersistTaps="handled"
+    >
+      <Text style={styles.title}>報告</Text>
+      <View style={{ marginTop: Spacing.sm }}>
+        <Segmented
+          options={[
+            { value: 'meal', label: '🍚 食事' },
+            { value: 'workout', label: '💪 運動' },
+            { value: 'stress', label: '🧠 ストレス' },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+      </View>
+      {tab === 'meal' && <MealSection />}
+      {tab === 'workout' && <WorkoutSection />}
+      {tab === 'stress' && <StressSection />}
+    </ScrollView>
+  );
+}
+
+// ============================== 食事 ==============================
+
+function MealSection() {
   const [meals, setMeals] = useState<MealLog[]>([]);
   const [totals, setTotals] = useState({ kcal: 0, protein: 0, fat: 0, carbs: 0 });
   const [analyzing, setAnalyzing] = useState(false);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<FoodEstimate | null>(null);
-  // 手入力フォーム
   const [name, setName] = useState('');
   const [kcal, setKcal] = useState('');
   const [protein, setProtein] = useState('');
@@ -112,14 +160,7 @@ export default function ReportScreen() {
   };
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={{ paddingTop: insets.top + Spacing.md, padding: Spacing.md, paddingBottom: 120 }}
-      keyboardShouldPersistTaps="handled"
-    >
-      <Text style={styles.title}>食事を報告</Text>
-
-      {/* 今日の合計 */}
+    <>
       <Card style={styles.totalCard}>
         <Text style={styles.totalKcal}>
           {totals.kcal.toLocaleString()}<Text style={styles.totalUnit}> kcal</Text>
@@ -127,7 +168,6 @@ export default function ReportScreen() {
         <Text style={styles.totalPfc}>P {totals.protein}g ・ F {totals.fat}g ・ C {totals.carbs}g</Text>
       </Card>
 
-      {/* 写真から */}
       <SectionTitle>写真から記録</SectionTitle>
       <View style={styles.photoRow}>
         <Pressable style={styles.photoBtn} onPress={() => pick(true)} disabled={analyzing}>
@@ -172,7 +212,6 @@ export default function ReportScreen() {
         </Card>
       )}
 
-      {/* 手入力 */}
       <SectionTitle>手入力で記録</SectionTitle>
       <Card>
         <TextInput
@@ -192,7 +231,6 @@ export default function ReportScreen() {
         </Pressable>
       </Card>
 
-      {/* 今日の食事一覧 */}
       <SectionTitle>今日の食事</SectionTitle>
       {meals.length === 0 ? (
         <Card><Text style={styles.muted}>まだ記録がありません</Text></Card>
@@ -210,9 +248,269 @@ export default function ReportScreen() {
         </Pressable>
       ))}
       {meals.length > 0 && <Text style={styles.hint}>長押しで削除できます</Text>}
-    </ScrollView>
+    </>
   );
 }
+
+// ============================== 運動 ==============================
+
+interface StrengthRow { name: string; weight: string; unit: 'kg' | 'lb'; reps: string; sets: string }
+const EMPTY_ROW: StrengthRow = { name: '', weight: '', unit: 'kg', reps: '', sets: '' };
+
+function WorkoutSection() {
+  const [auto, setAuto] = useState<{ steps?: number; distance?: number; exercise_time?: number; active_energy?: number }>({});
+  const [workouts, setWorkouts] = useState<WorkoutLog[]>([]);
+  const [cardio, setCardio] = useState<string | null>(null);
+  const [cardioMin, setCardioMin] = useState('');
+  const [rows, setRows] = useState<StrengthRow[]>([{ ...EMPTY_ROW }]);
+
+  const load = useCallback(async () => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    setWorkouts(await listWorkoutLogs(start.toISOString(), now.toISOString()));
+    const day = await getDay(todayKey());
+    setAuto({
+      steps: day.steps, distance: day.distance,
+      exercise_time: day.exercise_time, active_energy: day.active_energy,
+    });
+  }, []);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const recordCardio = async () => {
+    if (!cardio) { Alert.alert('種目を選んでください'); return; }
+    const min = parseFloat(cardioMin);
+    await addWorkoutLog({
+      id: newId(), timestamp: new Date().toISOString(),
+      exercises: [{ exerciseName: cardio, reps: 1, sets: 1 }],
+      durationMin: Number.isFinite(min) ? min : null,
+      note: null,
+    });
+    setCardio(null); setCardioMin('');
+    load();
+  };
+
+  const recordStrength = async () => {
+    const exercises: ExerciseSet[] = [];
+    for (const r of rows) {
+      if (!r.name.trim()) continue;
+      const reps = parseInt(r.reps, 10);
+      const sets = parseInt(r.sets, 10);
+      if (!Number.isFinite(reps) || !Number.isFinite(sets)) continue;
+      const weight = parseFloat(r.weight);
+      exercises.push({
+        exerciseName: r.name.trim(),
+        weight: Number.isFinite(weight) ? weight : undefined,
+        weightUnit: Number.isFinite(weight) ? r.unit : undefined,
+        reps, sets,
+      });
+    }
+    if (exercises.length === 0) {
+      Alert.alert('入力エラー', '種目名・回数・セット数を入れてください');
+      return;
+    }
+    await addWorkoutLog({
+      id: newId(), timestamp: new Date().toISOString(),
+      exercises, durationMin: null, note: null,
+    });
+    setRows([{ ...EMPTY_ROW }]);
+    load();
+  };
+
+  const confirmDelete = (id: string) => {
+    Alert.alert('削除', 'この記録を削除しますか?', [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '削除', style: 'destructive', onPress: async () => { await deleteWorkoutLog(id); load(); } },
+    ]);
+  };
+
+  const updateRow = (i: number, patch: Partial<StrengthRow>) => {
+    setRows((prev) => prev.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  };
+
+  return (
+    <>
+      <SectionTitle>今日の活動(ヘルスケア連携・自動)</SectionTitle>
+      <Card>
+        <View style={styles.autoRow}>
+          <AutoStat label="歩数" value={auto.steps != null ? formatValue('steps', auto.steps) : '–'} unit="歩" />
+          <AutoStat label="距離" value={auto.distance != null ? formatValue('distance', auto.distance) : '–'} unit="km" />
+          <AutoStat label="運動時間" value={auto.exercise_time != null ? formatValue('exercise_time', auto.exercise_time) : '–'} unit="" />
+          <AutoStat label="消費" value={auto.active_energy != null ? formatValue('active_energy', auto.active_energy) : '–'} unit="kcal" />
+        </View>
+        <Text style={styles.hintLeft}>歩数・消費カロリーは記録不要。自動で収支に反映されます</Text>
+      </Card>
+
+      <SectionTitle>有酸素・その他を記録</SectionTitle>
+      <Card>
+        <View style={styles.chipWrap}>
+          {CARDIO_PRESETS.map((c) => (
+            <Chip key={c} label={c} active={cardio === c} onPress={() => setCardio(cardio === c ? null : c)} />
+          ))}
+        </View>
+        <View style={[styles.inputGrid, { marginTop: Spacing.md }]}>
+          <NumInput label="時間(分)" value={cardioMin} onChange={setCardioMin} />
+          <View style={{ flex: 2, justifyContent: 'flex-end' }}>
+            <Pressable style={[styles.btn, styles.btnPrimary]} onPress={recordCardio}>
+              <Text style={styles.btnPrimaryText}>記録する</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Card>
+
+      <SectionTitle>筋トレを記録</SectionTitle>
+      <Card>
+        {rows.map((r, i) => (
+          <View key={i} style={[i > 0 && { marginTop: Spacing.md, paddingTop: Spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border }]}>
+            <TextInput
+              style={styles.input}
+              value={r.name}
+              onChangeText={(v) => updateRow(i, { name: v })}
+              placeholder="種目名(例: ベンチプレス)"
+              placeholderTextColor={Colors.textFaint}
+            />
+            <View style={styles.inputGrid}>
+              <NumInput label="重量" value={r.weight} onChange={(v) => updateRow(i, { weight: v })} />
+              <View style={styles.numWrap}>
+                <Text style={styles.numLabel}>単位</Text>
+                <Pressable
+                  style={styles.unitBtn}
+                  onPress={() => updateRow(i, { unit: r.unit === 'kg' ? 'lb' : 'kg' })}
+                >
+                  <Text style={styles.unitBtnText}>{r.unit}</Text>
+                </Pressable>
+              </View>
+              <NumInput label="回数" value={r.reps} onChange={(v) => updateRow(i, { reps: v })} />
+              <NumInput label="セット" value={r.sets} onChange={(v) => updateRow(i, { sets: v })} />
+            </View>
+          </View>
+        ))}
+        <View style={styles.btnRow}>
+          <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => setRows((p) => [...p, { ...EMPTY_ROW }])}>
+            <Text style={styles.btnGhostText}>+ 種目を追加</Text>
+          </Pressable>
+          <Pressable style={[styles.btn, styles.btnPrimary]} onPress={recordStrength}>
+            <Text style={styles.btnPrimaryText}>記録する</Text>
+          </Pressable>
+        </View>
+      </Card>
+
+      <SectionTitle>今日のトレーニング</SectionTitle>
+      {workouts.length === 0 ? (
+        <Card><Text style={styles.muted}>まだ記録がありません</Text></Card>
+      ) : workouts.map((w) => (
+        <Pressable key={w.id} onLongPress={() => confirmDelete(w.id)}>
+          <Card style={{ marginBottom: Spacing.sm }}>
+            <Text style={styles.mealTime}>{fmtTime(w.timestamp)}{w.durationMin ? ` ・ ${w.durationMin}分` : ''}</Text>
+            {w.exercises.map((e, i) => (
+              <Text key={i} style={styles.mealName}>
+                {e.exerciseName}
+                {e.weight != null ? ` ${e.weight}${e.weightUnit ?? ''}` : ''}
+                {e.reps > 1 || e.sets > 1 ? ` ${e.reps}回×${e.sets}セット` : ''}
+              </Text>
+            ))}
+          </Card>
+        </Pressable>
+      ))}
+      {workouts.length > 0 && <Text style={styles.hint}>長押しで削除できます</Text>}
+    </>
+  );
+}
+
+function AutoStat({ label, value, unit }: { label: string; value: string; unit: string }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center' }}>
+      <Text style={styles.autoValue}>{value}</Text>
+      <Text style={styles.autoLabel}>{label}{unit ? ` (${unit})` : ''}</Text>
+    </View>
+  );
+}
+
+// ============================== ストレス ==============================
+
+function StressSection() {
+  const [level, setLevel] = useState<number | null>(null);
+  const [note, setNote] = useState('');
+  const [logs, setLogs] = useState<StressLog[]>([]);
+
+  const load = useCallback(async () => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    setLogs(await listStressLogs(start.toISOString(), now.toISOString()));
+  }, []);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const record = async () => {
+    if (level == null) { Alert.alert('今の状態を選んでください'); return; }
+    await addStressLog({
+      id: newId(), timestamp: new Date().toISOString(),
+      level, note: note.trim() || null,
+    });
+    setLevel(null); setNote('');
+    load();
+  };
+
+  const confirmDelete = (id: string) => {
+    Alert.alert('削除', 'この記録を削除しますか?', [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '削除', style: 'destructive', onPress: async () => { await deleteStressLog(id); load(); } },
+    ]);
+  };
+
+  return (
+    <>
+      <SectionTitle>いまの状態</SectionTitle>
+      <Card>
+        <View style={styles.stressRow}>
+          {STRESS_LEVELS.map((s) => (
+            <Pressable
+              key={s.level}
+              style={[styles.stressBtn, level === s.level && styles.stressBtnActive]}
+              onPress={() => setLevel(level === s.level ? null : s.level)}
+            >
+              <Text style={styles.stressEmoji}>{s.emoji}</Text>
+              <Text style={[styles.stressLabel, level === s.level && { color: Colors.text, fontWeight: '700' }]}>
+                {s.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <TextInput
+          style={[styles.input, { marginTop: Spacing.md }]}
+          value={note} onChangeText={setNote}
+          placeholder="メモ(任意。例: 仕事が立て込んでる)"
+          placeholderTextColor={Colors.textFaint}
+        />
+        <Pressable style={[styles.btn, styles.btnPrimary, { marginTop: Spacing.md }]} onPress={record}>
+          <Text style={styles.btnPrimaryText}>記録する</Text>
+        </Pressable>
+        <Text style={styles.hintLeft}>ストレスはAIチャットの文脈に共有され、睡眠・回復との関係分析に使われます</Text>
+      </Card>
+
+      <SectionTitle>今日のストレス報告</SectionTitle>
+      {logs.length === 0 ? (
+        <Card><Text style={styles.muted}>まだ記録がありません</Text></Card>
+      ) : logs.map((s) => {
+        const def = STRESS_LEVELS.find((x) => x.level === s.level);
+        return (
+          <Pressable key={s.id} onLongPress={() => confirmDelete(s.id)}>
+            <Card style={styles.mealRow}>
+              <Text style={styles.stressEmoji}>{def?.emoji ?? '🧠'}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.mealName}>{def?.label ?? s.level}</Text>
+                <Text style={styles.mealTime}>{fmtTime(s.timestamp)}{s.note ? ` ・ ${s.note}` : ''}</Text>
+              </View>
+            </Card>
+          </Pressable>
+        );
+      })}
+      {logs.length > 0 && <Text style={styles.hint}>長押しで削除できます</Text>}
+    </>
+  );
+}
+
+// ============================== 共通 ==============================
 
 function NumInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
@@ -277,6 +575,11 @@ const styles = StyleSheet.create({
     color: Colors.text, paddingHorizontal: 8, paddingVertical: 8, fontSize: Type.body,
     fontVariant: ['tabular-nums'], textAlign: 'center',
   },
+  unitBtn: {
+    backgroundColor: Colors.surfaceRaised, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.border,
+    paddingVertical: 8, alignItems: 'center',
+  },
+  unitBtnText: { color: Colors.text, fontSize: Type.body, fontWeight: '600' },
   muted: { color: Colors.textFaint, fontSize: Type.body },
   mealRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.sm, gap: Spacing.sm },
   mealName: { color: Colors.text, fontSize: Type.body },
@@ -284,4 +587,18 @@ const styles = StyleSheet.create({
   mealKcal: { color: Colors.text, fontSize: Type.body, fontWeight: '700', fontVariant: ['tabular-nums'] },
   est: { color: Colors.warn, fontSize: Type.caption },
   hint: { color: Colors.textFaint, fontSize: Type.caption, textAlign: 'center', marginTop: Spacing.sm },
+  hintLeft: { color: Colors.textFaint, fontSize: Type.caption, marginTop: Spacing.sm, lineHeight: 16 },
+  autoRow: { flexDirection: 'row' },
+  autoValue: { color: Colors.text, fontSize: 18, fontFamily: Fonts.display, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  autoLabel: { color: Colors.textFaint, fontSize: 10, marginTop: 2 },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  stressRow: { flexDirection: 'row', gap: 6 },
+  stressBtn: {
+    flex: 1, alignItems: 'center', paddingVertical: Spacing.sm,
+    borderRadius: Radius.sm, backgroundColor: Colors.bg,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  stressBtnActive: { backgroundColor: Colors.accentDim, borderColor: Colors.accent },
+  stressEmoji: { fontSize: 24 },
+  stressLabel: { color: Colors.textSecondary, fontSize: 10, marginTop: 4 },
 });

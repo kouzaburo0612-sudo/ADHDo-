@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { adviceErrorMessage } from '@/lib/ai';
-import { currentTdee, resumeChat, sendChat, type PendingAction } from '@/lib/chat';
+import { currentTdee, resumeChat, sendChat, stripMarkdown, type PendingAction } from '@/lib/chat';
 import { addDays } from '@/lib/dates';
 import { appendChat, dailyIntake, listChat, localDateKey } from '@/lib/store';
 import { syncHealthData } from '@/lib/sync';
@@ -18,13 +18,17 @@ interface Bubble { key: string; role: 'user' | 'assistant'; content: string }
 
 const SUGGESTIONS = ['今日あと何kcal食べられる?', '昼はいつもの', '今日の体重は?', '目標いつ達成できそう?'];
 
-/** 入力欄の上に常時表示するワンタップ操作 */
+/**
+ * 入力欄の上に常時表示するワンタップ操作。
+ * 絵文字は本文と別のTextノードで描画する(異体字セレクタ付き絵文字が
+ * ラベル全体を不可視にするiOSのフォント解決問題を避けるため)。
+ */
 const QUICK_ACTIONS = [
-  { label: '🍽 食事を記録', text: '食事を記録したい' },
-  { label: '🔥 あと何kcal?', text: '今日あと何kcal食べられる?' },
-  { label: '🏋️ トレを記録', text: 'トレーニングを記録したい' },
-  { label: '📊 今日の調子', text: '今日のコンディションを教えて' },
-  { label: '🎯 目標の進捗', text: '目標達成の見込みを教えて' },
+  { emoji: '🍚', label: '食事を記録', text: '食事を記録したい' },
+  { emoji: '🔥', label: 'あと何kcal?', text: '今日あと何kcal食べられる?' },
+  { emoji: '💪', label: 'トレを記録', text: 'トレーニングを記録したい' },
+  { emoji: '📊', label: '今日の調子', text: '今日のコンディションを教えて' },
+  { emoji: '🎯', label: '目標の進捗', text: '目標達成の見込みを教えて' },
 ];
 
 export default function ChatScreen() {
@@ -138,7 +142,8 @@ export default function ChatScreen() {
         renderItem={({ item }) => (
           <View style={[styles.bubble, item.role === 'user' ? styles.bubbleUser : styles.bubbleAi]}>
             <Text selectable style={item.role === 'user' ? styles.bubbleUserText : styles.bubbleAiText}>
-              {item.content}
+              {/* 過去バージョンで保存された履歴にマークダウンが残っている場合も表示時に除去 */}
+              {item.role === 'assistant' ? stripMarkdown(item.content) : item.content}
             </Text>
           </View>
         )}
@@ -172,7 +177,8 @@ export default function ChatScreen() {
       >
         {QUICK_ACTIONS.map((q) => (
           <Pressable key={q.label} style={styles.quickBtn} onPress={() => send(q.text)} disabled={busy}>
-            <Text style={styles.quickText}>{q.label}</Text>
+            <Text style={styles.quickEmoji}>{q.emoji}</Text>
+            <Text style={styles.quickText} allowFontScaling={false}>{q.label}</Text>
           </Pressable>
         ))}
       </ScrollView>
@@ -235,11 +241,13 @@ const styles = StyleSheet.create({
   quickBar: { flexGrow: 0, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
   quickBarContent: { gap: 8, paddingHorizontal: Spacing.md, paddingVertical: 8 },
   quickBtn: {
-    backgroundColor: Colors.surface, borderRadius: 999,
-    paddingHorizontal: 14, paddingVertical: 8,
-    borderWidth: 1, borderColor: Colors.border,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.surfaceRaised, borderRadius: 999,
+    paddingHorizontal: 14, paddingVertical: 9,
+    borderWidth: 1, borderColor: Colors.accentDim,
   },
-  quickText: { color: Colors.text, fontSize: Type.caption },
+  quickEmoji: { fontSize: 14 },
+  quickText: { color: '#F0F5F1', fontSize: 13, fontWeight: '600' },
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.sm,
     paddingHorizontal: Spacing.md, paddingTop: 4,

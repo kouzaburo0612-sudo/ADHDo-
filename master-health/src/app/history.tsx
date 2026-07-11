@@ -1,7 +1,7 @@
-/** トレンド(History): 日/週/月/年切替・過去参照・比較ビュー・タグ相関 */
+/** トレンド(History): 目標設定・日次収支・達成予測・指標グラフ・比較・タグ相関 */
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,8 +14,9 @@ import { useFocusEffect } from 'expo-router';
 import { addDays, formatKeyJa, fromKey, toKey, todayKey } from '@/lib/dates';
 import { currentTdee } from '@/lib/chat';
 import { getSeries } from '@/lib/db';
-import { dailyIntake, getProfile } from '@/lib/store';
+import { dailyIntake, getProfile, newId, saveGoalPlan, saveProfile, type GoalPlan } from '@/lib/store';
 import { computeBudget, type BudgetResult } from '@/utils/budget';
+import { balanceSeries, goalNumbers, type DayBalance, type GoalNumbers } from '@/utils/deficit';
 import { simulateGoal, type ScenarioResult } from '@/utils/simulator';
 import type { TdeeResult } from '@/utils/tdee';
 import { formatValue, METRIC_ORDER, METRICS, type MetricKey } from '@/lib/metrics';
@@ -37,10 +38,15 @@ export default function HistoryScreen() {
   const [tdee, setTdee] = useState<TdeeResult | null>(null);
   const [budget, setBudget] = useState<BudgetResult | null>(null);
   const [forecasts, setForecasts] = useState<{ label: string; target: number; sim: ScenarioResult }[]>([]);
+  const [goal, setGoal] = useState<GoalNumbers | null>(null);
+  const [balances, setBalances] = useState<DayBalance[]>([]);
+  const [editOpen, setEditOpen] = useState(false);
 
   const loadInsights = useCallback(async () => {
     try {
       const today = new Date();
+      setGoal(await goalNumbers());
+      setBalances(await balanceSeries(14));
       const t = await currentTdee();
       setTdee(t);
       const intake = await dailyIntake(addDays(today, -8).toISOString(), today.toISOString());
@@ -68,6 +74,24 @@ export default function HistoryScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { loadInsights(); }, [loadInsights]));
+
+  const saveGoal = useCallback(async (plan: GoalPlan) => {
+    await saveGoalPlan(plan);
+    // 達成予測とAIチャットからも見えるよう、プロファイルの体重目標も同期する
+    if (plan.targetWeightKg != null && plan.targetDate) {
+      const profile = await getProfile();
+      const rest = profile.goals.filter((g) => g.metric !== 'weight');
+      await saveProfile({
+        ...profile,
+        goals: [...rest, {
+          id: newId(), metric: 'weight', label: '体重',
+          targetValue: plan.targetWeightKg, deadline: plan.targetDate,
+        }],
+      });
+    }
+    setEditOpen(false);
+    loadInsights();
+  }, [loadInsights]);
 
   const { points } = useSeries(metric, mode, anchor);
   const compare = useComparison(metric);
@@ -101,6 +125,55 @@ export default function HistoryScreen() {
       style={styles.screen}
       contentContainerStyle={{ paddingTop: insets.top + Spacing.md, paddingBottom: 120, paddingHorizontal: Spacing.md }}
     >
+      {/* 目標設定(カロミル風) */}
+      <Card style={styles.goalCard}>
+        <View style={styles.goalHead}>
+          <Text style={styles.goalLabel}>目標設定</Text>
+          <Pressable onPress={() => setEditOpen(true)} hitSlop={8}>
+            <Text style={styles.editLink}>{goal?.plan.targetWeightKg != null ? '変更 ›' : '設定する ›'}</Text>
+          </Pressable>
+        </View>
+        {goal?.plan.targetWeightKg != null ? (
+          <>
+            <View style={styles.goalWeights}>
+              <Text style={styles.goalNow}>
+                {goal.currentWeightKg != null ? goal.currentWeightKg.toFixed(1) : '–'}
+                <Text style={styles.goalUnit}> kg</Text>
+              </Text>
+              <Text style={styles.goalArrow}>→</Text>
+              <Text style={styles.goalTargetNum}>
+                {goal.plan.targetWeightKg.toFixed(1)}
+                <Text style={styles.goalUnit}> kg</Text>
+              </Text>
+            </View>
+            <View style={styles.goalGrid}>
+              {goal.remainingKg != null && <GoalStat label="残り" value={`${goal.remainingKg}kg`} />}
+              {goal.daysLeft != null && <GoalStat label="期限まで" value={`${goal.daysLeft}日`} />}
+              {goal.paceKgPerWeek != null && <GoalStat label="必要ペース" value={`${goal.paceKgPerWeek}kg/週`} />}
+              {goal.requiredDailyDeficit != null && <GoalStat label="必要赤字" value={`${goal.requiredDailyDeficit}kcal/日`} />}
+            </View>
+            {goal.targetIntakeKcal != null && (
+              <View style={styles.intakeRow}>
+                <Text style={styles.intakeMain}>目標摂取 {goal.targetIntakeKcal.toLocaleString()} kcal/日</Text>
+                {goal.pfcGrams && (
+                  <Text style={styles.intakeSub}>P {goal.pfcGrams.p}g ・ F {goal.pfcGrams.f}g ・ C {goal.pfcGrams.c}g</Text>
+                )}
+              </View>
+            )}
+          </>
+        ) : (
+          <Text style={styles.goalSub}>
+            目標体重と期日を設定すると、必要ペース・1日の目標摂取カロリー・カロリー貯金の進捗が出ます
+          </Text>
+        )}
+      </Card>
+
+      {/* 日次カロリー収支(1日単位が主役。赤字=緑) */}
+      <Card style={styles.goalCard}>
+        <Text style={styles.goalLabel}>日次カロリー収支(直近14日)</Text>
+        <BalanceBars data={balances} />
+      </Card>
+
       {/* 目標達成予測 */}
       {forecasts.map((f) => (
         <Card key={f.label} style={styles.goalCard}>
@@ -115,27 +188,6 @@ export default function HistoryScreen() {
           )}
         </Card>
       ))}
-
-      {/* 週次収支(週単位はこのページで見る) */}
-      {budget && (
-        <Card style={styles.goalCard}>
-          <Text style={styles.goalLabel}>今週のカロリー収支(月曜はじまり)</Text>
-          <View style={styles.budgetRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.budgetNum}>{budget.remaining.toLocaleString()}</Text>
-              <Text style={styles.budgetCap}>残り kcal</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.budgetNum}>{budget.perDayRecommended.toLocaleString()}</Text>
-              <Text style={styles.budgetCap}>日割り推奨 kcal</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.budgetNum}>{tdee?.effective ?? '–'}</Text>
-              <Text style={styles.budgetCap}>実績TDEE kcal/日</Text>
-            </View>
-          </View>
-        </Card>
-      )}
 
       {/* 指標セレクタ */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.metricRow}>
@@ -219,6 +271,37 @@ export default function HistoryScreen() {
         )}
       </Card>
 
+      {/* 週単位の収支(参考。1日単位が主役なので下部に控えめに置く) */}
+      {budget && (
+        <>
+          <SectionTitle>週単位の収支(参考)</SectionTitle>
+          <Card>
+            <View style={styles.budgetRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.budgetNum}>{budget.remaining.toLocaleString()}</Text>
+                <Text style={styles.budgetCap}>今週残り kcal</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.budgetNum}>{budget.perDayRecommended.toLocaleString()}</Text>
+                <Text style={styles.budgetCap}>日割り推奨 kcal</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.budgetNum}>{tdee?.effective ?? '–'}</Text>
+                <Text style={styles.budgetCap}>実績TDEE kcal/日</Text>
+              </View>
+            </View>
+          </Card>
+        </>
+      )}
+
+      {/* 目標編集モーダル */}
+      <GoalEditModal
+        visible={editOpen}
+        goal={goal}
+        onClose={() => setEditOpen(false)}
+        onSave={saveGoal}
+      />
+
       {/* タグ相関分析 */}
       <SectionTitle>タグの影響(翌日の平均変化)</SectionTitle>
       {tagEffects.length === 0 ? (
@@ -239,6 +322,203 @@ export default function HistoryScreen() {
   );
 }
 
+function GoalStat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.goalStat}>
+      <Text style={styles.goalStatValue}>{value}</Text>
+      <Text style={styles.goalStatLabel}>{label}</Text>
+    </View>
+  );
+}
+
+/** 日次収支のミニ棒グラフ。赤字=下向き緑バー、黒字=上向き赤バー */
+function BalanceBars({ data }: { data: DayBalance[] }) {
+  const maxAbs = Math.max(300, ...data.map((d) => Math.abs(d.balance ?? 0)));
+  return (
+    <View style={styles.barsRow}>
+      {data.map((d) => {
+        const bal = d.balance;
+        const h = bal != null ? Math.max(3, (Math.abs(bal) / maxAbs) * 44) : 0;
+        const deficit = bal != null && bal < 0;
+        return (
+          <View key={d.date} style={styles.barCol}>
+            <View style={styles.barHalfTop}>
+              {bal != null && !deficit && (
+                <View style={[styles.bar, { height: h, backgroundColor: Colors.surplus }]} />
+              )}
+            </View>
+            <View style={styles.barZeroLine} />
+            <View style={styles.barHalfBottom}>
+              {bal != null && deficit && (
+                <View style={[styles.bar, { height: h, backgroundColor: Colors.deficit }]} />
+              )}
+              {bal == null && <View style={styles.barDot} />}
+            </View>
+            <Text style={styles.barLabel}>{Number(d.date.slice(8, 10))}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/** 目標設定モーダル(カロミル風) */
+function GoalEditModal({ visible, goal, onClose, onSave }: {
+  visible: boolean;
+  goal: GoalNumbers | null;
+  onClose: () => void;
+  onSave: (plan: GoalPlan) => void;
+}) {
+  const plan = goal?.plan;
+  const [weight, setWeight] = useState('');
+  const [date, setDate] = useState<Date | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [intakeMode, setIntakeMode] = useState<'auto' | 'custom'>('auto');
+  const [customKcal, setCustomKcal] = useState('');
+  const [p, setP] = useState('30');
+  const [f, setF] = useState('25');
+  const [c, setC] = useState('45');
+  const [initialized, setInitialized] = useState(false);
+
+  // モーダルを開くたびに現在の設定値を反映
+  if (visible && !initialized && goal) {
+    setWeight(plan?.targetWeightKg != null ? String(plan.targetWeightKg) : '');
+    setDate(plan?.targetDate ? fromKey(plan.targetDate) : null);
+    setIntakeMode(plan?.intakeMode ?? 'auto');
+    setCustomKcal(plan?.customIntakeKcal != null ? String(plan.customIntakeKcal) : '');
+    setP(String(plan?.pfc.p ?? 30));
+    setF(String(plan?.pfc.f ?? 25));
+    setC(String(plan?.pfc.c ?? 45));
+    setInitialized(true);
+  }
+  if (!visible && initialized) setInitialized(false);
+
+  const save = () => {
+    const w = parseFloat(weight);
+    const targetWeightKg = Number.isFinite(w) ? w : null;
+    const targetDate = date ? toKey(date) : null;
+    const pn = parseInt(p, 10) || 30;
+    const fn = parseInt(f, 10) || 25;
+    const cn = parseInt(c, 10) || 45;
+    const prev = goal?.plan;
+    // 目標が変わったら貯金の起点をリセット(現体重・今日から数え直す)
+    const changed = prev?.targetWeightKg !== targetWeightKg || prev?.targetDate !== targetDate;
+    onSave({
+      targetWeightKg,
+      targetDate,
+      startWeightKg: changed || prev?.startWeightKg == null ? goal?.currentWeightKg ?? prev?.startWeightKg ?? null : prev.startWeightKg,
+      startDate: changed || prev?.startDate == null ? todayKey() : prev.startDate,
+      intakeMode,
+      customIntakeKcal: parseFloat(customKcal) || null,
+      pfc: { p: pn, f: fn, c: cn },
+    });
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <ScrollView style={styles.modalRoot} contentContainerStyle={{ padding: Spacing.md, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+        <View style={styles.modalHead}>
+          <Pressable onPress={onClose} hitSlop={10}><Text style={styles.modalCancel}>キャンセル</Text></Pressable>
+          <Text style={styles.modalTitle}>目標設定</Text>
+          <Pressable onPress={save} hitSlop={10}><Text style={styles.modalSave}>保存</Text></Pressable>
+        </View>
+
+        <SectionTitle>目標体重</SectionTitle>
+        <Card>
+          <View style={styles.modalRow}>
+            <TextInput
+              style={styles.modalInput}
+              value={weight} onChangeText={setWeight}
+              keyboardType="decimal-pad" placeholder="例: 62.0"
+              placeholderTextColor={Colors.textFaint}
+            />
+            <Text style={styles.modalUnit}>kg</Text>
+          </View>
+          {goal?.currentWeightKg != null && (
+            <Text style={styles.modalHint}>現在 {goal.currentWeightKg.toFixed(1)}kg</Text>
+          )}
+        </Card>
+
+        <SectionTitle>目標日</SectionTitle>
+        <Card>
+          <Pressable onPress={() => setPickerOpen((v) => !v)}>
+            <Text style={styles.modalDateText}>
+              {date ? formatKeyJa(toKey(date)) : 'タップして選択'}
+            </Text>
+          </Pressable>
+          {pickerOpen && (
+            <DateTimePicker
+              value={date ?? addDays(new Date(), 60)}
+              mode="date"
+              display="inline"
+              minimumDate={addDays(new Date(), 7)}
+              themeVariant="dark"
+              accentColor={Colors.accent}
+              onChange={(event, dt) => {
+                if (event.type === 'set' && dt) { setDate(dt); setPickerOpen(false); }
+              }}
+            />
+          )}
+        </Card>
+
+        <SectionTitle>1日の摂取カロリー目標</SectionTitle>
+        <Card>
+          <Segmented
+            options={[
+              { value: 'auto', label: '自動(ペースから逆算)' },
+              { value: 'custom', label: '手入力' },
+            ]}
+            value={intakeMode}
+            onChange={setIntakeMode}
+          />
+          {intakeMode === 'custom' ? (
+            <View style={[styles.modalRow, { marginTop: Spacing.md }]}>
+              <TextInput
+                style={styles.modalInput}
+                value={customKcal} onChangeText={setCustomKcal}
+                keyboardType="number-pad" placeholder="例: 2000"
+                placeholderTextColor={Colors.textFaint}
+              />
+              <Text style={styles.modalUnit}>kcal</Text>
+            </View>
+          ) : (
+            <Text style={styles.modalHint}>
+              実績の消費カロリーから、目標日に間に合う摂取量を毎日自動計算します
+              {goal?.targetIntakeKcal != null ? `(現在の計算値: ${goal.targetIntakeKcal.toLocaleString()}kcal)` : ''}
+            </Text>
+          )}
+        </Card>
+
+        <SectionTitle>PFCバランス(%)</SectionTitle>
+        <Card>
+          <View style={styles.pfcRow}>
+            <PfcInput label="P たんぱく質" value={p} onChange={setP} />
+            <PfcInput label="F 脂質" value={f} onChange={setF} />
+            <PfcInput label="C 炭水化物" value={c} onChange={setC} />
+          </View>
+          {(parseInt(p, 10) || 0) + (parseInt(f, 10) || 0) + (parseInt(c, 10) || 0) !== 100 && (
+            <Text style={[styles.modalHint, { color: Colors.warn }]}>合計が100%になっていません</Text>
+          )}
+        </Card>
+      </ScrollView>
+    </Modal>
+  );
+}
+
+function PfcInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={styles.pfcLabel}>{label}</Text>
+      <TextInput
+        style={styles.pfcInput}
+        value={value} onChangeText={onChange}
+        keyboardType="number-pad"
+        placeholderTextColor={Colors.textFaint}
+      />
+    </View>
+  );
+}
+
 function formatDelta(metric: MetricKey, delta: number): string {
   const sign = delta >= 0 ? '+' : '−';
   const def = METRICS[metric];
@@ -255,6 +535,53 @@ function fmtShortDate(iso: string | null): string {
 const styles = StyleSheet.create({
   goalCard: { marginBottom: Spacing.sm },
   goalLabel: { color: Colors.textSecondary, fontSize: Type.caption },
+  goalHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  editLink: { color: Colors.accent, fontSize: Type.label, fontWeight: '700' },
+  goalWeights: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.sm, marginTop: 6 },
+  goalNow: { color: Colors.text, fontSize: 30, fontFamily: Fonts.display, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  goalArrow: { color: Colors.textFaint, fontSize: 20 },
+  goalTargetNum: { color: Colors.accent, fontSize: 30, fontFamily: Fonts.display, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  goalUnit: { fontSize: Type.caption, color: Colors.textSecondary, fontWeight: '400' },
+  goalGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: Spacing.sm, gap: Spacing.sm },
+  goalStat: { minWidth: '45%', flexGrow: 1 },
+  goalStatValue: { color: Colors.text, fontSize: Type.body, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  goalStatLabel: { color: Colors.textFaint, fontSize: Type.caption, marginTop: 1 },
+  intakeRow: {
+    marginTop: Spacing.sm, paddingTop: Spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border,
+  },
+  intakeMain: { color: Colors.accent, fontSize: Type.body, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  intakeSub: { color: Colors.textSecondary, fontSize: Type.caption, marginTop: 2, fontVariant: ['tabular-nums'] },
+  barsRow: { flexDirection: 'row', gap: 3, marginTop: Spacing.sm },
+  barCol: { flex: 1, alignItems: 'center' },
+  barHalfTop: { height: 46, width: '100%', justifyContent: 'flex-end' },
+  barHalfBottom: { height: 46, width: '100%' },
+  barZeroLine: { height: 1, width: '100%', backgroundColor: Colors.border },
+  bar: { width: '70%', alignSelf: 'center', borderRadius: 2 },
+  barDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.textFaint, alignSelf: 'center', marginTop: 4 },
+  barLabel: { color: Colors.textFaint, fontSize: 9, marginTop: 3, fontVariant: ['tabular-nums'] },
+  modalRoot: { flex: 1, backgroundColor: Colors.bg },
+  modalHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
+  modalTitle: { color: Colors.text, fontSize: Type.body, fontWeight: '700' },
+  modalCancel: { color: Colors.textSecondary, fontSize: Type.body },
+  modalSave: { color: Colors.accent, fontSize: Type.body, fontWeight: '700' },
+  modalRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  modalInput: {
+    flex: 1, backgroundColor: Colors.bg, borderRadius: Radius.sm,
+    borderWidth: 1, borderColor: Colors.border,
+    color: Colors.text, paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: 20, fontVariant: ['tabular-nums'],
+  },
+  modalUnit: { color: Colors.textSecondary, fontSize: Type.body },
+  modalHint: { color: Colors.textFaint, fontSize: Type.caption, marginTop: Spacing.sm, lineHeight: 16 },
+  modalDateText: { color: Colors.accent, fontSize: Type.body, fontWeight: '600', paddingVertical: 4 },
+  pfcRow: { flexDirection: 'row', gap: Spacing.sm },
+  pfcLabel: { color: Colors.textSecondary, fontSize: Type.caption, marginBottom: 4 },
+  pfcInput: {
+    backgroundColor: Colors.bg, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.border,
+    color: Colors.text, paddingHorizontal: 8, paddingVertical: 8, fontSize: Type.body,
+    fontVariant: ['tabular-nums'], textAlign: 'center',
+  },
   goalMain: { color: Colors.text, fontSize: 22, fontWeight: '700', marginTop: 4 },
   goalSub: { color: Colors.textFaint, fontSize: Type.caption, marginTop: 4 },
   budgetRow: { flexDirection: 'row', marginTop: Spacing.sm, gap: Spacing.sm },

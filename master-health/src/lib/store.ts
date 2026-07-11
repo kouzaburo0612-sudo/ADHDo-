@@ -60,6 +60,13 @@ db.execAsync(`
     content TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS stress_logs (
+    id TEXT PRIMARY KEY,
+    timestamp TEXT NOT NULL,
+    level INTEGER NOT NULL,
+    note TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_stress_ts ON stress_logs(timestamp);
 `).catch((e) => console.warn('store init failed', e));
 
 // ---- 型 (instructions v2 準拠) ----
@@ -186,6 +193,36 @@ export const saveProfile = (p: UserProfile) => kvPut('user_profile', p);
 
 export const getDayTypes = () => kvDoc<DayTypeDef[]>('day_types', DEFAULT_DAY_TYPES);
 export const saveDayTypes = (d: DayTypeDef[]) => kvPut('day_types', d);
+
+// ---- 目標プラン(カロミル風の目標設定) ----
+
+export interface GoalPlan {
+  /** 目標体重(kg)。nullなら未設定 */
+  targetWeightKg: number | null;
+  /** 目標日 YYYY-MM-DD */
+  targetDate: string | null;
+  /** 目標設定時の体重・日付(進捗と貯金の起点) */
+  startWeightKg: number | null;
+  startDate: string | null;
+  /** 摂取カロリー目標: auto=目標ペースから逆算 / custom=手入力 */
+  intakeMode: 'auto' | 'custom';
+  customIntakeKcal: number | null;
+  /** PFCバランス(%)。合計100 */
+  pfc: { p: number; f: number; c: number };
+}
+
+export const DEFAULT_GOAL_PLAN: GoalPlan = {
+  targetWeightKg: null,
+  targetDate: null,
+  startWeightKg: null,
+  startDate: null,
+  intakeMode: 'auto',
+  customIntakeKcal: null,
+  pfc: { p: 30, f: 25, c: 45 },
+};
+
+export const getGoalPlan = () => kvDoc<GoalPlan>('goal_plan', DEFAULT_GOAL_PLAN);
+export const saveGoalPlan = (g: GoalPlan) => kvPut('goal_plan', g);
 
 // ---- DayType割り当て ----
 
@@ -359,6 +396,40 @@ export async function lastExercise(exerciseName: string): Promise<{ timestamp: s
     if (hit) return { timestamp: r.timestamp, set: hit };
   }
   return null;
+}
+
+// ---- ストレスログ ----
+
+export interface StressLog {
+  id: string;
+  timestamp: string;
+  /** 1=快調 〜 5=限界 */
+  level: number;
+  note?: string | null;
+}
+
+export async function addStressLog(log: StressLog): Promise<void> {
+  await db.runAsync(
+    'INSERT INTO stress_logs (id, timestamp, level, note) VALUES (?, ?, ?, ?)',
+    log.id, log.timestamp, log.level, log.note ?? null,
+  );
+}
+
+export async function deleteStressLog(id: string): Promise<void> {
+  await db.runAsync('DELETE FROM stress_logs WHERE id = ?', id);
+}
+
+export async function listStressLogs(fromIso: string, toIso: string): Promise<StressLog[]> {
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    'SELECT * FROM stress_logs WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp DESC',
+    fromIso, toIso,
+  );
+  return rows.map((r) => ({
+    id: r.id as string,
+    timestamp: r.timestamp as string,
+    level: r.level as number,
+    note: r.note as string | null,
+  }));
 }
 
 // ---- チャット履歴 ----

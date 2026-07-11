@@ -19,6 +19,13 @@ export async function syncHealthData(force = false): Promise<{ synced: number }>
     await kvSet('pct_fix_v1', 'done');
   }
 
+  // v2.2で追加した指標(心拍・SpO2・距離など)を過去分まで取り込む一度きり全再同期
+  const v22 = await kvGet('metrics_v22');
+  if (!v22) {
+    force = true;
+    await kvSet('metrics_v22', 'done');
+  }
+
   const last = await kvGet(LAST_SYNC_KEY);
   let start: Date;
   if (!last || force) {

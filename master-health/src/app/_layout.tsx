@@ -30,7 +30,7 @@ export default function RootLayout() {
           labelStyle={{ color: Colors.textSecondary, selected: { color: Colors.accent } }}
         >
           <NativeTabs.Trigger name="index">
-            <NativeTabs.Trigger.Label>今日</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Label>My Body</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf={{ default: 'heart.text.square', selected: 'heart.text.square.fill' }} />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="chat">

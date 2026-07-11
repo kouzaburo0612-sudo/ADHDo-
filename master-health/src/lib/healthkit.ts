@@ -29,12 +29,21 @@ export const READ_TYPES = [
   'HKQuantityTypeIdentifierBodyMass',
   'HKQuantityTypeIdentifierBodyFatPercentage',
   'HKQuantityTypeIdentifierLeanBodyMass',
+  'HKQuantityTypeIdentifierBodyMassIndex',
   'HKQuantityTypeIdentifierHeartRateVariabilitySDNN',
   'HKQuantityTypeIdentifierRestingHeartRate',
+  'HKQuantityTypeIdentifierHeartRate',
+  'HKQuantityTypeIdentifierWalkingHeartRateAverage',
+  'HKQuantityTypeIdentifierOxygenSaturation',
+  'HKQuantityTypeIdentifierVO2Max',
   'HKQuantityTypeIdentifierRespiratoryRate',
   'HKQuantityTypeIdentifierAppleSleepingWristTemperature',
   'HKQuantityTypeIdentifierStepCount',
+  'HKQuantityTypeIdentifierDistanceWalkingRunning',
+  'HKQuantityTypeIdentifierFlightsClimbed',
+  'HKQuantityTypeIdentifierAppleExerciseTime',
   'HKQuantityTypeIdentifierActiveEnergyBurned',
+  'HKQuantityTypeIdentifierBasalEnergyBurned',
   'HKCategoryTypeIdentifierSleepAnalysis',
 ] as const satisfies readonly ObjectTypeIdentifier[];
 
@@ -46,26 +55,38 @@ export function healthAvailable(): boolean {
   }
 }
 
-interface CumulativeSpec { metric: MetricKey; id: 'HKQuantityTypeIdentifierStepCount' | 'HKQuantityTypeIdentifierActiveEnergyBurned'; unit: 'count' | 'kcal' }
-interface AverageSpec { metric: MetricKey; id: 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN' | 'HKQuantityTypeIdentifierRestingHeartRate' | 'HKQuantityTypeIdentifierRespiratoryRate' | 'HKQuantityTypeIdentifierAppleSleepingWristTemperature'; unit: string }
-interface SampleSpec { metric: MetricKey; id: 'HKQuantityTypeIdentifierBodyMass' | 'HKQuantityTypeIdentifierBodyFatPercentage' | 'HKQuantityTypeIdentifierLeanBodyMass'; unit: 'kg' | '%' }
+type QuantityId = (typeof READ_TYPES)[number];
+
+/** scale: HealthKitの返り値に掛ける倍率(%単位は0〜1の小数で返るため100倍する等) */
+interface CumulativeSpec { metric: MetricKey; id: QuantityId; unit: string; scale?: number }
+interface AverageSpec { metric: MetricKey; id: QuantityId; unit: string; scale?: number }
+interface SampleSpec { metric: MetricKey; id: QuantityId; unit: string; scale?: number }
 
 const CUMULATIVE: CumulativeSpec[] = [
   { metric: 'steps', id: 'HKQuantityTypeIdentifierStepCount', unit: 'count' },
   { metric: 'active_energy', id: 'HKQuantityTypeIdentifierActiveEnergyBurned', unit: 'kcal' },
+  { metric: 'basal_energy', id: 'HKQuantityTypeIdentifierBasalEnergyBurned', unit: 'kcal' },
+  { metric: 'distance', id: 'HKQuantityTypeIdentifierDistanceWalkingRunning', unit: 'm', scale: 0.001 },
+  { metric: 'flights', id: 'HKQuantityTypeIdentifierFlightsClimbed', unit: 'count' },
+  { metric: 'exercise_time', id: 'HKQuantityTypeIdentifierAppleExerciseTime', unit: 'min' },
 ];
 
 const AVERAGED: AverageSpec[] = [
   { metric: 'hrv', id: 'HKQuantityTypeIdentifierHeartRateVariabilitySDNN', unit: 'ms' },
   { metric: 'rhr', id: 'HKQuantityTypeIdentifierRestingHeartRate', unit: 'count/min' },
+  { metric: 'heart_rate', id: 'HKQuantityTypeIdentifierHeartRate', unit: 'count/min' },
+  { metric: 'walking_hr', id: 'HKQuantityTypeIdentifierWalkingHeartRateAverage', unit: 'count/min' },
+  { metric: 'spo2', id: 'HKQuantityTypeIdentifierOxygenSaturation', unit: '%', scale: 100 },
+  { metric: 'vo2max', id: 'HKQuantityTypeIdentifierVO2Max', unit: 'mL/(kg*min)' },
   { metric: 'resp_rate', id: 'HKQuantityTypeIdentifierRespiratoryRate', unit: 'count/min' },
   { metric: 'wrist_temp', id: 'HKQuantityTypeIdentifierAppleSleepingWristTemperature', unit: 'degC' },
 ];
 
 const BODY_SAMPLES: SampleSpec[] = [
   { metric: 'weight', id: 'HKQuantityTypeIdentifierBodyMass', unit: 'kg' },
-  { metric: 'body_fat', id: 'HKQuantityTypeIdentifierBodyFatPercentage', unit: '%' },
+  { metric: 'body_fat', id: 'HKQuantityTypeIdentifierBodyFatPercentage', unit: '%', scale: 100 },
   { metric: 'lean_mass', id: 'HKQuantityTypeIdentifierLeanBodyMass', unit: 'kg' },
+  { metric: 'bmi', id: 'HKQuantityTypeIdentifierBodyMassIndex', unit: 'count' },
 ];
 
 /** startDate〜今日の全指標を日次集計して返す */
@@ -80,12 +101,12 @@ export async function fetchDailyMetrics(startDate: Date): Promise<MetricRow[]> {
   for (const spec of CUMULATIVE) {
     try {
       const stats = await queryStatisticsCollectionForQuantity(
-        spec.id, ['cumulativeSum'], anchor, { day: 1 }, { filter: dateFilter, unit: spec.unit },
+        spec.id as never, ['cumulativeSum'], anchor, { day: 1 }, { filter: dateFilter, unit: spec.unit as never },
       );
       for (const s of stats) {
         const v = s.sumQuantity?.quantity;
         if (v != null && v > 0 && s.startDate) {
-          rows.push({ date: toKey(new Date(s.startDate)), metric: spec.metric, value: v });
+          rows.push({ date: toKey(new Date(s.startDate)), metric: spec.metric, value: v * (spec.scale ?? 1) });
         }
       }
     } catch (e) {
@@ -97,12 +118,12 @@ export async function fetchDailyMetrics(startDate: Date): Promise<MetricRow[]> {
   for (const spec of AVERAGED) {
     try {
       const stats = await queryStatisticsCollectionForQuantity(
-        spec.id, ['discreteAverage'], anchor, { day: 1 }, { filter: dateFilter, unit: spec.unit },
+        spec.id as never, ['discreteAverage'], anchor, { day: 1 }, { filter: dateFilter, unit: spec.unit as never },
       );
       for (const s of stats) {
         const v = s.averageQuantity?.quantity;
         if (v != null && s.startDate) {
-          rows.push({ date: toKey(new Date(s.startDate)), metric: spec.metric, value: v });
+          rows.push({ date: toKey(new Date(s.startDate)), metric: spec.metric, value: v * (spec.scale ?? 1) });
         }
       }
     } catch (e) {
@@ -113,17 +134,16 @@ export async function fetchDailyMetrics(startDate: Date): Promise<MetricRow[]> {
   // 体組成: その日の最後のサンプル
   for (const spec of BODY_SAMPLES) {
     try {
-      const samples = await queryQuantitySamples(spec.id, {
+      const samples = await queryQuantitySamples(spec.id as never, {
         limit: -1,
         ascending: true,
-        unit: spec.unit,
+        unit: spec.unit as never,
         filter: dateFilter,
       });
       const byDay = new Map<string, number>();
       for (const s of samples) {
-        // HealthKitの'%'単位は0〜1の小数で返る(0.202 = 20.2%)ため100倍する
-        const v = spec.unit === '%' ? s.quantity * 100 : s.quantity;
-        byDay.set(toKey(new Date(s.startDate)), v); // 昇順なので最後の値が残る
+        // HealthKitの'%'単位は0〜1の小数で返る(0.202 = 20.2%)ためscale=100を掛ける
+        byDay.set(toKey(new Date(s.startDate)), s.quantity * (spec.scale ?? 1)); // 昇順なので最後の値が残る
       }
       for (const [date, value] of byDay) rows.push({ date, metric: spec.metric, value });
     } catch (e) {

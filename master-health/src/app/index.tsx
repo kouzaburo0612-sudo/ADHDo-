@@ -1,20 +1,23 @@
-/** 今日: 体重・体脂肪率・カロリー収支を主役に、スコアと記録を続けて表示 */
+/**
+ * My Body: 体重・体脂肪率を主役に、カロリー収支(赤字/黒字)とカロリー貯金、
+ * その日の全計測データを1画面で見る。左右スワイプで日付を移動できる。
+ */
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScoreRing } from '@/components/ScoreRing';
 import { Card, Chip, SectionTitle } from '@/components/ui';
 import { Colors, Fonts, Spacing, Type, scoreColor } from '@/constants/theme';
 import { useDashboard, useHealthAuth } from '@/hooks/useHealthData';
-import { currentTdee } from '@/lib/chat';
-import { getCustomTags, addCustomTag } from '@/lib/db';
-import { addDays } from '@/lib/dates';
-import { formatKeyJa, todayKey } from '@/lib/dates';
-import { formatValue, PRESET_TAGS } from '@/lib/metrics';
-import { dailyIntake, localDateKey } from '@/lib/store';
+import { getCustomTags, addCustomTag, addTag, removeTag, getTags, getRange } from '@/lib/db';
+import { addDays, formatKeyJa, fromKey, toKey, todayKey } from '@/lib/dates';
+import { BODY_DETAIL_ORDER, METRICS, formatValue, PRESET_TAGS, type MetricKey } from '@/lib/metrics';
+import { balanceSeries, calorieBank, KCAL_PER_KG_FAT, type BankSummary, type DayBalance } from '@/utils/deficit';
 
 const CATEGORIES = [
   { key: 'sleep' as const, label: '睡眠', color: Colors.sleep },
@@ -23,12 +26,25 @@ const CATEGORIES = [
   { key: 'activity' as const, label: '活動量', color: Colors.activity },
 ];
 
-export default function TodayScreen() {
+interface DayData {
+  metrics: Partial<Record<MetricKey, number>>;
+  /** 体重・体脂肪率は7日以内の直近値で補完(計測しない日も空欄にしない) */
+  weight: number | null;
+  bodyFat: number | null;
+  balance: DayBalance | null;
+  tags: string[];
+}
+
+export default function MyBodyScreen() {
   const insets = useSafeAreaInsets();
   const { status, request } = useHealthAuth();
   const d = useDashboard();
+  const [dateKey, setDateKey] = useState(todayKey());
+  const [day, setDay] = useState<DayData | null>(null);
+  const [bank, setBank] = useState<BankSummary | null>(null);
   const [customTags, setCustomTags] = useState<{ name: string; emoji: string }[]>([]);
-  const [cal, setCal] = useState<{ eaten: number; left: number | null } | null>(null);
+
+  const isToday = dateKey === todayKey();
 
   useEffect(() => {
     if (status != null && status !== 2) request().catch(() => {});
@@ -38,21 +54,57 @@ export default function TodayScreen() {
     getCustomTags().then(setCustomTags).catch(() => {});
   }, []);
 
-  const loadCalories = useCallback(async () => {
+  const loadDay = useCallback(async (key: string) => {
     try {
-      const now = new Date();
-      const intake = await dailyIntake(addDays(now, -1).toISOString(), now.toISOString());
-      const eaten = Math.round(intake.get(localDateKey(now.toISOString()))?.kcal ?? 0);
-      const tdee = await currentTdee();
-      setCal({ eaten, left: tdee.effective != null ? Math.round(tdee.effective - eaten) : null });
-    } catch { /* 補助情報 */ }
+      const range = await getRange(toKey(addDays(fromKey(key), -7)), key);
+      const metrics = range.get(key) ?? {};
+      // carry-forward: 7日以内の直近値
+      let weight: number | null = null;
+      let bodyFat: number | null = null;
+      for (let i = 7; i >= 0; i--) {
+        const k = toKey(addDays(fromKey(key), -i));
+        const m = range.get(k);
+        if (m?.weight != null) weight = m.weight;
+        if (m?.body_fat != null) bodyFat = m.body_fat;
+      }
+      const daysBack = Math.max(0, Math.round((fromKey(todayKey()).getTime() - fromKey(key).getTime()) / 86400000));
+      const series = await balanceSeries(daysBack + 1);
+      const balance = series.length > 0 ? series[0] : null;
+      const tags = await getTags(key);
+      setDay({ metrics, weight, bodyFat, balance, tags });
+      setBank(await calorieBank());
+    } catch { /* 表示は次のフォーカスで再試行 */ }
   }, []);
 
-  useFocusEffect(useCallback(() => { loadCalories(); }, [loadCalories]));
+  useFocusEffect(useCallback(() => { loadDay(dateKey); }, [loadDay, dateKey]));
+
+  const shiftDay = useCallback((dir: 1 | -1) => {
+    setDateKey((prev) => {
+      const next = toKey(addDays(fromKey(prev), dir));
+      return next > todayKey() ? todayKey() : next;
+    });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  }, []);
+
+  // 左スワイプ=1日前へ、右スワイプ=1日先へ
+  const swipe = useMemo(
+    () => Gesture.Pan()
+      .activeOffsetX([-32, 32])
+      .failOffsetY([-16, 16])
+      .onEnd((e) => {
+        'worklet';
+        if (e.translationX > 56) runOnJS(shiftDay)(-1);
+        else if (e.translationX < -56) runOnJS(shiftDay)(1);
+      }),
+    [shiftDay],
+  );
 
   const onTag = async (tag: string) => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    await d.toggleTag(tag);
+    const current = await getTags(dateKey);
+    if (current.includes(tag)) await removeTag(dateKey, tag);
+    else await addTag(dateKey, tag);
+    loadDay(dateKey);
   };
 
   const onAddCustomTag = () => {
@@ -64,147 +116,209 @@ export default function TodayScreen() {
   };
 
   const allTags = [...PRESET_TAGS, ...customTags];
-  const weight = d.today.weight;
-  const bodyFat = d.today.body_fat ?? d.forecast?.current ?? null;
+  const bal = day?.balance?.balance ?? null;
+  const deficit = bal != null && bal < 0;
+  const fatGram = bal != null ? Math.abs(Math.round((bal / KCAL_PER_KG_FAT) * 1000)) : null;
 
-  // 空欄を並べない: データがある行だけ表示
-  const statRows = ([
-    ['sleep_total', '睡眠時間', ''],
-    ['hrv', '睡眠時HRV', ' ms'],
-    ['rhr', '安静時心拍', ' bpm'],
-    ['steps', '歩数', ' 歩'],
-    ['active_energy', '消費カロリー', ' kcal'],
-    ['lean_mass', '筋肉量', ' kg'],
-  ] as const).filter(([key]) => d.today[key] != null);
+  const statRows = BODY_DETAIL_ORDER
+    .filter((key) => day?.metrics[key] != null)
+    .map((key) => [key, METRICS[key].label, METRICS[key].asDuration ? '' : ` ${METRICS[key].unit}`] as const);
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={{ paddingTop: insets.top + Spacing.md, paddingBottom: 120, paddingHorizontal: Spacing.md }}
-      refreshControl={<RefreshControl refreshing={d.refreshing} onRefresh={() => { d.refresh(); loadCalories(); }} tintColor={Colors.accent} />}
-    >
-      <Text style={styles.date}>{formatKeyJa(todayKey())}</Text>
-
-      {/* 主役: 体重と体脂肪率 */}
-      <View style={styles.heroRow}>
-        <Card style={styles.heroCard}>
-          <Text style={styles.heroLabel}>体重</Text>
-          <Text style={styles.heroValue}>
-            {weight != null ? formatValue('weight', weight) : '–'}
-            <Text style={styles.heroUnit}> kg</Text>
-          </Text>
-        </Card>
-        <Card style={styles.heroCard}>
-          <Text style={styles.heroLabel}>体脂肪率</Text>
-          <Text style={styles.heroValue}>
-            {bodyFat != null ? formatValue('body_fat', bodyFat) : '–'}
-            <Text style={styles.heroUnit}> %</Text>
-          </Text>
-          {d.forecast && d.forecast.diff > 0 && (
-            <Text style={styles.heroSub}>目標まで {d.forecast.diff.toFixed(1)}%</Text>
-          )}
-          {d.forecast && d.forecast.diff <= 0 && (
-            <Text style={[styles.heroSub, { color: Colors.good }]}>目標達成中</Text>
-          )}
-        </Card>
-      </View>
-
-      {/* 今日のカロリー */}
-      <Card style={styles.calCard}>
-        <View style={styles.calRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.heroLabel}>今日食べた</Text>
-            <Text style={styles.calValue}>
-              {cal ? cal.eaten.toLocaleString() : '–'}
-              <Text style={styles.heroUnit}> kcal</Text>
-            </Text>
+    <GestureDetector gesture={swipe}>
+      <ScrollView
+        style={styles.screen}
+        contentContainerStyle={{ paddingTop: insets.top + Spacing.md, paddingBottom: 120, paddingHorizontal: Spacing.md }}
+        refreshControl={<RefreshControl refreshing={d.refreshing} onRefresh={() => { d.refresh(); loadDay(dateKey); }} tintColor={Colors.accent} />}
+      >
+        {/* 日付ナビゲーション(スワイプでも移動可) */}
+        <View style={styles.dateNav}>
+          <Pressable onPress={() => shiftDay(-1)} hitSlop={10} style={styles.dateBtn}>
+            <Text style={styles.dateBtnText}>‹</Text>
+          </Pressable>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={styles.screenTitle}>My Body</Text>
+            <Text style={styles.date}>{isToday ? `今日 ${formatKeyJa(dateKey)}` : formatKeyJa(dateKey)}</Text>
           </View>
-          <View style={{ flex: 1, alignItems: 'flex-end' }}>
-            <Text style={styles.heroLabel}>今日あと</Text>
-            <Text style={[styles.calValue, cal?.left != null && cal.left < 0 && { color: Colors.bad }]}>
-              {cal?.left != null ? cal.left.toLocaleString() : '–'}
-              <Text style={styles.heroUnit}> kcal</Text>
-            </Text>
-          </View>
+          <Pressable onPress={() => shiftDay(1)} hitSlop={10} style={[styles.dateBtn, isToday && { opacity: 0.25 }]}>
+            <Text style={styles.dateBtnText}>›</Text>
+          </Pressable>
         </View>
-        {cal?.left == null && (
-          <Text style={styles.calHint}>「あと何kcal」は設定タブで身長・生年月日を入れると出ます</Text>
-        )}
-      </Card>
 
-      {/* 総合スコア */}
-      <View style={styles.ringWrap}>
-        <ScoreRing score={d.scores.total} />
-      </View>
+        {/* 主役: 体重と体脂肪率 */}
+        <View style={styles.heroRow}>
+          <Card style={styles.heroCard}>
+            <Text style={styles.heroLabel}>体重</Text>
+            <Text style={styles.heroValue}>
+              {day?.weight != null ? formatValue('weight', day.weight) : '–'}
+              <Text style={styles.heroUnit}> kg</Text>
+            </Text>
+          </Card>
+          <Card style={styles.heroCard}>
+            <Text style={styles.heroLabel}>体脂肪率</Text>
+            <Text style={styles.heroValue}>
+              {day?.bodyFat != null ? formatValue('body_fat', day.bodyFat) : '–'}
+              <Text style={styles.heroUnit}> %</Text>
+            </Text>
+            {isToday && d.forecast && d.forecast.diff > 0 && (
+              <Text style={styles.heroSub}>目標まで {d.forecast.diff.toFixed(1)}%</Text>
+            )}
+            {isToday && d.forecast && d.forecast.diff <= 0 && (
+              <Text style={[styles.heroSub, { color: Colors.good }]}>目標達成中</Text>
+            )}
+          </Card>
+        </View>
 
-      <View style={styles.categoryRow}>
-        {CATEGORIES.map((c) => {
-          const v = d.scores[c.key];
-          return (
-            <Card key={c.key} style={styles.categoryCard}>
-              <Text style={[styles.categoryValue, { color: scoreColor(v) }]}>{v ?? '–'}</Text>
-              <View style={styles.categoryLabelRow}>
-                <View style={[styles.dot, { backgroundColor: c.color }]} />
-                <Text style={styles.categoryLabel}>{c.label}</Text>
+        {/* カロリー収支(赤字=痩せる方向) */}
+        <Card style={[styles.balanceCard, bal != null && { borderColor: deficit ? Colors.deficit : Colors.surplus, borderWidth: 1 }]}>
+          <View style={styles.balanceHead}>
+            <Text style={styles.heroLabel}>{isToday ? '今日のカロリー収支' : 'この日のカロリー収支'}</Text>
+            {bal != null && (
+              <View style={[styles.badge, { backgroundColor: deficit ? Colors.accentDim : '#5C2320' }]}>
+                <Text style={[styles.badgeText, { color: deficit ? Colors.deficit : Colors.surplus }]}>
+                  {deficit ? '🔥 赤字' : '黒字'}
+                </Text>
               </View>
-            </Card>
-          );
-        })}
-      </View>
-
-      {/* 体調変化の兆候 */}
-      {d.anomalies.length > 0 && (
-        <>
-          <SectionTitle>体調変化の兆候</SectionTitle>
-          {d.anomalies.map((a) => (
-            <Card key={a.metric} style={styles.anomalyCard}>
-              <Text style={styles.anomalyTitle}>
-                {a.z > 0 ? '↑' : '↓'} ベースラインから {Math.abs(a.z).toFixed(1)}σ の逸脱
+            )}
+          </View>
+          {bal != null ? (
+            <>
+              <Text style={[styles.balanceValue, { color: deficit ? Colors.deficit : Colors.surplus }]}>
+                {bal > 0 ? '+' : '−'}{Math.abs(bal).toLocaleString()}
+                <Text style={styles.heroUnit}> kcal</Text>
               </Text>
-              <Text style={styles.anomalyText}>{a.message}</Text>
-            </Card>
-          ))}
-        </>
-      )}
+              <Text style={styles.balanceSub}>
+                摂取 {day?.balance?.intake?.toLocaleString() ?? '–'} − 消費 {day?.balance?.burn?.toLocaleString() ?? '–'} kcal
+                {fatGram != null ? ` ・ 脂肪${deficit ? '' : '+'}${fatGram}g相当` : ''}
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.balanceEmpty}>
+              {day?.balance?.intake == null
+                ? '食事を記録すると収支が出ます(報告タブ or チャット)'
+                : '設定タブで身長・生年月日を入れると消費カロリーを計算できます'}
+            </Text>
+          )}
+        </Card>
 
-      {/* 今日の主要数値(データがあるものだけ) */}
-      {statRows.length > 0 && (
-        <>
-          <SectionTitle>今日の記録</SectionTitle>
+        {/* カロリー貯金(ゲーム化) */}
+        {bank && (bank.countedDays > 0 || bank.neededKcal != null) && (
+          <Card style={styles.bankCard}>
+            <View style={styles.balanceHead}>
+              <Text style={styles.heroLabel}>カロリー貯金</Text>
+              {bank.streakDays >= 2 && (
+                <Text style={styles.streakText}>🔥 {bank.streakDays}日連続赤字</Text>
+              )}
+            </View>
+            <Text style={styles.bankValue}>
+              {bank.bankedKcal.toLocaleString()}
+              <Text style={styles.heroUnit}> kcal</Text>
+              <Text style={styles.bankFat}>  ≈ 脂肪{bank.fatKgEquivalent}kg分</Text>
+            </Text>
+            {bank.neededKcal != null && bank.progress != null ? (
+              <>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${Math.round(bank.progress * 100)}%` }]} />
+                </View>
+                <Text style={styles.balanceSub}>
+                  目標まで {Math.max(0, Math.round(bank.neededKcal - bank.bankedKcal)).toLocaleString()}kcal
+                  ({Math.round(bank.progress * 100)}% 達成)
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.balanceSub}>トレンドタブで目標体重を設定すると進捗バーが出ます</Text>
+            )}
+          </Card>
+        )}
+
+        {/* 総合スコア(今日のみ) */}
+        {isToday && (
+          <>
+            <View style={styles.ringWrap}>
+              <ScoreRing score={d.scores.total} />
+            </View>
+            <View style={styles.categoryRow}>
+              {CATEGORIES.map((c) => {
+                const v = d.scores[c.key];
+                return (
+                  <Card key={c.key} style={styles.categoryCard}>
+                    <Text style={[styles.categoryValue, { color: scoreColor(v) }]}>{v ?? '–'}</Text>
+                    <View style={styles.categoryLabelRow}>
+                      <View style={[styles.dot, { backgroundColor: c.color }]} />
+                      <Text style={styles.categoryLabel}>{c.label}</Text>
+                    </View>
+                  </Card>
+                );
+              })}
+            </View>
+          </>
+        )}
+
+        {/* 体調変化の兆候(今日のみ) */}
+        {isToday && d.anomalies.length > 0 && (
+          <>
+            <SectionTitle>体調変化の兆候</SectionTitle>
+            {d.anomalies.map((a) => (
+              <Card key={a.metric} style={styles.anomalyCard}>
+                <Text style={styles.anomalyTitle}>
+                  {a.z > 0 ? '↑' : '↓'} ベースラインから {Math.abs(a.z).toFixed(1)}σ の逸脱
+                </Text>
+                <Text style={styles.anomalyText}>{a.message}</Text>
+              </Card>
+            ))}
+          </>
+        )}
+
+        {/* 全計測データ(OuraとWithingsが書き込んだものすべて) */}
+        <SectionTitle>{isToday ? '今日の計測データ' : 'この日の計測データ'}</SectionTitle>
+        {statRows.length > 0 ? (
           <Card>
             {statRows.map(([key, label, unit], i) => (
               <View key={key} style={[styles.statRow, i > 0 && styles.statRowBorder]}>
                 <Text style={styles.statLabel}>{label}</Text>
                 <Text style={styles.statValue}>
-                  {formatValue(key, d.today[key])}
+                  {formatValue(key, day?.metrics[key])}
                   <Text style={styles.statUnit}>{unit}</Text>
                 </Text>
               </View>
             ))}
           </Card>
-        </>
-      )}
+        ) : (
+          <Card><Text style={styles.balanceEmpty}>この日の計測データがありません</Text></Card>
+        )}
 
-      {/* タグ記録 */}
-      <SectionTitle>今日のタグ</SectionTitle>
-      <View style={styles.tagWrap}>
-        {allTags.map((t) => (
-          <Chip
-            key={t.name}
-            label={`${t.emoji} ${t.name}`}
-            active={d.tags.includes(t.name)}
-            onPress={() => onTag(t.name)}
-          />
-        ))}
-        <Chip label="+ 追加" onPress={onAddCustomTag} />
-      </View>
-    </ScrollView>
+        {/* タグ記録 */}
+        <SectionTitle>{isToday ? '今日のタグ' : 'この日のタグ'}</SectionTitle>
+        <View style={styles.tagWrap}>
+          {allTags.map((t) => (
+            <Chip
+              key={t.name}
+              label={`${t.emoji} ${t.name}`}
+              active={day?.tags.includes(t.name)}
+              onPress={() => onTag(t.name)}
+            />
+          ))}
+          <Chip label="+ 追加" onPress={onAddCustomTag} />
+        </View>
+      </ScrollView>
+    </GestureDetector>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.bg },
-  date: { color: Colors.textSecondary, fontSize: Type.body, textAlign: 'center', marginBottom: Spacing.md },
+  dateNav: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: Spacing.md,
+  },
+  dateBtn: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surface,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  dateBtnText: { color: Colors.text, fontSize: 24, lineHeight: 26 },
+  screenTitle: { color: Colors.text, fontSize: Type.title, fontFamily: Fonts.sans, fontWeight: '700' },
+  date: { color: Colors.textSecondary, fontSize: Type.caption, marginTop: 2 },
   heroRow: { flexDirection: 'row', gap: Spacing.sm },
   heroCard: { flex: 1, paddingVertical: Spacing.md },
   heroLabel: { color: Colors.textSecondary, fontSize: Type.caption },
@@ -214,13 +328,28 @@ const styles = StyleSheet.create({
   },
   heroUnit: { fontSize: Type.body, color: Colors.textSecondary, fontWeight: '400' },
   heroSub: { color: Colors.accent, fontSize: Type.caption, marginTop: 4 },
-  calCard: { marginTop: Spacing.sm },
-  calRow: { flexDirection: 'row' },
-  calValue: {
-    color: Colors.text, fontSize: 30, fontFamily: Fonts.display, fontWeight: '700',
-    fontVariant: ['tabular-nums'], marginTop: 2,
+  balanceCard: { marginTop: Spacing.sm },
+  balanceHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  badge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
+  badgeText: { fontSize: Type.label, fontWeight: '700' },
+  balanceValue: {
+    fontSize: 34, fontFamily: Fonts.display, fontWeight: '700',
+    fontVariant: ['tabular-nums'], marginTop: 4,
   },
-  calHint: { color: Colors.textFaint, fontSize: Type.caption, marginTop: Spacing.sm },
+  balanceSub: { color: Colors.textSecondary, fontSize: Type.caption, marginTop: 6, fontVariant: ['tabular-nums'] },
+  balanceEmpty: { color: Colors.textFaint, fontSize: Type.body, lineHeight: 20, marginTop: 4 },
+  bankCard: { marginTop: Spacing.sm },
+  streakText: { color: Colors.activity, fontSize: Type.label, fontWeight: '700' },
+  bankValue: {
+    color: Colors.text, fontSize: 28, fontFamily: Fonts.display, fontWeight: '700',
+    fontVariant: ['tabular-nums'], marginTop: 4,
+  },
+  bankFat: { fontSize: Type.body, color: Colors.accent, fontWeight: '600' },
+  progressTrack: {
+    height: 10, borderRadius: 5, backgroundColor: Colors.surfaceRaised,
+    marginTop: Spacing.sm, overflow: 'hidden',
+  },
+  progressFill: { height: 10, borderRadius: 5, backgroundColor: Colors.accent },
   ringWrap: { alignItems: 'center', marginVertical: Spacing.lg },
   categoryRow: { flexDirection: 'row', gap: Spacing.sm },
   categoryCard: { flex: 1, alignItems: 'center', paddingVertical: Spacing.md, paddingHorizontal: 4 },
