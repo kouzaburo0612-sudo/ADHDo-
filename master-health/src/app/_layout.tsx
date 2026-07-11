@@ -1,9 +1,12 @@
 import { DarkTheme, ThemeProvider } from 'expo-router';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
+import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Colors } from '@/constants/theme';
+import { rescheduleReminders } from '@/lib/notifications';
 
 const theme = {
   ...DarkTheme,
@@ -18,6 +21,15 @@ const theme = {
 };
 
 export default function RootLayout() {
+  // 起動時とフォアグラウンド復帰時にリマインダー(朝プラン・食事)を予約し直す
+  useEffect(() => {
+    rescheduleReminders().catch(() => {});
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') rescheduleReminders().catch(() => {});
+    });
+    return () => sub.remove();
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={theme}>

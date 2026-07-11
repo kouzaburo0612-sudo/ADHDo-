@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { adviceErrorMessage } from '@/lib/ai';
+import { maybeAutoPost } from '@/lib/autopost';
 import { currentTdee, resumeChat, sendChat, stripMarkdown, type PendingAction } from '@/lib/chat';
 import { addDays } from '@/lib/dates';
 import { appendChat, dailyIntake, listChat, localDateKey } from '@/lib/store';
@@ -46,7 +47,14 @@ export default function ChatScreen() {
       setBubbles(history.map((m) => ({ key: String(m.id), role: m.role, content: m.content })));
       syncHealthData().catch(() => {});
       refreshSummary();
+      // 朝プラン・週次ダイジェストの自動投稿(必要なときだけ生成される)
+      const auto = await maybeAutoPost();
+      if (auto) {
+        setBubbles((prev) => [...prev, { key: `auto-${Date.now()}`, role: 'assistant', content: auto }]);
+        setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 120);
+      }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshSummary = useCallback(async () => {
@@ -114,7 +122,7 @@ export default function ChatScreen() {
       keyboardVerticalOffset={0}
     >
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
-        <Text style={styles.title}>Master Health</Text>
+        <Text style={styles.title}>VYTA</Text>
         {summary && (
           <Text style={styles.summaryText}>
             今日 {summary.kcal}kcal 摂取

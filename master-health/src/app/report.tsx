@@ -1,10 +1,11 @@
 /**
- * 報告: 食事(写真AI分析 or 手入力)・運動(HealthKit自動 + 手動)・ストレスの3種。
+ * 報告: 食事(写真AI分析・バーコード・手入力)・運動(HealthKit自動 + 手動)・ストレスの3種。
  */
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,9 +13,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card, Chip, SectionTitle, Segmented } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { adviceErrorMessage } from '@/lib/ai';
+import { lookupBarcode, type BarcodeProduct } from '@/lib/barcode';
 import { getDay } from '@/lib/db';
 import { todayKey } from '@/lib/dates';
 import { formatValue } from '@/lib/metrics';
+import { rescheduleReminders } from '@/lib/notifications';
 import {
   addMealLog, addStressLog, addWorkoutLog, dailyIntake, deleteMealLog, deleteStressLog,
   deleteWorkoutLog, listMealLogs, listStressLogs, listWorkoutLogs, localDateKey, newId,
@@ -76,6 +79,12 @@ function MealSection() {
   const [protein, setProtein] = useState('');
   const [fat, setFat] = useState('');
   const [carbs, setCarbs] = useState('');
+  // バーコード
+  const [scanOpen, setScanOpen] = useState(false);
+  const [camPerm, requestCamPerm] = useCameraPermissions();
+  const [product, setProduct] = useState<BarcodeProduct | null>(null);
+  const [grams, setGrams] = useState('100');
+  const scannedRef = useRef(false);
 
   const load = useCallback(async () => {
     const now = new Date();
@@ -130,6 +139,54 @@ function MealSection() {
     });
     setEstimate(null);
     setPhotoUri(null);
+    rescheduleReminders().catch(() => {});
+    load();
+  };
+
+  const openScanner = async () => {
+    if (!camPerm?.granted) {
+      const p = await requestCamPerm();
+      if (!p.granted) { Alert.alert('カメラの許可が必要です'); return; }
+    }
+    scannedRef.current = false;
+    setProduct(null);
+    setScanOpen(true);
+  };
+
+  const onBarcode = async (code: string) => {
+    if (scannedRef.current) return;
+    scannedRef.current = true;
+    setScanOpen(false);
+    setAnalyzing(true);
+    try {
+      const p = await lookupBarcode(code);
+      setProduct(p);
+      setGrams(String(p.servingG ?? 100));
+    } catch (e) {
+      const msg = e instanceof Error && e.message === 'NOT_FOUND'
+        ? 'この商品はデータベースに見つかりませんでした。写真AIか手入力をお試しください'
+        : '読み取りに失敗しました。通信環境を確認してください';
+      Alert.alert('バーコード', msg);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const recordProduct = async () => {
+    if (!product) return;
+    const g = parseFloat(grams) || 100;
+    const k = g / 100;
+    await addMealLog({
+      id: newId(), timestamp: new Date().toISOString(),
+      freeText: `${product.name} ${Math.round(g)}g`,
+      kcal: Math.round(product.kcal100 * k),
+      protein: Math.round(product.protein100 * k * 10) / 10,
+      fat: Math.round(product.fat100 * k * 10) / 10,
+      carbs: Math.round(product.carbs100 * k * 10) / 10,
+      isEstimate: false,
+    });
+    setProduct(null);
+    rescheduleReminders().catch(() => {});
     load();
   };
 
@@ -149,6 +206,7 @@ function MealSection() {
       isEstimate: false,
     });
     setName(''); setKcal(''); setProtein(''); setFat(''); setCarbs('');
+    rescheduleReminders().catch(() => {});
     load();
   };
 
@@ -168,7 +226,7 @@ function MealSection() {
         <Text style={styles.totalPfc}>P {totals.protein}g ・ F {totals.fat}g ・ C {totals.carbs}g</Text>
       </Card>
 
-      <SectionTitle>写真から記録</SectionTitle>
+      <SectionTitle>かんたん記録</SectionTitle>
       <View style={styles.photoRow}>
         <Pressable style={styles.photoBtn} onPress={() => pick(true)} disabled={analyzing}>
           <Text style={styles.photoBtnIcon}>📷</Text>
@@ -178,7 +236,62 @@ function MealSection() {
           <Text style={styles.photoBtnIcon}>🖼</Text>
           <Text style={styles.photoBtnText}>写真を選ぶ</Text>
         </Pressable>
+        <Pressable style={styles.photoBtn} onPress={openScanner} disabled={analyzing}>
+          <Text style={styles.photoBtnIcon}>🏷</Text>
+          <Text style={styles.photoBtnText}>バーコード</Text>
+        </Pressable>
       </View>
+
+      {analyzing && !photoUri && (
+        <View style={styles.analyzing}>
+          <ActivityIndicator color={Colors.accent} />
+          <Text style={styles.analyzingText}>商品を検索中…</Text>
+        </View>
+      )}
+
+      {product && (
+        <Card style={{ marginTop: Spacing.sm }}>
+          <Text style={styles.estName}>{product.name}</Text>
+          <Text style={styles.totalPfc}>
+            100gあたり {product.kcal100}kcal ・ P{product.protein100} F{product.fat100} C{product.carbs100}
+          </Text>
+          <View style={styles.inputGrid}>
+            <NumInput label="食べた量 (g)" value={grams} onChange={setGrams} />
+            <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+              <Text style={styles.estKcal}>
+                {Math.round(product.kcal100 * ((parseFloat(grams) || 100) / 100)).toLocaleString()}
+                <Text style={styles.totalUnit}> kcal</Text>
+              </Text>
+            </View>
+          </View>
+          <View style={styles.btnRow}>
+            <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => setProduct(null)}>
+              <Text style={styles.btnGhostText}>やめる</Text>
+            </Pressable>
+            <Pressable style={[styles.btn, styles.btnPrimary]} onPress={recordProduct}>
+              <Text style={styles.btnPrimaryText}>この内容で記録</Text>
+            </Pressable>
+          </View>
+        </Card>
+      )}
+
+      {/* バーコードスキャナ */}
+      <Modal visible={scanOpen} animationType="slide" onRequestClose={() => setScanOpen(false)}>
+        <View style={styles.scanRoot}>
+          <CameraView
+            style={styles.scanCamera}
+            barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e'] }}
+            onBarcodeScanned={(r) => { if (r.data) onBarcode(r.data); }}
+          />
+          <View style={styles.scanOverlay}>
+            <Text style={styles.scanHint}>パッケージのバーコードを枠内に</Text>
+            <View style={styles.scanFrame} />
+            <Pressable style={styles.scanClose} onPress={() => setScanOpen(false)}>
+              <Text style={styles.scanCloseText}>閉じる</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       {photoUri && (
         <Card style={{ marginTop: Spacing.sm }}>
@@ -601,4 +714,20 @@ const styles = StyleSheet.create({
   stressBtnActive: { backgroundColor: Colors.accentDim, borderColor: Colors.accent },
   stressEmoji: { fontSize: 24 },
   stressLabel: { color: Colors.textSecondary, fontSize: 10, marginTop: 4 },
+  scanRoot: { flex: 1, backgroundColor: '#000' },
+  scanCamera: { flex: 1 },
+  scanOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center', gap: Spacing.lg,
+  },
+  scanHint: { color: '#FFF', fontSize: Type.body, fontWeight: '600' },
+  scanFrame: {
+    width: 260, height: 140, borderRadius: Radius.md,
+    borderWidth: 3, borderColor: Colors.accent,
+  },
+  scanClose: {
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 999,
+    paddingHorizontal: 24, paddingVertical: 12,
+  },
+  scanCloseText: { color: '#FFF', fontSize: Type.body, fontWeight: '600' },
 });

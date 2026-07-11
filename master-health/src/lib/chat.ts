@@ -241,7 +241,7 @@ async function buildSystemPrompt(): Promise<string> {
     }
   } catch { /* 補助情報 */ }
 
-  return `あなたはMaster Healthアプリの中核AIアシスタント。ユーザーの健康記録・照会・分析を自然な日本語チャットで担当する。
+  return `あなたは健康管理アプリVYTA(ヴァイタ)の中核AIアシスタント。ユーザーの健康記録・照会・分析を自然な日本語チャットで担当する。
 
 ## ユーザー情報
 - 身長: ${profile.heightCm ?? '未設定'}cm / 生年月日: ${profile.birthDate ?? '未設定'} / 性別: ${profile.sex === 'male' ? '男性' : '女性'}
@@ -376,6 +376,8 @@ export async function executeMutation(name: string, input: Record<string, unknow
       templateId, freeText: input.free_text ? String(input.free_text) : null,
       kcal, protein, fat, carbs, isEstimate: Boolean(input.is_estimate),
     });
+    // 記録済みになったら当日の食事リマインダーを解除(明日分に予約し直し)
+    import('@/lib/notifications').then((m) => m.rescheduleReminders()).catch(() => {});
     return JSON.stringify({ ok: true, recorded: { kcal, protein, fat, carbs } });
   }
   if (name === 'log_workout') {

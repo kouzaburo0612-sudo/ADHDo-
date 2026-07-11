@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Master Health",
+    "name": "VYTA",
     "slug": "master-health",
     "owner": "kozaburos-team",
     "version": "1.0.0",
@@ -12,7 +12,6 @@
     "ios": {
       "bundleIdentifier": "com.nash.masterhealth",
       "supportsTablet": false,
-      "icon": "./assets/expo.icon",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -31,9 +30,21 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0C1310",
+          "backgroundColor": "#FBFBFB",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 96
+          "imageWidth": 220
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "default"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "食品のバーコードを読み取って栄養成分を自動入力するためにカメラを使用します。"
         }
       ],
       [
