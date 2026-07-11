@@ -145,19 +145,16 @@ jobs:
           echo "[canary] eas whoami:"
           timeout 90 eas whoami </dev/null || echo "::warning::eas whoami failed or hung (rc=$?)"
 
-          echo "[fetch] eas env:list..."
-          if timeout 120 eas env:list production --include-sensitive --format short --non-interactive </dev/null 2>/tmp/easerr.log | sed 's/\x1b\[[0-9;]*m//g' > /tmp/envs.txt; then
-            echo "[fetch] env:list ok: $(grep -c '^MH_IOS_' /tmp/envs.txt || true) MH_IOS_* lines"
-          else
-            echo "::warning::env:list failed or timed out (rc=$?). stderr tail:"
-            tail -5 /tmp/easerr.log || true
-            : > /tmp/envs.txt
-          fi
-
+          # env:list はsensitive値を返さないことがあるため、実績のある
+          # env:get ベースの取得(Resolveステップと同方式)を使う
+          strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
           getvar() {
-            local name="$1" out="" i=0 line
-            while [ $i -lt 30 ] && line=$(grep -m1 "^${name}_${i}=" /tmp/envs.txt); do
-              out="${out}${line#"${name}_${i}="}"
+            local name="$1" out="" i=0 raw val
+            while [ $i -lt 30 ]; do
+              raw=$(timeout 120 eas env:get --variable-name "${name}_${i}" --variable-environment production --format short --non-interactive </dev/null 2>/dev/null || true)
+              val=$(printf '%s' "$raw" | strip_ansi | tr -d '\r' | sed -n "s/^${name}_${i}=//p" | tr -d '\n')
+              [ -z "$val" ] && break
+              out="${out}${val}"
               i=$((i+1))
             done
             printf '%s' "$out"
@@ -166,6 +163,7 @@ jobs:
           P12_B64=$(getvar MH_IOS_P12B64)
           P12_PW=$(getvar MH_IOS_P12PW)
           PROFILE_B64=$(getvar MH_IOS_PROFILE)
+          echo "[fetch] p12=$(printf '%s' "$P12_B64" | wc -c)B pw=$(printf '%s' "$P12_PW" | wc -c)B profile=$(printf '%s' "$PROFILE_B64" | wc -c)B"
 
           if [ -n "$P12_B64" ] && [ -n "$P12_PW" ] && [ -n "$PROFILE_B64" ]; then
             echo "[fetch] 保存済みクレデンシャルを再利用します"
