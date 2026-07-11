@@ -131,9 +131,10 @@ export async function calorieBank(untilKey?: string): Promise<BankSummary> {
 export interface GoalNumbers {
   plan: GoalPlan;
   profile: UserProfile;
-  /** 直近の体重(kg) */
+  /** 直近の体重(kg)・体脂肪率(%) */
   currentWeightKg: number | null;
-  /** 目標まで残りkg(正=まだ減らす) */
+  currentBodyFatPct: number | null;
+  /** 目標まで落とす脂肪量(kg)。優先指標(体脂肪率 or 体重)から換算 */
   remainingKg: number | null;
   /** 目標日まで残り日数 */
   daysLeft: number | null;
@@ -159,7 +160,11 @@ export async function goalNumbers(): Promise<GoalNumbers> {
 
   const metricMap = await getRange(toKey(addDays(today, -14)), toKey(today));
   let currentWeightKg: number | null = null;
-  for (const [, day] of metricMap) if (day.weight != null) currentWeightKg = day.weight;
+  let currentBodyFatPct: number | null = null;
+  for (const [, day] of metricMap) {
+    if (day.weight != null) currentWeightKg = day.weight;
+    if (day.body_fat != null) currentBodyFatPct = day.body_fat;
+  }
 
   const series = await balanceSeries(14);
   const burns = series.map((d) => d.burn).filter((b): b is number => b != null);
@@ -170,18 +175,25 @@ export async function goalNumbers(): Promise<GoalNumbers> {
     ? mifflinStJeor(currentWeightKg, profile.heightCm, age, profile.sex)
     : null;
 
+  // 優先指標に応じて「落とす脂肪量」を求める
+  // 体脂肪率優先: 体重×(現在% − 目標%)/100 ≒ 落とす脂肪kg(除脂肪量一定の近似)
   let remainingKg: number | null = null;
+  const useBodyFat = plan.priority === 'body_fat'
+    && plan.targetBodyFatPct != null && currentBodyFatPct != null && currentWeightKg != null;
+  if (useBodyFat) {
+    remainingKg = Math.round(currentWeightKg! * (currentBodyFatPct! - plan.targetBodyFatPct!) / 100 * 10) / 10;
+  } else if (plan.targetWeightKg != null && currentWeightKg != null) {
+    remainingKg = Math.round((currentWeightKg - plan.targetWeightKg) * 10) / 10;
+  }
+
   let daysLeft: number | null = null;
   let paceKgPerWeek: number | null = null;
   let requiredDailyDeficit: number | null = null;
-  if (plan.targetWeightKg != null && currentWeightKg != null) {
-    remainingKg = Math.round((currentWeightKg - plan.targetWeightKg) * 10) / 10;
-    if (plan.targetDate) {
-      daysLeft = Math.max(0, Math.ceil((new Date(plan.targetDate).getTime() - today.getTime()) / 86400000));
-      if (daysLeft > 0 && remainingKg > 0) {
-        paceKgPerWeek = Math.round((remainingKg / daysLeft) * 7 * 100) / 100;
-        requiredDailyDeficit = Math.round((remainingKg * KCAL_PER_KG_FAT) / daysLeft);
-      }
+  if (remainingKg != null && plan.targetDate) {
+    daysLeft = Math.max(0, Math.ceil((new Date(plan.targetDate).getTime() - today.getTime()) / 86400000));
+    if (daysLeft > 0 && remainingKg > 0) {
+      paceKgPerWeek = Math.round((remainingKg / daysLeft) * 7 * 100) / 100;
+      requiredDailyDeficit = Math.round((remainingKg * KCAL_PER_KG_FAT) / daysLeft);
     }
   }
 
@@ -201,7 +213,7 @@ export async function goalNumbers(): Promise<GoalNumbers> {
     : null;
 
   return {
-    plan, profile, currentWeightKg, remainingKg, daysLeft,
+    plan, profile, currentWeightKg, currentBodyFatPct, remainingKg, daysLeft,
     paceKgPerWeek, requiredDailyDeficit, avgBurn, bmr, targetIntakeKcal, pfcGrams,
   };
 }

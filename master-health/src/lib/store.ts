@@ -197,11 +197,15 @@ export const saveDayTypes = (d: DayTypeDef[]) => kvPut('day_types', d);
 // ---- 目標プラン(カロミル風の目標設定) ----
 
 export interface GoalPlan {
+  /** どちらの指標を重視するか(デフォルト: 体脂肪率) */
+  priority: 'body_fat' | 'weight';
+  /** 目標体脂肪率(%)。nullなら未設定 */
+  targetBodyFatPct: number | null;
   /** 目標体重(kg)。nullなら未設定 */
   targetWeightKg: number | null;
   /** 目標日 YYYY-MM-DD */
   targetDate: string | null;
-  /** 目標設定時の体重・日付(進捗と貯金の起点) */
+  /** 目標設定時の体重・日付(進捗と累積赤字の起点) */
   startWeightKg: number | null;
   startDate: string | null;
   /** 摂取カロリー目標: auto=目標ペースから逆算 / custom=手入力 */
@@ -212,6 +216,8 @@ export interface GoalPlan {
 }
 
 export const DEFAULT_GOAL_PLAN: GoalPlan = {
+  priority: 'body_fat',
+  targetBodyFatPct: null,
   targetWeightKg: null,
   targetDate: null,
   startWeightKg: null,
@@ -221,7 +227,11 @@ export const DEFAULT_GOAL_PLAN: GoalPlan = {
   pfc: { p: 30, f: 25, c: 45 },
 };
 
-export const getGoalPlan = () => kvDoc<GoalPlan>('goal_plan', DEFAULT_GOAL_PLAN);
+/** 旧バージョンで保存したプランに新フィールドを補完して返す */
+export const getGoalPlan = async (): Promise<GoalPlan> => ({
+  ...DEFAULT_GOAL_PLAN,
+  ...(await kvDoc<Partial<GoalPlan>>('goal_plan', {})),
+});
 export const saveGoalPlan = (g: GoalPlan) => kvPut('goal_plan', g);
 
 // ---- DayType割り当て ----

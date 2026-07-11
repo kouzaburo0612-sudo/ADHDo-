@@ -9,16 +9,16 @@
  */
 import { getRange, getSeries } from '@/lib/db';
 import { addDays, toKey } from '@/lib/dates';
-import { getApiKey } from '@/lib/settings';
+import { getApiKey, loadSettings, saveSettings } from '@/lib/settings';
 import {
-  addMealLog, addWorkoutLog, dailyIntake, getDayAssignment, getDayTypes, getProfile,
-  lastExercise, listTemplates, localDateKey, newId, saveDayTypes, setDayAssignment,
-  templateNutrition, upsertIngredient, upsertTemplate,
+  addMealLog, addWorkoutLog, dailyIntake, getDayAssignment, getDayTypes, getGoalPlan, getProfile,
+  lastExercise, listTemplates, localDateKey, newId, saveDayTypes, saveGoalPlan, saveProfile,
+  setDayAssignment, templateNutrition, upsertIngredient, upsertTemplate,
   type ExerciseSet, type FoodTemplate,
 } from '@/lib/store';
 import { computeBudget } from '@/utils/budget';
 import { balanceSeries, calorieBank } from '@/utils/deficit';
-import { simulateGoal } from '@/utils/simulator';
+import { planForecast } from '@/utils/forecast';
 import { computeTdee, type TdeeInput } from '@/utils/tdee';
 import { mean } from '@/utils/stats';
 
@@ -122,6 +122,29 @@ const TOOLS = [
     },
   },
   {
+    name: 'update_settings',
+    description: 'アプリの設定を変更する。プロファイル(身長・生年月日・性別)、減量目標(重視指標・目標体脂肪率・目標体重・期日)、摂取カロリー目標、PFCバランス、スコア基準(睡眠・歩数・体脂肪率)に対応。変更したい項目だけ指定する。実行前にユーザー確認カードが表示される。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        height_cm: { type: 'number' },
+        birth_date: { type: 'string', description: 'YYYY-MM-DD' },
+        sex: { type: 'string', enum: ['male', 'female'] },
+        priority_metric: { type: 'string', enum: ['body_fat', 'weight'], description: '減量目標で重視する指標' },
+        target_body_fat_pct: { type: 'number', description: '目標体脂肪率(%)' },
+        target_weight_kg: { type: 'number', description: '目標体重(kg)' },
+        target_date: { type: 'string', description: '目標期日 YYYY-MM-DD' },
+        intake_mode: { type: 'string', enum: ['auto', 'custom'], description: '摂取目標の算出方法' },
+        custom_intake_kcal: { type: 'number' },
+        pfc_protein_pct: { type: 'number' }, pfc_fat_pct: { type: 'number' }, pfc_carbs_pct: { type: 'number' },
+        sleep_goal_hours: { type: 'number', description: '睡眠スコアの目標時間' },
+        steps_goal: { type: 'number', description: '活動スコアの目標歩数' },
+        body_fat_score_goal_pct: { type: 'number', description: '体組成スコアの基準体脂肪率' },
+      },
+      required: [],
+    },
+  },
+  {
     name: 'query_budget',
     description: '今週のカロリー収支(週予算・消費済み・残り・日割り推奨)を照会する。',
     input_schema: { type: 'object', properties: {}, required: [] },
@@ -157,7 +180,7 @@ const TOOLS = [
   },
 ] as const;
 
-const MUTATION_TOOLS = new Set(['log_meal', 'log_workout', 'set_day_type', 'add_template', 'set_goal']);
+const MUTATION_TOOLS = new Set(['log_meal', 'log_workout', 'set_day_type', 'add_template', 'set_goal', 'update_settings']);
 
 // ---- 型 ----
 
@@ -266,6 +289,7 @@ ${templates.map((t) => `- ${t.name}${t.aliases.length ? ` (別名: ${t.aliases.j
 - 表示はプレーンテキストのみ。マークダウン記法(** ## | --- \` など)は一切使わない。強調したい数値はそのまま書く。箇条書きが必要なら「・」だけを使う
 - 数値根拠を示す。曖昧な励ましより具体的な数字
 - 「いつもの」等の曖昧な表現はテンプレートの別名と照合する
+- 設定変更もあなたの仕事。「身長168にして」「目標体脂肪率13%で9月末までに」等はupdate_settingsツールで変更する
 - 食事の自由入力はあなたがPFCを概算し、is_estimate=trueでlog_mealを呼ぶ
 - あなたはツールを呼ばない限り何も記録できない。「記録します」「記録しますね」と言うだけの応答は禁止。記録の意思があるなら同じ応答の中で必ずlog_meal等のツールを呼ぶ
 - 記録は必ず1件ずつツールを呼ぶ(まとめて複数を1回の応答で呼ばない)。承認されたら残りの件も1件ずつツールを呼び、全件終わるまで続ける
@@ -332,16 +356,9 @@ async function runQueryTool(name: string, input: Record<string, unknown>): Promi
     return JSON.stringify({ metric, count: values.length, ma7, series: values.slice(-daysN) });
   }
   if (name === 'query_forecast') {
-    const profile = await getProfile();
-    const results: Record<string, unknown>[] = [];
-    for (const g of profile.goals) {
-      const metric = g.metric === 'body_fat_pct' ? 'body_fat' : g.metric === 'weight' ? 'weight' : null;
-      if (!metric) continue;
-      const series = await getSeries(metric as never, toKey(addDays(today, -90)), toKey(today));
-      const sim = simulateGoal(series.map((s) => ({ date: s.date, value: s.value })), g.targetValue);
-      results.push({ goal: g, forecast: sim });
-    }
-    return JSON.stringify(results.length ? results : { error: '目標が未設定です(設定タブまたはチャットで設定できます)' });
+    const pf = await planForecast();
+    if (!pf.hasPlan) return JSON.stringify({ error: '目標が未設定です(トレンドタブまたはupdate_settingsで設定できます)' });
+    return JSON.stringify(pf);
   }
   if (name === 'query_recent') {
     const daysN = Number(input.days ?? 3);
@@ -415,6 +432,47 @@ export async function executeMutation(name: string, input: Record<string, unknow
     await (await import('@/lib/store')).saveProfile({ ...profile, goals: [...rest, goal] });
     return JSON.stringify({ ok: true, goal });
   }
+  if (name === 'update_settings') {
+    const changed: string[] = [];
+    const profile = await getProfile();
+    const pPatch: Partial<typeof profile> = {};
+    if (input.height_cm != null) { pPatch.heightCm = Number(input.height_cm); changed.push(`身長 ${input.height_cm}cm`); }
+    if (input.birth_date != null) { pPatch.birthDate = String(input.birth_date); changed.push(`生年月日 ${input.birth_date}`); }
+    if (input.sex != null) { pPatch.sex = input.sex as 'male' | 'female'; changed.push(`性別 ${input.sex === 'male' ? '男性' : '女性'}`); }
+    if (Object.keys(pPatch).length > 0) await saveProfile({ ...profile, ...pPatch });
+
+    const plan = await getGoalPlan();
+    let planChanged = false;
+    if (input.priority_metric != null) { plan.priority = input.priority_metric as 'body_fat' | 'weight'; planChanged = true; changed.push(`重視指標 ${plan.priority === 'body_fat' ? '体脂肪率' : '体重'}`); }
+    if (input.target_body_fat_pct != null) { plan.targetBodyFatPct = Number(input.target_body_fat_pct); planChanged = true; changed.push(`目標体脂肪率 ${plan.targetBodyFatPct}%`); }
+    if (input.target_weight_kg != null) { plan.targetWeightKg = Number(input.target_weight_kg); planChanged = true; changed.push(`目標体重 ${plan.targetWeightKg}kg`); }
+    if (input.target_date != null) { plan.targetDate = String(input.target_date); planChanged = true; changed.push(`期日 ${plan.targetDate}`); }
+    if (input.intake_mode != null) { plan.intakeMode = input.intake_mode as 'auto' | 'custom'; planChanged = true; changed.push(`摂取目標 ${plan.intakeMode === 'auto' ? '自動' : '手入力'}`); }
+    if (input.custom_intake_kcal != null) { plan.customIntakeKcal = Number(input.custom_intake_kcal); planChanged = true; changed.push(`摂取目標 ${plan.customIntakeKcal}kcal`); }
+    if (input.pfc_protein_pct != null || input.pfc_fat_pct != null || input.pfc_carbs_pct != null) {
+      plan.pfc = {
+        p: Number(input.pfc_protein_pct ?? plan.pfc.p),
+        f: Number(input.pfc_fat_pct ?? plan.pfc.f),
+        c: Number(input.pfc_carbs_pct ?? plan.pfc.c),
+      };
+      planChanged = true;
+      changed.push(`PFC ${plan.pfc.p}/${plan.pfc.f}/${plan.pfc.c}%`);
+    }
+    if (planChanged) {
+      // 目標の起点を初期化(未設定時)
+      if (plan.startDate == null) plan.startDate = toKey(new Date());
+      await saveGoalPlan(plan);
+    }
+
+    const settings = await loadSettings();
+    const sPatch: Partial<typeof settings> = {};
+    if (input.sleep_goal_hours != null) { sPatch.sleepGoalMin = Math.round(Number(input.sleep_goal_hours) * 60); changed.push(`睡眠目標 ${input.sleep_goal_hours}時間`); }
+    if (input.steps_goal != null) { sPatch.stepsGoal = Math.round(Number(input.steps_goal)); changed.push(`歩数目標 ${input.steps_goal}歩`); }
+    if (input.body_fat_score_goal_pct != null) { sPatch.bodyFatGoal = Number(input.body_fat_score_goal_pct); changed.push(`体組成スコア基準 ${input.body_fat_score_goal_pct}%`); }
+    if (Object.keys(sPatch).length > 0) await saveSettings({ ...settings, ...sPatch });
+
+    return JSON.stringify({ ok: true, changed });
+  }
   if (name === 'add_template') {
     const items = (input.items ?? []) as { name: string; unit: string; quantity: number; kcal: number; protein: number; fat: number; carbs: number }[];
     const refs: { ingredientId: string; quantity: number }[] = [];
@@ -457,6 +515,19 @@ function summarize(name: string, input: Record<string, unknown>): string {
     return `トレーニングを記録:\n${ex.map((e) => `${e.exerciseName} ${e.weight ?? ''}${e.weightUnit ?? ''} ${e.reps}回×${e.sets}セット`).join('\n')}`;
   }
   if (name === 'set_day_type') return `${input.date ?? '今日'} を「${input.day_type_name}」に設定`;
+  if (name === 'update_settings') {
+    const labels: Record<string, string> = {
+      height_cm: '身長', birth_date: '生年月日', sex: '性別',
+      priority_metric: '重視指標', target_body_fat_pct: '目標体脂肪率', target_weight_kg: '目標体重',
+      target_date: '期日', intake_mode: '摂取目標の方式', custom_intake_kcal: '摂取目標kcal',
+      pfc_protein_pct: 'P%', pfc_fat_pct: 'F%', pfc_carbs_pct: 'C%',
+      sleep_goal_hours: '睡眠目標', steps_goal: '歩数目標', body_fat_score_goal_pct: '体組成スコア基準',
+    };
+    const lines = Object.entries(input)
+      .filter(([, v]) => v != null)
+      .map(([k, v]) => `${labels[k] ?? k}: ${v}`);
+    return `設定を変更:\n${lines.join('\n')}`;
+  }
   if (name === 'add_template') return `テンプレート「${input.name}」を登録`;
   if (name === 'set_goal') {
     const labelMap: Record<string, string> = { body_fat_pct: '体脂肪率', weight: '体重', steps: '歩数' };

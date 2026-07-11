@@ -13,11 +13,10 @@ import { RANGE_DAYS, useComparison, useSeries, useTagEffects, type RangeMode } f
 import { useFocusEffect } from 'expo-router';
 import { addDays, formatKeyJa, fromKey, toKey, todayKey } from '@/lib/dates';
 import { currentTdee } from '@/lib/chat';
-import { getSeries } from '@/lib/db';
 import { dailyIntake, getProfile, newId, saveGoalPlan, saveProfile, type GoalPlan } from '@/lib/store';
 import { computeBudget, type BudgetResult } from '@/utils/budget';
 import { balanceSeries, goalNumbers, type DayBalance, type GoalNumbers } from '@/utils/deficit';
-import { simulateGoal, type ScenarioResult } from '@/utils/simulator';
+import { planForecast, type PlanForecast } from '@/utils/forecast';
 import type { TdeeResult } from '@/utils/tdee';
 import { formatValue, METRIC_ORDER, METRICS, type MetricKey } from '@/lib/metrics';
 
@@ -37,7 +36,7 @@ export default function HistoryScreen() {
 
   const [tdee, setTdee] = useState<TdeeResult | null>(null);
   const [budget, setBudget] = useState<BudgetResult | null>(null);
-  const [forecasts, setForecasts] = useState<{ label: string; target: number; sim: ScenarioResult }[]>([]);
+  const [pf, setPf] = useState<PlanForecast | null>(null);
   const [goal, setGoal] = useState<GoalNumbers | null>(null);
   const [balances, setBalances] = useState<DayBalance[]>([]);
   const [editOpen, setEditOpen] = useState(false);
@@ -47,6 +46,7 @@ export default function HistoryScreen() {
       const today = new Date();
       setGoal(await goalNumbers());
       setBalances(await balanceSeries(14));
+      setPf(await planForecast());
       const t = await currentTdee();
       setTdee(t);
       const intake = await dailyIntake(addDays(today, -8).toISOString(), today.toISOString());
@@ -57,19 +57,6 @@ export default function HistoryScreen() {
             weeklyDeficitTarget: 0,
           })
         : null);
-      const profile = await getProfile();
-      const fs: { label: string; target: number; sim: ScenarioResult }[] = [];
-      for (const g of profile.goals) {
-        const m = g.metric === 'body_fat_pct' ? 'body_fat' : g.metric === 'weight' ? 'weight' : null;
-        if (!m) continue;
-        const series = await getSeries(m as never, toKey(addDays(today, -90)), toKey(today));
-        fs.push({
-          label: g.label ?? (g.metric === 'body_fat_pct' ? '体脂肪率' : '体重'),
-          target: g.targetValue,
-          sim: simulateGoal(series.map((p) => ({ date: p.date, value: p.value })), g.targetValue),
-        });
-      }
-      setForecasts(fs);
     } catch { /* 補助情報 */ }
   }, []);
 
@@ -77,17 +64,17 @@ export default function HistoryScreen() {
 
   const saveGoal = useCallback(async (plan: GoalPlan) => {
     await saveGoalPlan(plan);
-    // 達成予測とAIチャットからも見えるよう、プロファイルの体重目標も同期する
-    if (plan.targetWeightKg != null && plan.targetDate) {
+    // AIチャットからも見えるよう、プロファイルの目標にも同期する
+    if (plan.targetDate) {
       const profile = await getProfile();
-      const rest = profile.goals.filter((g) => g.metric !== 'weight');
-      await saveProfile({
-        ...profile,
-        goals: [...rest, {
-          id: newId(), metric: 'weight', label: '体重',
-          targetValue: plan.targetWeightKg, deadline: plan.targetDate,
-        }],
-      });
+      const goals = profile.goals.filter((g) => g.metric !== 'weight' && g.metric !== 'body_fat_pct');
+      if (plan.targetWeightKg != null) {
+        goals.push({ id: newId(), metric: 'weight', label: '体重', targetValue: plan.targetWeightKg, deadline: plan.targetDate });
+      }
+      if (plan.targetBodyFatPct != null) {
+        goals.push({ id: newId(), metric: 'body_fat_pct', label: '体脂肪率', targetValue: plan.targetBodyFatPct, deadline: plan.targetDate });
+      }
+      await saveProfile({ ...profile, goals });
     }
     setEditOpen(false);
     loadInsights();
@@ -133,21 +120,40 @@ export default function HistoryScreen() {
             <Text style={styles.editLink}>{goal?.plan.targetWeightKg != null ? '変更 ›' : '設定する ›'}</Text>
           </Pressable>
         </View>
-        {goal?.plan.targetWeightKg != null ? (
+        {goal != null && (goal.plan.targetBodyFatPct != null || goal.plan.targetWeightKg != null) ? (
           <>
-            <View style={styles.goalWeights}>
-              <Text style={styles.goalNow}>
-                {goal.currentWeightKg != null ? goal.currentWeightKg.toFixed(1) : '–'}
-                <Text style={styles.goalUnit}> kg</Text>
-              </Text>
-              <Text style={styles.goalArrow}>→</Text>
-              <Text style={styles.goalTargetNum}>
-                {goal.plan.targetWeightKg.toFixed(1)}
-                <Text style={styles.goalUnit}> kg</Text>
-              </Text>
-            </View>
+            {goal.plan.priority === 'body_fat' && goal.plan.targetBodyFatPct != null ? (
+              <View style={styles.goalWeights}>
+                <Text style={styles.goalNow}>
+                  {goal.currentBodyFatPct != null ? goal.currentBodyFatPct.toFixed(1) : '–'}
+                  <Text style={styles.goalUnit}> %</Text>
+                </Text>
+                <Text style={styles.goalArrow}>→</Text>
+                <Text style={styles.goalTargetNum}>
+                  {goal.plan.targetBodyFatPct.toFixed(1)}
+                  <Text style={styles.goalUnit}> %</Text>
+                </Text>
+                {goal.plan.targetWeightKg != null && (
+                  <Text style={styles.goalSubMetric}>
+                    体重 {goal.currentWeightKg?.toFixed(1) ?? '–'} → {goal.plan.targetWeightKg}kg
+                  </Text>
+                )}
+              </View>
+            ) : (
+              <View style={styles.goalWeights}>
+                <Text style={styles.goalNow}>
+                  {goal.currentWeightKg != null ? goal.currentWeightKg.toFixed(1) : '–'}
+                  <Text style={styles.goalUnit}> kg</Text>
+                </Text>
+                <Text style={styles.goalArrow}>→</Text>
+                <Text style={styles.goalTargetNum}>
+                  {goal.plan.targetWeightKg?.toFixed(1) ?? '–'}
+                  <Text style={styles.goalUnit}> kg</Text>
+                </Text>
+              </View>
+            )}
             <View style={styles.goalGrid}>
-              {goal.remainingKg != null && <GoalStat label="残り" value={`${goal.remainingKg}kg`} />}
+              {goal.remainingKg != null && <GoalStat label="落とす脂肪" value={`${goal.remainingKg}kg`} />}
               {goal.daysLeft != null && <GoalStat label="期限まで" value={`${goal.daysLeft}日`} />}
               {goal.paceKgPerWeek != null && <GoalStat label="必要ペース" value={`${goal.paceKgPerWeek}kg/週`} />}
               {goal.requiredDailyDeficit != null && <GoalStat label="必要赤字" value={`${goal.requiredDailyDeficit}kcal/日`} />}
@@ -184,20 +190,63 @@ export default function HistoryScreen() {
         <BalanceBars data={balances} />
       </Card>
 
-      {/* 目標達成予測 */}
-      {forecasts.map((f) => (
-        <Card key={f.label} style={styles.goalCard}>
-          <Text style={styles.goalLabel}>{f.label} {f.target} まで</Text>
-          {f.sim.median ? (
-            <>
-              <Text style={styles.goalMain}>{fmtShortDate(f.sim.median)} 到達見込み</Text>
-              <Text style={styles.goalSub}>順調なら {fmtShortDate(f.sim.optimistic)} ・ 停滞すると {fmtShortDate(f.sim.pessimistic)}</Text>
-            </>
+      {/* 目標達成予測(赤字プラン基準: 期日までに必要な赤字を毎日出せているか) */}
+      {pf?.hasPlan && (
+        <Card style={styles.goalCard}>
+          <Text style={styles.goalLabel}>
+            達成予測({pf.metricLabel} {pf.currentText ?? '–'} → {pf.targetText ?? '–'})
+          </Text>
+
+          {pf.loggedDays === 0 ? (
+            <Text style={styles.goalSub}>
+              食事を記録すると予測が出ます。まずは今日、消費より
+              {pf.requiredDailyDeficit != null ? ` ${pf.requiredDailyDeficit.toLocaleString()}kcal ` : ''}
+              少なく食べるところから始めましょう。
+            </Text>
           ) : (
-            <Text style={styles.goalSub}>直近のトレンドが目標方向でないため予測できません</Text>
+            <>
+              <View style={styles.pfRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.goalMain}>
+                    {pf.projectedDate ? `${fmtShortDate(pf.projectedDate)} 達成` : '—'}
+                  </Text>
+                  <Text style={styles.goalSub}>このままのペースなら</Text>
+                </View>
+                {pf.onTrackProbability != null && (
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={[styles.goalMain, {
+                      color: pf.onTrackProbability >= 70 ? Colors.good
+                        : pf.onTrackProbability >= 40 ? Colors.warn : Colors.bad,
+                    }]}>
+                      {pf.onTrackProbability}%
+                    </Text>
+                    <Text style={styles.goalSub}>期日{pf.deadline ? ` ${fmtShortDate(pf.deadline)} ` : ''}達成確率</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.pfDivider} />
+              <Text style={styles.pfCompare}>
+                必要赤字 {pf.requiredDailyDeficit?.toLocaleString() ?? '–'}kcal/日 ・
+                実績 {pf.avgDailyDeficit != null ? `${pf.avgDailyDeficit.toLocaleString()}kcal/日` : '–'}
+                (直近{pf.loggedDays}日中 {pf.achievedDays}日達成)
+              </Text>
+              {pf.extraNeededPerDay != null && pf.extraNeededPerDay > 0 ? (
+                <Text style={styles.pfAdvice}>
+                  あと1日 {pf.extraNeededPerDay.toLocaleString()}kcal の赤字上積みで期日に間に合います
+                </Text>
+              ) : (
+                <Text style={[styles.pfAdvice, { color: Colors.good }]}>
+                  今のペースをキープすれば期日達成です 🔥
+                </Text>
+              )}
+              {pf.loggedDays < 3 && (
+                <Text style={styles.goalSub}>まだ記録が少ないため概算です。記録を続けると精度が上がります</Text>
+              )}
+            </>
           )}
         </Card>
-      ))}
+      )}
 
       {/* 指標セレクタ */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.metricRow}>
@@ -298,8 +347,8 @@ export default function HistoryScreen() {
                 <Text style={styles.budgetCap}>今日の目標摂取 kcal</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.budgetNum}>{tdee?.effective ?? '–'}</Text>
-                <Text style={styles.budgetCap}>実績TDEE kcal/日</Text>
+                <Text style={styles.budgetNum}>{goal?.avgBurn ?? tdee?.effective ?? '–'}</Text>
+                <Text style={styles.budgetCap}>週平均TDEE(消費) kcal/日</Text>
               </View>
             </View>
           </Card>
@@ -382,6 +431,8 @@ function GoalEditModal({ visible, goal, onClose, onSave }: {
   onSave: (plan: GoalPlan) => void;
 }) {
   const plan = goal?.plan;
+  const [priority, setPriority] = useState<'body_fat' | 'weight'>('body_fat');
+  const [bodyFat, setBodyFat] = useState('');
   const [weight, setWeight] = useState('');
   const [date, setDate] = useState<Date | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -394,6 +445,8 @@ function GoalEditModal({ visible, goal, onClose, onSave }: {
 
   // モーダルを開くたびに現在の設定値を反映
   if (visible && !initialized && goal) {
+    setPriority(plan?.priority ?? 'body_fat');
+    setBodyFat(plan?.targetBodyFatPct != null ? String(plan.targetBodyFatPct) : '');
     setWeight(plan?.targetWeightKg != null ? String(plan.targetWeightKg) : '');
     setDate(plan?.targetDate ? fromKey(plan.targetDate) : null);
     setIntakeMode(plan?.intakeMode ?? 'auto');
@@ -407,15 +460,20 @@ function GoalEditModal({ visible, goal, onClose, onSave }: {
 
   const save = () => {
     const w = parseFloat(weight);
+    const bf = parseFloat(bodyFat);
     const targetWeightKg = Number.isFinite(w) ? w : null;
+    const targetBodyFatPct = Number.isFinite(bf) ? bf : null;
     const targetDate = date ? toKey(date) : null;
     const pn = parseInt(p, 10) || 30;
     const fn = parseInt(f, 10) || 25;
     const cn = parseInt(c, 10) || 45;
     const prev = goal?.plan;
-    // 目標が変わったら貯金の起点をリセット(現体重・今日から数え直す)
-    const changed = prev?.targetWeightKg !== targetWeightKg || prev?.targetDate !== targetDate;
+    // 目標が変わったら累積赤字の起点をリセット(現体重・今日から数え直す)
+    const changed = prev?.targetWeightKg !== targetWeightKg
+      || prev?.targetBodyFatPct !== targetBodyFatPct || prev?.targetDate !== targetDate;
     onSave({
+      priority,
+      targetBodyFatPct,
       targetWeightKg,
       targetDate,
       startWeightKg: changed || prev?.startWeightKg == null ? goal?.currentWeightKg ?? prev?.startWeightKg ?? null : prev.startWeightKg,
@@ -435,7 +493,38 @@ function GoalEditModal({ visible, goal, onClose, onSave }: {
           <Pressable onPress={save} hitSlop={10}><Text style={styles.modalSave}>保存</Text></Pressable>
         </View>
 
-        <SectionTitle>目標体重</SectionTitle>
+        <SectionTitle>重視する指標</SectionTitle>
+        <Card>
+          <Segmented
+            options={[
+              { value: 'body_fat', label: '体脂肪率(推奨)' },
+              { value: 'weight', label: '体重' },
+            ]}
+            value={priority}
+            onChange={setPriority}
+          />
+          <Text style={styles.modalHint}>
+            筋肉を残して絞るなら体脂肪率がおすすめ。ペースと必要赤字はこの指標から計算されます
+          </Text>
+        </Card>
+
+        <SectionTitle>目標体脂肪率</SectionTitle>
+        <Card>
+          <View style={styles.modalRow}>
+            <TextInput
+              style={styles.modalInput}
+              value={bodyFat} onChangeText={setBodyFat}
+              keyboardType="decimal-pad" placeholder="例: 13.5"
+              placeholderTextColor={Colors.textFaint}
+            />
+            <Text style={styles.modalUnit}>%</Text>
+          </View>
+          {goal?.currentBodyFatPct != null && (
+            <Text style={styles.modalHint}>現在 {goal.currentBodyFatPct.toFixed(1)}%</Text>
+          )}
+        </Card>
+
+        <SectionTitle>目標体重(任意)</SectionTitle>
         <Card>
           <View style={styles.modalRow}>
             <TextInput
@@ -549,6 +638,11 @@ const styles = StyleSheet.create({
   goalLabel: { color: Colors.textSecondary, fontSize: Type.caption },
   goalHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   editLink: { color: Colors.accent, fontSize: Type.label, fontWeight: '700' },
+  goalSubMetric: { color: Colors.textFaint, fontSize: Type.caption, marginLeft: 4 },
+  pfRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 6, gap: Spacing.md },
+  pfDivider: { height: StyleSheet.hairlineWidth, backgroundColor: Colors.border, marginVertical: Spacing.sm },
+  pfCompare: { color: Colors.textSecondary, fontSize: Type.caption, fontVariant: ['tabular-nums'], lineHeight: 17 },
+  pfAdvice: { color: Colors.accent, fontSize: Type.body, fontWeight: '600', marginTop: 6 },
   goalWeights: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.sm, marginTop: 6 },
   goalNow: { color: Colors.text, fontSize: 30, fontFamily: Fonts.display, fontWeight: '700', fontVariant: ['tabular-nums'] },
   goalArrow: { color: Colors.textFaint, fontSize: 20 },

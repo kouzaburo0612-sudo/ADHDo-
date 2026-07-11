@@ -68,13 +68,10 @@ export default function RootLayout() {
             <NativeTabs.Trigger.Label>トレンド</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf="chart.xyaxis.line" />
           </NativeTabs.Trigger>
+          {/* iOSのタブは5個まで(6個目は「その他」に押し込まれる)。設定はMy Bodyの⚙から */}
           <NativeTabs.Trigger name="team">
             <NativeTabs.Trigger.Label>チーム</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf={{ default: 'person.3', selected: 'person.3.fill' }} />
-          </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="settings">
-            <NativeTabs.Trigger.Label>設定</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
           </NativeTabs.Trigger>
         </NativeTabs>
         <Onboarding visible={showOnboarding} onDone={finishOnboarding} />

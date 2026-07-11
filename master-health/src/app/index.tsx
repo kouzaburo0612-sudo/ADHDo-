@@ -11,8 +11,10 @@ import { runOnJS } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card, Chip, SectionTitle } from '@/components/ui';
+import { SettingsSheet } from '@/components/SettingsSheet';
 import { Colors, Fonts, Spacing, Type, scoreColor } from '@/constants/theme';
-import { useDashboard, useHealthAuth } from '@/hooks/useHealthData';
+import { scoresForDate, useDashboard, useHealthAuth } from '@/hooks/useHealthData';
+import type { Scores } from '@/utils/score';
 import { getCustomTags, addCustomTag, addTag, removeTag, getTags, getRange } from '@/lib/db';
 import { addDays, formatKeyJa, fromKey, toKey, todayKey } from '@/lib/dates';
 import { BODY_DETAIL_ORDER, METRICS, formatValue, PRESET_TAGS, type MetricKey } from '@/lib/metrics';
@@ -42,7 +44,9 @@ export default function MyBodyScreen() {
   const [dateKey, setDateKey] = useState(todayKey());
   const [day, setDay] = useState<DayData | null>(null);
   const [bank, setBank] = useState<BankSummary | null>(null);
+  const [scores, setScores] = useState<Scores | null>(null);
   const [customTags, setCustomTags] = useState<{ name: string; emoji: string }[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   /** 根拠を展開中のスコアカード */
   const [expanded, setExpanded] = useState<(typeof CATEGORIES)[number]['key'] | null>(null);
 
@@ -74,6 +78,7 @@ export default function MyBodyScreen() {
       const balance = series.length > 0 ? series[0] : null;
       const tags = await getTags(key);
       setDay({ metrics, weight, bodyFat, balance, tags });
+      setScores(await scoresForDate(key)); // 過去日も同じフォーマットでスコアを出す
       setBank(await calorieBank(key)); // その日「時点まで」の累積
     } catch { /* 表示は次のフォーカスで再試行 */ }
   }, []);
@@ -133,7 +138,7 @@ export default function MyBodyScreen() {
         contentContainerStyle={{ paddingTop: insets.top + Spacing.md, paddingBottom: 120, paddingHorizontal: Spacing.md }}
         refreshControl={<RefreshControl refreshing={d.refreshing} onRefresh={() => { d.refresh(); loadDay(dateKey); }} tintColor={Colors.accent} />}
       >
-        {/* 日付ナビゲーション(スワイプでも移動可) */}
+        {/* 日付ナビゲーション(スワイプでも移動可)+ 設定 */}
         <View style={styles.dateNav}>
           <Pressable onPress={() => shiftDay(-1)} hitSlop={10} style={styles.dateBtn}>
             <Text style={styles.dateBtnText}>‹</Text>
@@ -142,17 +147,22 @@ export default function MyBodyScreen() {
             <Text style={styles.screenTitle}>My Body</Text>
             <Text style={styles.date}>{isToday ? `今日 ${formatKeyJa(dateKey)}` : formatKeyJa(dateKey)}</Text>
           </View>
-          <Pressable onPress={() => shiftDay(1)} hitSlop={10} style={[styles.dateBtn, isToday && { opacity: 0.25 }]}>
-            <Text style={styles.dateBtnText}>›</Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable onPress={() => setSettingsOpen(true)} hitSlop={10} style={styles.dateBtn}>
+              <Text style={styles.gearText}>⚙︎</Text>
+            </Pressable>
+            <Pressable onPress={() => shiftDay(1)} hitSlop={10} style={[styles.dateBtn, isToday && { opacity: 0.25 }]}>
+              <Text style={styles.dateBtnText}>›</Text>
+            </Pressable>
+          </View>
         </View>
 
-        {/* スコア(コンディション・睡眠・活動・体組成)。タップで根拠を表示 */}
-        {isToday && (
+        {/* スコア(コンディション・睡眠・活動・体組成)。過去日も表示。タップで根拠 */}
+        {scores != null && (
           <>
             <View style={styles.categoryRow}>
               {CATEGORIES.map((c) => {
-                const v = d.scores[c.key].score;
+                const v = scores[c.key].score;
                 return (
                   <Pressable
                     key={c.key}
@@ -177,10 +187,10 @@ export default function MyBodyScreen() {
                 <Text style={styles.breakdownTitle}>
                   {CATEGORIES.find((c) => c.key === expanded)?.label}スコアの根拠
                 </Text>
-                {d.scores[expanded].parts.length === 0 ? (
+                {scores[expanded].parts.length === 0 ? (
                   <Text style={styles.balanceEmpty}>この日は算出に必要なデータがありません</Text>
                 ) : (
-                  d.scores[expanded].parts.map((p, i) => (
+                  scores[expanded].parts.map((p, i) => (
                     <View key={p.label} style={[styles.statRow, i > 0 && styles.statRowBorder]}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.statLabel}>{p.label}</Text>
@@ -238,11 +248,45 @@ export default function MyBodyScreen() {
               <Text style={[styles.balanceValue, { color: deficit ? Colors.deficit : Colors.surplus }]}>
                 {bal > 0 ? '+' : '−'}{Math.abs(bal).toLocaleString()}
                 <Text style={styles.heroUnit}> kcal</Text>
+                {fatGram != null && (
+                  <Text style={[styles.bankFat, { color: deficit ? Colors.deficit : Colors.surplus }]}>
+                    {'  '}≈ 脂肪{deficit ? '−' : '+'}{fatGram}g
+                  </Text>
+                )}
               </Text>
-              <Text style={styles.balanceSub}>
-                摂取 {day?.balance?.intake?.toLocaleString() ?? '–'} − 消費 {day?.balance?.burn?.toLocaleString() ?? '–'} kcal
-                {fatGram != null ? ` ・ 脂肪${deficit ? '' : '+'}${fatGram}g相当` : ''}
-              </Text>
+              {/* 摂取 vs 消費(この差だけ痩せる/太る、を常に見せる) */}
+              {(() => {
+                const intake = day?.balance?.intake ?? 0;
+                const burn = day?.balance?.burn ?? 0;
+                const max = Math.max(intake, burn, 1);
+                return (
+                  <View style={{ marginTop: Spacing.sm }}>
+                    <View style={styles.vsRow}>
+                      <Text style={styles.vsLabel}>食べた</Text>
+                      <View style={styles.vsTrack}>
+                        <View style={[styles.vsFill, {
+                          width: `${Math.max(2, (intake / max) * 100)}%`,
+                          backgroundColor: deficit ? Colors.accentDim : Colors.surplus,
+                        }]} />
+                      </View>
+                      <Text style={styles.vsNum}>{intake.toLocaleString()}</Text>
+                    </View>
+                    <View style={styles.vsRow}>
+                      <Text style={styles.vsLabel}>消費</Text>
+                      <View style={styles.vsTrack}>
+                        <View style={[styles.vsFill, {
+                          width: `${Math.max(2, (burn / max) * 100)}%`,
+                          backgroundColor: Colors.deficit,
+                        }]} />
+                      </View>
+                      <Text style={styles.vsNum}>{burn.toLocaleString()}</Text>
+                    </View>
+                    <Text style={styles.vsHint}>
+                      {deficit ? '消費が摂取を上回った分だけ、脂肪が減ります' : '摂取が消費を上回った分は、脂肪として蓄えられます'}
+                    </Text>
+                  </View>
+                );
+              })()}
             </>
           ) : (
             <Text style={styles.balanceEmpty}>
@@ -329,6 +373,9 @@ export default function MyBodyScreen() {
           ))}
           <Chip label="+ 追加" onPress={onAddCustomTag} />
         </View>
+
+        {/* 設定(タブではなく⚙から開くモーダル) */}
+        <SettingsSheet visible={settingsOpen} onClose={() => { setSettingsOpen(false); loadDay(dateKey); }} />
       </ScrollView>
     </GestureDetector>
   );
@@ -346,6 +393,13 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
   },
   dateBtnText: { color: Colors.text, fontSize: 24, lineHeight: 26 },
+  gearText: { color: Colors.textSecondary, fontSize: 20, lineHeight: 22 },
+  vsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  vsLabel: { color: Colors.textSecondary, fontSize: Type.caption, width: 40 },
+  vsTrack: { flex: 1, height: 12, borderRadius: 6, backgroundColor: Colors.surfaceRaised, overflow: 'hidden' },
+  vsFill: { height: 12, borderRadius: 6 },
+  vsNum: { color: Colors.text, fontSize: Type.caption, fontWeight: '600', fontVariant: ['tabular-nums'], width: 46, textAlign: 'right' },
+  vsHint: { color: Colors.textFaint, fontSize: Type.caption, marginTop: 6 },
   screenTitle: { color: Colors.text, fontSize: Type.title, fontFamily: Fonts.sans, fontWeight: '700' },
   date: { color: Colors.textSecondary, fontSize: Type.caption, marginTop: 2 },
   heroRow: { flexDirection: 'row', gap: Spacing.sm },

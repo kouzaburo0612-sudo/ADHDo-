@@ -108,6 +108,23 @@ export function useDashboard(): Dashboard {
   return { loading, refreshing, settings, today, scores, anomalies, forecast, tags, refresh, toggleTag };
 }
 
+/** 任意の日付のスコア(その日を「当日」として過去60日をベースラインに計算) */
+export async function scoresForDate(dateKey: string): Promise<Scores> {
+  const s = await loadSettings();
+  const from = toKey(addDays(fromKey(dateKey), -60));
+  const range = await db.getRange(from, dateKey);
+  const today = range.get(dateKey) ?? {};
+  const yesterday = range.get(toKey(addDays(fromKey(dateKey), -1))) ?? {};
+  const history: Partial<Record<MetricKey, number[]>> = {};
+  for (const [date, day] of range) {
+    if (date === dateKey) continue;
+    (Object.keys(day) as MetricKey[]).forEach((k) => {
+      (history[k] ??= []).push(day[k]!);
+    });
+  }
+  return computeScores({ today, yesterday, history, settings: s });
+}
+
 // ---- トレンド画面用 ----
 
 export type RangeMode = 'day' | 'week' | 'month' | 'year';
