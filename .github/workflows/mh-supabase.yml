@@ -1,0 +1,213 @@
+name: MH 3. Supabase Setup
+
+# チーム機能のバックエンド(Supabase)を構築する。
+# - 匿名サインインの有効化
+# - テーブル(teams / members / snapshots)+ RLS + RPC の作成(冪等)
+# アクセストークンは暗号化入力(enc_pat)で受け取り、ログには出さない。
+
+on:
+  workflow_dispatch:
+    inputs:
+      enc_pat:
+        description: '暗号化されたSupabaseアクセストークン(内部用)'
+        required: true
+      project_ref:
+        description: 'SupabaseプロジェクトRef'
+        required: false
+        default: 'wxqsvcsrbuidqqsmkqnx'
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: master-health
+    steps:
+      - name: Checkout (master-healthブランチを固定でチェックアウト)
+        uses: actions/checkout@v4
+        with:
+          ref: claude/master-health-ios-06hrvw
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Decrypt Supabase access token
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          ENC_PAT: ${{ inputs.enc_pat }}
+        run: |
+          set -euo pipefail
+          strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
+          fetch_chunks() {
+            local name="$1" out="" i=0 raw val
+            while [ $i -lt 30 ]; do
+              raw=$(timeout 120 eas env:get --variable-name "${name}_${i}" --variable-environment production --format short --non-interactive </dev/null 2>/dev/null || true)
+              val=$(printf '%s' "$raw" | strip_ansi | tr -d '\r' | sed -n "s/^${name}_${i}=//p" | tr -d '\n')
+              [ -z "$val" ] && break
+              out="${out}${val}"
+              i=$((i+1))
+            done
+            [ -n "$out" ] || return 1
+            printf '%s' "$out"
+          }
+          PRIV_B64=$(fetch_chunks MH_BOOT_PRIV) || { echo "::error::bootstrap秘密鍵がありません"; exit 1; }
+          printf '%s' "$PRIV_B64" | base64 -d > /tmp/boot_priv.pem
+          printf '%s' "${ENC_PAT%%.*}" | base64 -d > /tmp/wrapped.bin
+          printf '%s' "${ENC_PAT#*.}" | base64 -d > /tmp/secret.enc
+          openssl pkeyutl -decrypt -inkey /tmp/boot_priv.pem -in /tmp/wrapped.bin -out /tmp/aes.pass -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
+          PAT=$(openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/tmp/aes.pass -in /tmp/secret.enc)
+          rm -f /tmp/boot_priv.pem /tmp/aes.pass /tmp/secret.enc /tmp/wrapped.bin
+          echo "::add-mask::$PAT"
+          printf '%s' "$PAT" > /tmp/sb_pat
+          chmod 600 /tmp/sb_pat
+          echo "アクセストークンを復号しました"
+
+      - name: Configure Supabase (anonymous auth + schema)
+        env:
+          PROJECT_REF: ${{ inputs.project_ref }}
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --break-system-packages requests 2>/dev/null || python3 -m pip install --quiet requests
+          python3 - << 'PYEOF'
+          import os, json, requests
+
+          ref = os.environ['PROJECT_REF']
+          pat = open('/tmp/sb_pat').read().strip()
+          B = 'https://api.supabase.com/v1'
+          H = {'Authorization': 'Bearer ' + pat, 'Content-Type': 'application/json'}
+
+          # 1) 匿名サインインを有効化
+          r = requests.patch(f'{B}/projects/{ref}/config/auth', headers=H,
+                             json={'external_anonymous_users_enabled': True}, timeout=60)
+          print('PATCH auth config ->', r.status_code)
+          if r.status_code >= 300:
+              print(r.text[:500]); raise SystemExit(1)
+
+          # 2) スキーマ(冪等)
+          SQL = r'''
+          create extension if not exists pgcrypto;
+
+          create table if not exists public.teams (
+            id uuid primary key default gen_random_uuid(),
+            name text not null,
+            invite_code text not null unique,
+            created_at timestamptz not null default now()
+          );
+
+          create table if not exists public.members (
+            id uuid primary key,
+            team_id uuid not null references public.teams(id) on delete cascade,
+            display_name text not null,
+            emoji text not null default '💪',
+            share jsonb not null default '{"weight":true,"sleep":true,"stress":true,"activity":true,"balance":true}'::jsonb,
+            created_at timestamptz not null default now(),
+            updated_at timestamptz not null default now()
+          );
+
+          create table if not exists public.snapshots (
+            member_id uuid not null references public.members(id) on delete cascade,
+            date text not null,
+            payload jsonb not null,
+            updated_at timestamptz not null default now(),
+            primary key (member_id, date)
+          );
+
+          alter table public.teams enable row level security;
+          alter table public.members enable row level security;
+          alter table public.snapshots enable row level security;
+
+          create or replace function public.my_team_id() returns uuid
+          language sql stable security definer set search_path = public as $$
+            select team_id from members where id = auth.uid()
+          $$;
+
+          drop policy if exists teams_select on public.teams;
+          create policy teams_select on public.teams for select
+            using (id = public.my_team_id());
+
+          drop policy if exists members_select on public.members;
+          create policy members_select on public.members for select
+            using (team_id = public.my_team_id());
+          drop policy if exists members_update on public.members;
+          create policy members_update on public.members for update
+            using (id = auth.uid());
+          drop policy if exists members_delete on public.members;
+          create policy members_delete on public.members for delete
+            using (id = auth.uid());
+
+          drop policy if exists snapshots_select on public.snapshots;
+          create policy snapshots_select on public.snapshots for select
+            using (member_id in (select id from members where team_id = public.my_team_id()));
+          drop policy if exists snapshots_insert on public.snapshots;
+          create policy snapshots_insert on public.snapshots for insert
+            with check (member_id = auth.uid());
+          drop policy if exists snapshots_update on public.snapshots;
+          create policy snapshots_update on public.snapshots for update
+            using (member_id = auth.uid());
+
+          create or replace function public.create_team(p_name text, p_display_name text, p_emoji text default '💪')
+          returns text language plpgsql security definer set search_path = public as $$
+          declare
+            v_code text;
+            v_team uuid;
+          begin
+            if auth.uid() is null then raise exception 'not authenticated'; end if;
+            v_code := upper(substr(md5(gen_random_uuid()::text), 1, 6));
+            insert into teams (name, invite_code) values (p_name, v_code) returning id into v_team;
+            insert into members (id, team_id, display_name, emoji)
+              values (auth.uid(), v_team, p_display_name, coalesce(p_emoji, '💪'))
+              on conflict (id) do update set team_id = excluded.team_id, display_name = excluded.display_name, updated_at = now();
+            return v_code;
+          end $$;
+
+          create or replace function public.join_team(p_code text, p_display_name text, p_emoji text default '💪')
+          returns uuid language plpgsql security definer set search_path = public as $$
+          declare v_team uuid;
+          begin
+            if auth.uid() is null then raise exception 'not authenticated'; end if;
+            select id into v_team from teams where invite_code = upper(trim(p_code));
+            if v_team is null then raise exception 'INVALID_CODE'; end if;
+            insert into members (id, team_id, display_name, emoji)
+              values (auth.uid(), v_team, p_display_name, coalesce(p_emoji, '💪'))
+              on conflict (id) do update set team_id = excluded.team_id, display_name = excluded.display_name, updated_at = now();
+            return v_team;
+          end $$;
+
+          create or replace function public.leave_team() returns void
+          language plpgsql security definer set search_path = public as $$
+          begin
+            delete from members where id = auth.uid();
+          end $$;
+
+          grant execute on function public.my_team_id() to anon, authenticated;
+          grant execute on function public.create_team(text, text, text) to anon, authenticated;
+          grant execute on function public.join_team(text, text, text) to anon, authenticated;
+          grant execute on function public.leave_team() to anon, authenticated;
+          '''
+          r = requests.post(f'{B}/projects/{ref}/database/query', headers=H,
+                            json={'query': SQL}, timeout=120)
+          print('POST database/query (schema) ->', r.status_code)
+          if r.status_code >= 300:
+              print(r.text[:1000]); raise SystemExit(1)
+
+          # 3) 検証
+          r = requests.post(f'{B}/projects/{ref}/database/query', headers=H,
+                            json={'query': "select tablename from pg_tables where schemaname='public' order by tablename"}, timeout=60)
+          print('tables:', json.dumps(r.json()))
+          r = requests.post(f'{B}/projects/{ref}/database/query', headers=H,
+                            json={'query': "select proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' order by proname"}, timeout=60)
+          print('functions:', json.dumps(r.json()))
+          r = requests.get(f'{B}/projects/{ref}/config/auth', headers=H, timeout=60)
+          print('anonymous enabled:', r.json().get('external_anonymous_users_enabled'))
+          print('SUPABASE SETUP: OK')
+          PYEOF
+          rm -f /tmp/sb_pat
