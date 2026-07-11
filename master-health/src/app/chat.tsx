@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BrandHeader } from '@/components/BrandHeader';
 import { Card } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { adviceErrorMessage } from '@/lib/ai';
@@ -124,13 +125,11 @@ export default function ChatScreen() {
       keyboardVerticalOffset={0}
     >
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
-        <Text style={styles.title}>AIチャット</Text>
-        {summary && (
-          <Text style={styles.summaryText}>
-            今日 {summary.kcal}kcal 摂取
-            {summary.remaining != null ? ` ・ あと ${summary.remaining.toLocaleString()}kcal` : ''}
-          </Text>
-        )}
+        <BrandHeader
+          sub={summary
+            ? `AIチャット ・ 今日 ${summary.kcal}kcal${summary.remaining != null ? ` / あと ${summary.remaining.toLocaleString()}kcal` : ''}`
+            : 'AIチャット'}
+        />
       </View>
 
       <FlatList

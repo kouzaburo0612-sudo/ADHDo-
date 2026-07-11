@@ -10,6 +10,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BrandHeader } from '@/components/BrandHeader';
 import { Card, Chip, SectionTitle } from '@/components/ui';
 import { SettingsSheet } from '@/components/SettingsSheet';
 import { Colors, Fonts, Spacing, Type, scoreColor } from '@/constants/theme';
@@ -143,10 +144,7 @@ export default function MyBodyScreen() {
           <Pressable onPress={() => shiftDay(-1)} hitSlop={10} style={styles.dateBtn}>
             <Text style={styles.dateBtnText}>‹</Text>
           </Pressable>
-          <View style={{ alignItems: 'center' }}>
-            <Text style={styles.screenTitle}>My Body</Text>
-            <Text style={styles.date}>{isToday ? `今日 ${formatKeyJa(dateKey)}` : formatKeyJa(dateKey)}</Text>
-          </View>
+          <BrandHeader sub={isToday ? `My Body ・ 今日 ${formatKeyJa(dateKey)}` : `My Body ・ ${formatKeyJa(dateKey)}`} />
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Pressable onPress={() => setSettingsOpen(true)} hitSlop={10} style={styles.dateBtn}>
               <Text style={styles.gearText}>⚙︎</Text>

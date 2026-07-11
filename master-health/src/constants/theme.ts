@@ -1,52 +1,52 @@
 /**
- * Master Health デザイントークン
+ * VYTA デザイントークン
  *
- * ダークテーマ専用。「深い森の夜にエメラルドの生命力が灯る」コンセプト。
- * 健康・回復・成長を想起させる緑基調で、達成(赤字の積み上げ)をエメラルドで祝う。
+ * ロゴ(ネイビーのワードマーク+ティールのダッシュ)に寄せた
+ * 「深いネイビーの夜にティールが灯る」ダークテーマ。
  * 黒背景+蛍光色のテンプレ配色は使わない。
  */
 import { Platform } from 'react-native';
 
 export const Colors = {
-  /** 画面のベース背景。純黒ではなく、わずかに緑みのある炭色 */
-  bg: '#0C1310',
+  /** 画面のベース背景。ロゴのネイビーを暗くした夜色 */
+  bg: '#0B1220',
   /** カード背景 */
-  surface: '#15201B',
+  surface: '#141E2D',
   /** 一段浮いたカード・押下時 */
-  surfaceRaised: '#1D2B24',
+  surfaceRaised: '#1C293B',
   /** 罫線・区切り */
-  border: '#28382F',
+  border: '#27364B',
 
   /** 主要テキスト。純白ではなく柔らかいオフホワイト */
-  text: '#F0F5F1',
+  text: '#F2F5F8',
   /** 補助テキスト */
-  textSecondary: '#96A99D',
+  textSecondary: '#95A5B9',
   /** さらに弱いテキスト(単位・注釈) */
-  textFaint: '#5D6F64',
+  textFaint: '#5C6C81',
 
-  /** アクセント。エメラルドグリーン — 主要数値と達成表現に使う */
-  accent: '#3DDC97',
-  accentDim: '#1D5C42',
+  /** アクセント。ロゴのティール — 主要数値と達成表現に使う */
+  accent: '#40D9C4',
+  accentDim: '#14504A',
 
   /** カテゴリ色 */
   sleep: '#7FA8E8',    // 穏やかな夜の青
   recovery: '#4CC9B0', // ティール
-  body: '#3DDC97',     // エメラルド(体組成=主役)
+  body: '#40D9C4',     // ロゴティール(体組成=主役)
   activity: '#F5B94E', // 陽のアンバー
 
   /** 状態色 */
-  good: '#3DDC97',
+  good: '#40D9C4',
   warn: '#F5B94E',
   bad: '#F4726D',
 
   /** カロリー収支(赤字=痩せる方向=良い) */
-  deficit: '#3DDC97',
+  deficit: '#40D9C4',
   surplus: '#F4726D',
 
   /** グラフ補助 */
-  chartGrid: '#1F2E26',
+  chartGrid: '#1D2A3D',
   chartCompare1: '#7FA8E8', // 1ヶ月前
-  chartCompare2: '#5B7A6B', // 1年前
+  chartCompare2: '#5B7085', // 1年前
 } as const;
 
 /** スコア値(0-100)に応じた色 */
@@ -59,14 +59,17 @@ export function scoreColor(score: number | null): string {
 }
 
 /**
- * タイポグラフィ。数値が主役:
- * 大きな数字は丸みのあるSF Rounded、表・グラフは等幅数字(tabular-nums)で桁を揃える。
+ * タイポグラフィ。ロゴの幾何学的サンセリフに合わせ、
+ * ワードマークと数値はMontserrat(ロゴと同系の骨格)、日本語本文はシステムフォント。
+ * Montserratは_layoutでexpo-fontによりロード済みであることが前提。
  */
 export const Fonts = {
-  /** 本文 */
+  /** 本文(日本語はシステムフォントが最も読みやすい) */
   sans: Platform.select({ ios: 'system-ui', default: 'normal' }) as string,
-  /** 大きな数値表示用 */
-  display: Platform.select({ ios: 'ui-rounded', default: 'normal' }) as string,
+  /** 大きな数値表示用(ロゴと同系の幾何学サンセリフ) */
+  display: 'Montserrat_700Bold',
+  /** ブランドワードマーク */
+  brand: 'Montserrat_600SemiBold',
   /** 等幅 */
   mono: Platform.select({ ios: 'ui-monospace', default: 'monospace' }) as string,
 } as const;

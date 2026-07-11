@@ -6,6 +6,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BrandHeader } from '@/components/BrandHeader';
 import { TrendChart } from '@/components/TrendChart';
 import { Card, Chip, SectionTitle, Segmented } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
@@ -112,6 +113,10 @@ export default function HistoryScreen() {
       style={styles.screen}
       contentContainerStyle={{ paddingTop: insets.top + Spacing.md, paddingBottom: 120, paddingHorizontal: Spacing.md }}
     >
+      <View style={{ marginBottom: Spacing.md }}>
+        <BrandHeader sub="トレンド" />
+      </View>
+
       {/* 目標設定(カロミル風) */}
       <Card style={styles.goalCard}>
         <View style={styles.goalHead}>

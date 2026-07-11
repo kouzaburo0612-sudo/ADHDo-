@@ -10,6 +10,7 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BrandHeader } from '@/components/BrandHeader';
 import { Card, SectionTitle } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import {
@@ -109,7 +110,7 @@ export default function TeamScreen() {
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={Colors.accent} />}
     >
-      <Text style={styles.title}>チーム</Text>
+      <BrandHeader sub="チーム" />
 
       {state == null && (
         <View style={{ marginTop: Spacing.xl, alignItems: 'center' }}>

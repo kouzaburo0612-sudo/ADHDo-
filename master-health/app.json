@@ -8,7 +8,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "masterhealth",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#0C1310",
+    "backgroundColor": "#0B1220",
     "ios": {
       "bundleIdentifier": "com.nash.masterhealth",
       "supportsTablet": false,
@@ -19,7 +19,7 @@
     "android": {
       "package": "com.nash.masterhealth",
       "adaptiveIcon": {
-        "backgroundColor": "#0C1310",
+        "backgroundColor": "#0B1220",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       }
     },

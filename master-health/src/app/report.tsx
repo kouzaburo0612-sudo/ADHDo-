@@ -10,6 +10,7 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BrandHeader } from '@/components/BrandHeader';
 import { Card, Chip, SectionTitle } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { adviceErrorMessage } from '@/lib/ai';
@@ -47,7 +48,7 @@ export default function ReportScreen() {
       contentContainerStyle={{ paddingTop: insets.top + Spacing.md, padding: Spacing.md, paddingBottom: 120 }}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.title}>実績報告</Text>
+      <BrandHeader sub="実績報告" />
       {/* 大きく目立つ切り替えタブ(食事/運動/ストレス) */}
       <View style={styles.bigTabs}>
         {([

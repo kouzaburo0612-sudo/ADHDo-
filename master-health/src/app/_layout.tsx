@@ -1,3 +1,6 @@
+import {
+  Montserrat_500Medium, Montserrat_600SemiBold, Montserrat_700Bold, useFonts,
+} from '@expo-google-fonts/montserrat';
 import { DarkTheme, ThemeProvider } from 'expo-router';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { StatusBar } from 'expo-status-bar';
@@ -24,6 +27,10 @@ const theme = {
 
 export default function RootLayout() {
   const [showOnboarding, setShowOnboarding] = useState(false);
+  // ブランドフォント(ロゴと同系の幾何学サンセリフ)。ロード完了までスプラッシュ表示のまま待つ
+  const [fontsLoaded, fontsError] = useFonts({
+    Montserrat_500Medium, Montserrat_600SemiBold, Montserrat_700Bold,
+  });
 
   // 起動時とフォアグラウンド復帰時にリマインダー(朝プラン・食事)を予約し直す
   useEffect(() => {
@@ -40,6 +47,8 @@ export default function RootLayout() {
     setShowOnboarding(false);
     kvSet('onboarded_v1', 'done').catch(() => {});
   };
+
+  if (!fontsLoaded && !fontsError) return null; // スプラッシュのまま待機(通常は一瞬)
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
