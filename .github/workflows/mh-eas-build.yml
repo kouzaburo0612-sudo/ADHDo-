@@ -431,8 +431,8 @@ jobs:
           export EXPO_ASC_ISSUER_ID="$ASC_ISSUER_ID"
           if [ -n "${SUBMIT_BUILD_ID:-}" ]; then
             [ -f /tmp/mh_asc_app_id ] || { echo "::error::ascAppIdが解決できないため提出できません"; exit 1; }
-            echo "既存ビルド ${SUBMIT_BUILD_ID} をTestFlightへ提出します"
-            eas submit --platform ios --profile production --id "$SUBMIT_BUILD_ID" --non-interactive --no-wait </dev/null
+            echo "既存ビルド ${SUBMIT_BUILD_ID} をTestFlightへ提出します(完了まで待機)"
+            eas submit --platform ios --profile production --id "$SUBMIT_BUILD_ID" --non-interactive --wait </dev/null
           elif [ -f /tmp/mh_asc_app_id ]; then
             eas build --platform ios --profile production --auto-submit --non-interactive --no-wait </dev/null
           else
