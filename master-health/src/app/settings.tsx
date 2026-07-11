@@ -12,11 +12,14 @@ import { lastSyncDate, syncHealthData } from '@/lib/sync';
 import {
   DEFAULT_SETTINGS, getApiKey, loadSettings, saveSettings, setApiKey, type Settings,
 } from '@/lib/settings';
+import { getProfile, newId, saveProfile, DEFAULT_PROFILE, type UserProfile } from '@/lib/store';
+import { Segmented } from '@/components/ui';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { status, request } = useHealthAuth();
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [keySet, setKeySet] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
@@ -24,8 +27,17 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     loadSettings().then(setSettings);
+    getProfile().then(setProfile);
     getApiKey().then((k) => setKeySet(k != null));
     lastSyncDate().then(setLastSync);
+  }, []);
+
+  const updateProfile = useCallback((patch: Partial<UserProfile>) => {
+    setProfile((prev) => {
+      const next = { ...prev, ...patch };
+      saveProfile(next).catch(() => {});
+      return next;
+    });
   }, []);
 
   const update = useCallback(async (patch: Partial<Settings>) => {
@@ -70,6 +82,34 @@ export default function SettingsScreen() {
       contentContainerStyle={{ paddingTop: insets.top + Spacing.md, paddingBottom: 120, paddingHorizontal: Spacing.md }}
     >
       <Text style={styles.title}>設定</Text>
+
+      <SectionTitle>プロファイル(TDEE計算に使用)</SectionTitle>
+      <Card>
+        <GoalInput
+          label="身長" unit="cm"
+          value={profile.heightCm}
+          allowEmpty
+          onChange={(v) => updateProfile({ heightCm: v })}
+        />
+        <View style={styles.weightRow}>
+          <Text style={styles.rowLabel}>生年月日</Text>
+          <BirthInput value={profile.birthDate} onChange={(v) => updateProfile({ birthDate: v })} />
+        </View>
+        <View style={[styles.weightRow, { alignItems: 'center' }]}>
+          <Text style={styles.rowLabel}>性別</Text>
+          <View style={{ width: 160 }}>
+            <Segmented
+              options={[{ value: 'male', label: '男性' }, { value: 'female', label: '女性' }]}
+              value={profile.sex}
+              onChange={(v) => updateProfile({ sex: v })}
+            />
+          </View>
+        </View>
+        <Text style={styles.hint}>
+          目標(体脂肪率など)の期限つき設定はチャットから「体脂肪率15%を12月末までに」のように話しかけても登録できます。
+        </Text>
+        <GoalDeadlineEditor profile={profile} onChange={updateProfile} />
+      </Card>
 
       <SectionTitle>目標値</SectionTitle>
       <Card>
@@ -165,6 +205,82 @@ export default function SettingsScreen() {
         </Pressable>
       </Card>
     </ScrollView>
+  );
+}
+
+/** 生年月日 (YYYY-MM-DD) の簡易入力 */
+function BirthInput({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const [text, setText] = useState(value ?? '');
+  useEffect(() => { setText(value ?? ''); }, [value]);
+  return (
+    <TextInput
+      style={styles.goalInput}
+      value={text}
+      onChangeText={setText}
+      onEndEditing={() => {
+        const t = text.trim();
+        if (t === '') { onChange(null); return; }
+        if (/^\d{4}-\d{2}-\d{2}$/.test(t) && !isNaN(new Date(t).getTime())) onChange(t);
+        else Alert.alert('形式エラー', '1990-01-31 のように入力してください。');
+      }}
+      placeholder="1990-01-31"
+      placeholderTextColor={Colors.textFaint}
+      autoCapitalize="none"
+    />
+  );
+}
+
+/** 期限つき目標(体脂肪率)の編集。複数目標はチャット経由で管理 */
+function GoalDeadlineEditor({ profile, onChange }: {
+  profile: UserProfile;
+  onChange: (patch: Partial<UserProfile>) => void;
+}) {
+  const goal = profile.goals.find((g) => g.metric === 'body_fat_pct');
+  const [target, setTarget] = useState(goal ? String(goal.targetValue) : '');
+  const [deadline, setDeadline] = useState(goal?.deadline ?? '');
+
+  useEffect(() => {
+    setTarget(goal ? String(goal.targetValue) : '');
+    setDeadline(goal?.deadline ?? '');
+  }, [goal]);
+
+  const save = () => {
+    const t = parseFloat(target);
+    if (!Number.isFinite(t)) return;
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(deadline.trim()) ? deadline.trim() : new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
+    const rest = profile.goals.filter((g) => g.metric !== 'body_fat_pct');
+    onChange({
+      goals: [...rest, { id: goal?.id ?? newId(), metric: 'body_fat_pct', label: '体脂肪率', targetValue: t, deadline: d }],
+    });
+    Alert.alert('保存しました', `体脂肪率 ${t}% を ${d} までに`);
+  };
+
+  return (
+    <View style={{ marginTop: Spacing.sm }}>
+      <View style={styles.weightRow}>
+        <Text style={styles.rowLabel}>体脂肪率の期限つき目標</Text>
+        <View style={styles.inputRow}>
+          <TextInput
+            style={[styles.goalInput, { minWidth: 56 }]}
+            value={target} onChangeText={setTarget}
+            keyboardType="decimal-pad" placeholder="14.9" placeholderTextColor={Colors.textFaint}
+          />
+          <Text style={styles.unit}>%</Text>
+        </View>
+      </View>
+      <View style={styles.weightRow}>
+        <Text style={styles.rowLabel}>期限</Text>
+        <TextInput
+          style={styles.goalInput}
+          value={deadline} onChangeText={setDeadline}
+          placeholder="2026-12-31" placeholderTextColor={Colors.textFaint}
+          autoCapitalize="none"
+        />
+      </View>
+      <Pressable style={styles.button} onPress={save}>
+        <Text style={styles.buttonText}>目標を保存</Text>
+      </Pressable>
+    </View>
   );
 }
 

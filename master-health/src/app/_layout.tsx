@@ -30,6 +30,10 @@ export default function RootLayout() {
           labelStyle={{ color: Colors.textSecondary, selected: { color: Colors.accent } }}
         >
           <NativeTabs.Trigger name="index">
+            <NativeTabs.Trigger.Label>チャット</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon sf={{ default: 'bubble.left.and.text.bubble.right', selected: 'bubble.left.and.text.bubble.right.fill' }} />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="dashboard">
             <NativeTabs.Trigger.Label>今日</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf={{ default: 'heart.text.square', selected: 'heart.text.square.fill' }} />
           </NativeTabs.Trigger>
@@ -37,8 +41,8 @@ export default function RootLayout() {
             <NativeTabs.Trigger.Label>トレンド</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf="chart.xyaxis.line" />
           </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="coach">
-            <NativeTabs.Trigger.Label>コーチ</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger name="insights">
+            <NativeTabs.Trigger.Label>インサイト</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf={{ default: 'sparkles', selected: 'sparkles' }} />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="settings">
