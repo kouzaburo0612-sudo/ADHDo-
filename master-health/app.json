@@ -40,7 +40,7 @@
         "@kingstinct/react-native-healthkit",
         {
           "NSHealthShareUsageDescription": "WithingsとOura RingがApple Healthに記録した体組成・睡眠・心拍などのデータを読み取り、健康ダッシュボードとして表示するために使用します。",
-          "NSHealthUpdateUsageDescription": false,
+          "NSHealthUpdateUsageDescription": "このアプリはヘルスケアデータの書き込みを行いません(HealthKit連携の技術要件として記載しています)。",
           "background": false
         }
       ]
