@@ -21,6 +21,10 @@ on:
         description: '既存ビルドをTestFlightへ提出する場合のビルドID(省略時は新規ビルド)'
         required: false
         default: ''
+      enc_anthropic:
+        description: '暗号化されたAnthropic APIキー(内部用・省略可)'
+        required: false
+        default: ''
 
 jobs:
   build-and-submit:
@@ -126,6 +130,37 @@ jobs:
           echo "ASC_KEY_ID=$ASC_KEY_ID" >> "$GITHUB_ENV"
           echo "ASC_ISSUER_ID=$ASC_ISSUER_ID" >> "$GITHUB_ENV"
           echo "[resolve] key id prefix: ${ASC_KEY_ID:0:2} / issuer prefix: ${ASC_ISSUER_ID:0:4}"
+
+      - name: Inject app secret (EXPO_PUBLIC_ANTHROPIC_API_KEY)
+        if: inputs.enc_anthropic != ''
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          ENC_ANTHROPIC: ${{ inputs.enc_anthropic }}
+        run: |
+          set -euo pipefail
+          strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
+          fetch_chunks() {
+            local name="$1" out="" i=0 raw val
+            while [ $i -lt 30 ]; do
+              raw=$(timeout 120 eas env:get --variable-name "${name}_${i}" --variable-environment production --format short --non-interactive </dev/null 2>/dev/null || true)
+              val=$(printf '%s' "$raw" | strip_ansi | tr -d '\r' | sed -n "s/^${name}_${i}=//p" | tr -d '\n')
+              [ -z "$val" ] && break
+              out="${out}${val}"
+              i=$((i+1))
+            done
+            [ -n "$out" ] || return 1
+            printf '%s' "$out"
+          }
+          PRIV_B64=$(fetch_chunks MH_BOOT_PRIV) || { echo "::error::bootstrap秘密鍵がありません"; exit 1; }
+          printf '%s' "$PRIV_B64" | base64 -d > /tmp/boot_priv2.pem
+          printf '%s' "${ENC_ANTHROPIC%%.*}" | base64 -d > /tmp/wrapped2.bin
+          printf '%s' "${ENC_ANTHROPIC#*.}" | base64 -d > /tmp/secret.enc
+          openssl pkeyutl -decrypt -inkey /tmp/boot_priv2.pem -in /tmp/wrapped2.bin -out /tmp/aes2.pass -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
+          KEY=$(openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/tmp/aes2.pass -in /tmp/secret.enc)
+          rm -f /tmp/boot_priv2.pem /tmp/aes2.pass /tmp/secret.enc
+          echo "::add-mask::$KEY"
+          timeout 120 eas env:create --environment production --name EXPO_PUBLIC_ANTHROPIC_API_KEY --value "$KEY" --type string --visibility sensitive --scope project --force --non-interactive </dev/null >/dev/null
+          echo "EXPO_PUBLIC_ANTHROPIC_API_KEY をEAS環境変数に保存しました(以後のビルドに自動注入)"
 
       - name: Guard against missing projectId
         run: |
