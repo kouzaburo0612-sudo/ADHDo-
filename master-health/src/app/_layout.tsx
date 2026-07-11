@@ -61,26 +61,30 @@ export default function RootLayout() {
           tintColor={Colors.accent}
           labelStyle={{ color: Colors.textSecondary, selected: { color: Colors.accent } }}
         >
+          {/* 左から My Body / 実績報告 / Mr. Vyta / トレンド / More(チーム・設定) */}
           <NativeTabs.Trigger name="index">
             <NativeTabs.Trigger.Label>My Body</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf={{ default: 'heart.text.square', selected: 'heart.text.square.fill' }} />
-          </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="chat">
-            <NativeTabs.Trigger.Label>AIチャット</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon sf={{ default: 'bubble.left.and.text.bubble.right', selected: 'bubble.left.and.text.bubble.right.fill' }} />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="report">
             <NativeTabs.Trigger.Label>実績報告</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf={{ default: 'fork.knife.circle', selected: 'fork.knife.circle.fill' }} />
           </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="chat">
+            <NativeTabs.Trigger.Label>Mr. Vyta</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon sf={{ default: 'bubble.left.and.text.bubble.right', selected: 'bubble.left.and.text.bubble.right.fill' }} />
+          </NativeTabs.Trigger>
           <NativeTabs.Trigger name="history">
             <NativeTabs.Trigger.Label>トレンド</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf="chart.xyaxis.line" />
           </NativeTabs.Trigger>
-          {/* iOSのタブは5個まで(6個目は「その他」に押し込まれる)。設定はMy Bodyの⚙から */}
           <NativeTabs.Trigger name="team">
             <NativeTabs.Trigger.Label>チーム</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf={{ default: 'person.3', selected: 'person.3.fill' }} />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="settings">
+            <NativeTabs.Trigger.Label>設定</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
           </NativeTabs.Trigger>
         </NativeTabs>
         <Onboarding visible={showOnboarding} onDone={finishOnboarding} />

@@ -11,10 +11,10 @@ import { Card } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { adviceErrorMessage } from '@/lib/ai';
 import { maybeAutoPost } from '@/lib/autopost';
-import { currentTdee, resumeChat, sendChat, stripMarkdown, type PendingAction } from '@/lib/chat';
-import { addDays } from '@/lib/dates';
-import { appendChat, dailyIntake, listChat, localDateKey } from '@/lib/store';
+import { resumeChat, sendChat, stripMarkdown, type PendingAction } from '@/lib/chat';
+import { appendChat, listChat } from '@/lib/store';
 import { syncHealthData } from '@/lib/sync';
+import { balanceSeries } from '@/utils/deficit';
 
 interface Bubble { key: string; role: 'user' | 'assistant'; content: string }
 
@@ -62,12 +62,13 @@ export default function ChatScreen() {
 
   const refreshSummary = useCallback(async () => {
     try {
-      const today = new Date();
-      const intake = await dailyIntake(addDays(today, -8).toISOString(), today.toISOString());
-      const kcal = intake.get(localDateKey(today.toISOString()))?.kcal ?? 0;
-      const tdee = await currentTdee();
-      const remaining = tdee.effective != null ? Math.round(tdee.effective - kcal) : null;
-      setSummary({ kcal: Math.round(kcal), remaining });
+      const [bal] = (await balanceSeries(1)).slice(-1);
+      if (bal) {
+        setSummary({
+          kcal: bal.intake ?? 0,
+          remaining: bal.burn != null ? bal.burn - (bal.intake ?? 0) : null,
+        });
+      }
     } catch { /* サマリーは補助情報なので失敗しても無視 */ }
   }, []);
 
@@ -127,8 +128,8 @@ export default function ChatScreen() {
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
         <BrandHeader
           sub={summary
-            ? `AIチャット ・ 今日 ${summary.kcal}kcal${summary.remaining != null ? ` / あと ${summary.remaining.toLocaleString()}kcal` : ''}`
-            : 'AIチャット'}
+            ? `Mr. Vyta ・ 今日 ${summary.kcal}kcal${summary.remaining != null ? ` / あと ${summary.remaining.toLocaleString()}kcal` : ''}`
+            : 'Health Manager AI ・ Mr. Vyta'}
         />
       </View>
 
@@ -140,7 +141,7 @@ export default function ChatScreen() {
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>話しかけるだけで記録できます</Text>
+            <Text style={styles.emptyTitle}>Mr. Vytaに話しかけるだけで記録・設定変更できます</Text>
             {SUGGESTIONS.map((s) => (
               <Pressable key={s} style={styles.suggestion} onPress={() => send(s)}>
                 <Text style={styles.suggestionText}>{s}</Text>

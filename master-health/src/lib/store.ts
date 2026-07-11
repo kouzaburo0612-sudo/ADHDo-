@@ -60,6 +60,12 @@ db.execAsync(`
     content TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS workout_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    exercises TEXT NOT NULL DEFAULT '[]',
+    duration_min REAL
+  );
   CREATE TABLE IF NOT EXISTS stress_logs (
     id TEXT PRIMARY KEY,
     timestamp TEXT NOT NULL,
@@ -290,7 +296,15 @@ export async function listTemplates(): Promise<FoodTemplate[]> {
   }));
 }
 
+/** テンプレートの登録上限(食事・運動それぞれ) */
+export const TEMPLATE_LIMIT = 30;
+
 export async function upsertTemplate(t: FoodTemplate): Promise<void> {
+  const existing = await db.getFirstAsync<{ id: string }>('SELECT id FROM food_templates WHERE id = ?', t.id);
+  if (!existing) {
+    const row = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) as n FROM food_templates');
+    if ((row?.n ?? 0) >= TEMPLATE_LIMIT) throw new Error('TEMPLATE_LIMIT');
+  }
   await db.runAsync(
     'INSERT OR REPLACE INTO food_templates (id, name, aliases, items) VALUES (?, ?, ?, ?)',
     t.id, t.name, JSON.stringify(t.aliases), JSON.stringify(t.items),
@@ -315,6 +329,42 @@ export async function templateNutrition(t: FoodTemplate): Promise<{ kcal: number
     carbs += ing.carbsPerUnit * item.quantity;
   }
   return { kcal: Math.round(kcal), protein: round1(protein), fat: round1(fat), carbs: round1(carbs) };
+}
+
+// ---- 運動テンプレート ----
+
+export interface WorkoutTemplate {
+  id: string;
+  name: string;
+  exercises: ExerciseSet[];
+  durationMin?: number | null;
+}
+
+export async function listWorkoutTemplates(): Promise<WorkoutTemplate[]> {
+  const rows = await db.getAllAsync<{ id: string; name: string; exercises: string; duration_min: number | null }>(
+    'SELECT * FROM workout_templates ORDER BY name',
+  );
+  return rows.map((r) => ({
+    id: r.id, name: r.name,
+    exercises: JSON.parse(r.exercises || '[]'),
+    durationMin: r.duration_min,
+  }));
+}
+
+export async function upsertWorkoutTemplate(t: WorkoutTemplate): Promise<void> {
+  const existing = await db.getFirstAsync<{ id: string }>('SELECT id FROM workout_templates WHERE id = ?', t.id);
+  if (!existing) {
+    const row = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) as n FROM workout_templates');
+    if ((row?.n ?? 0) >= TEMPLATE_LIMIT) throw new Error('TEMPLATE_LIMIT');
+  }
+  await db.runAsync(
+    'INSERT OR REPLACE INTO workout_templates (id, name, exercises, duration_min) VALUES (?, ?, ?, ?)',
+    t.id, t.name, JSON.stringify(t.exercises), t.durationMin ?? null,
+  );
+}
+
+export async function deleteWorkoutTemplate(id: string): Promise<void> {
+  await db.runAsync('DELETE FROM workout_templates WHERE id = ?', id);
 }
 
 // ---- 食事ログ ----

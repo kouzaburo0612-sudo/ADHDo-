@@ -19,7 +19,8 @@ import {
 import { getProfile, saveProfile, DEFAULT_PROFILE, type UserProfile } from '@/lib/store';
 import { balanceSeries } from '@/utils/deficit';
 
-export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+/** モーダル(My Bodyの⚙)とタブ内ルート(More→設定)の両方から使う本体 */
+export function SettingsBody() {
   const { status, request } = useHealthAuth();
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
@@ -30,7 +31,6 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
   const [avgTdee, setAvgTdee] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!visible) return;
     loadSettings().then(setSettings);
     getProfile().then(setProfile);
     getApiKey().then((k) => setKeySet(k != null));
@@ -40,7 +40,7 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
       const burns = s.map((d) => d.burn).filter((b): b is number => b != null);
       setAvgTdee(burns.length ? Math.round(burns.reduce((a, b) => a + b, 0) / burns.length) : null);
     }).catch(() => {});
-  }, [visible]);
+  }, []);
 
   const updateProfile = useCallback((patch: Partial<UserProfile>) => {
     setProfile((prev) => {
@@ -84,16 +84,7 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={styles.root}>
-        <View style={styles.head}>
-          <Text style={styles.title}>設定</Text>
-          <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
-            <Text style={styles.closeText}>完了</Text>
-          </Pressable>
-        </View>
-
-        <ScrollView contentContainerStyle={{ padding: Spacing.md, paddingBottom: 60 }} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={{ padding: Spacing.md, paddingBottom: 120 }} keyboardShouldPersistTaps="handled">
           <Text style={styles.hintTop}>
             💬 ここにある設定はぜんぶAIチャットからも変えられます(例:「身長168にして」「目標体脂肪率13%、9月末までに」)
           </Text>
@@ -194,13 +185,28 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
             </Pressable>
           </Card>
 
-          <SectionHead emoji="📖" title="その他" />
-          <Card>
-            <Pressable onPress={replayTutorial}>
-              <Text style={styles.link}>チュートリアルをもう一度見る ›</Text>
-            </Pressable>
-          </Card>
-        </ScrollView>
+      <SectionHead emoji="📖" title="その他" />
+      <Card>
+        <Pressable onPress={replayTutorial}>
+          <Text style={styles.link}>チュートリアルをもう一度見る ›</Text>
+        </Pressable>
+      </Card>
+    </ScrollView>
+  );
+}
+
+/** My Bodyの⚙から開くモーダル版 */
+export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={styles.root}>
+        <View style={styles.head}>
+          <Text style={styles.title}>設定</Text>
+          <Pressable onPress={onClose} hitSlop={12} style={styles.closeBtn}>
+            <Text style={styles.closeText}>完了</Text>
+          </Pressable>
+        </View>
+        <SettingsBody />
       </View>
     </Modal>
   );

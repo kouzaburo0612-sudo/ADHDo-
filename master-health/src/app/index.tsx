@@ -229,29 +229,44 @@ export default function MyBodyScreen() {
           </Card>
         </View>
 
-        {/* カロリー収支(赤字=痩せる方向) */}
+        {/* カロリー: 今日は「残り予算」を主役に(単日の赤字を大きく見せない)、過去日は確定収支 */}
         <Card style={[styles.balanceCard, bal != null && { borderColor: deficit ? Colors.deficit : Colors.surplus, borderWidth: 1 }]}>
           <View style={styles.balanceHead}>
-            <Text style={styles.heroLabel}>{isToday ? '今日のカロリー収支' : 'この日のカロリー収支'}</Text>
-            {bal != null && (
-              <View style={[styles.badge, { backgroundColor: deficit ? Colors.accentDim : '#5C2320' }]}>
-                <Text style={[styles.badgeText, { color: deficit ? Colors.deficit : Colors.surplus }]}>
-                  {deficit ? '🔥 脂肪燃焼' : '食べ過ぎ'}
+            <Text style={styles.heroLabel}>{isToday ? '今日あと食べられる' : 'この日のカロリー収支(確定)'}</Text>
+            {isToday ? (
+              <View style={[styles.badge, { backgroundColor: Colors.surfaceRaised }]}>
+                <Text style={[styles.badgeText, { color: Colors.textSecondary }]}>
+                  {day?.balance?.provisional ? 'TDEE暫定' : 'TDEE確定'}
                 </Text>
               </View>
+            ) : (
+              bal != null && (
+                <View style={[styles.badge, { backgroundColor: deficit ? Colors.accentDim : '#5C2320' }]}>
+                  <Text style={[styles.badgeText, { color: deficit ? Colors.deficit : Colors.surplus }]}>
+                    {deficit ? '🔥 脂肪燃焼' : '食べ過ぎ'}
+                  </Text>
+                </View>
+              )
             )}
           </View>
           {bal != null ? (
             <>
-              <Text style={[styles.balanceValue, { color: deficit ? Colors.deficit : Colors.surplus }]}>
-                {bal > 0 ? '+' : '−'}{Math.abs(bal).toLocaleString()}
-                <Text style={styles.heroUnit}> kcal</Text>
-                {fatGram != null && (
-                  <Text style={[styles.bankFat, { color: deficit ? Colors.deficit : Colors.surplus }]}>
-                    {'  '}≈ 脂肪{deficit ? '−' : '+'}{fatGram}g
-                  </Text>
-                )}
-              </Text>
+              {isToday ? (
+                <Text style={[styles.balanceValue, { color: -bal >= 0 ? Colors.accent : Colors.surplus }]}>
+                  {(-bal) >= 0 ? (-bal).toLocaleString() : `${Math.abs(-bal).toLocaleString()}オーバー`}
+                  {(-bal) >= 0 && <Text style={styles.heroUnit}> kcal</Text>}
+                </Text>
+              ) : (
+                <Text style={[styles.balanceValue, { color: deficit ? Colors.deficit : Colors.surplus }]}>
+                  {bal > 0 ? '+' : '−'}{Math.abs(bal).toLocaleString()}
+                  <Text style={styles.heroUnit}> kcal</Text>
+                  {fatGram != null && (
+                    <Text style={[styles.bankFat, { color: deficit ? Colors.deficit : Colors.surplus }]}>
+                      {'  '}≈ 脂肪{deficit ? '−' : '+'}{fatGram}g
+                    </Text>
+                  )}
+                </Text>
+              )}
               {/* 摂取 vs 消費(この差だけ痩せる/太る、を常に見せる) */}
               {(() => {
                 const intake = day?.balance?.intake ?? 0;
@@ -279,6 +294,12 @@ export default function MyBodyScreen() {
                       </View>
                       <Text style={styles.vsNum}>{burn.toLocaleString()}</Text>
                     </View>
+                    {isToday && (
+                      <Text style={styles.balanceSub}>
+                        {day?.balance?.provisional ? '暫定' : ''}TDEE {burn.toLocaleString()} − 摂取 {intake.toLocaleString()}
+                        {' ・ '}ここまでの収支 {bal! > 0 ? '+' : '−'}{Math.abs(bal!).toLocaleString()}kcal
+                      </Text>
+                    )}
                     <Text style={styles.vsHint}>
                       {deficit ? '消費が摂取を上回った分だけ、脂肪が減ります' : '摂取が消費を上回った分は、脂肪として蓄えられます'}
                     </Text>

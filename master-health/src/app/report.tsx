@@ -21,8 +21,11 @@ import { formatValue } from '@/lib/metrics';
 import { rescheduleReminders } from '@/lib/notifications';
 import {
   addMealLog, addStressLog, addWorkoutLog, dailyIntake, deleteMealLog, deleteStressLog,
-  deleteWorkoutLog, listMealLogs, listStressLogs, listWorkoutLogs, localDateKey, newId,
-  type ExerciseSet, type MealLog, type StressLog, type WorkoutLog,
+  deleteTemplate, deleteWorkoutLog, deleteWorkoutTemplate, listMealLogs, listStressLogs,
+  listTemplates, listWorkoutLogs, listWorkoutTemplates, localDateKey, newId,
+  templateNutrition, upsertIngredient, upsertTemplate, upsertWorkoutTemplate,
+  type ExerciseSet, type FoodTemplate, type MealLog, type StressLog, type WorkoutLog,
+  type WorkoutTemplate,
 } from '@/lib/store';
 import { estimateFoodFromPhoto, type FoodEstimate } from '@/lib/vision';
 
@@ -93,6 +96,8 @@ function MealSection() {
   const [grams, setGrams] = useState('100');
   const scannedRef = useRef(false);
 
+  const [templates, setTemplates] = useState<{ t: FoodTemplate; kcal: number }[]>([]);
+
   const load = useCallback(async () => {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -104,6 +109,8 @@ function MealSection() {
       kcal: Math.round(t.kcal), protein: Math.round(t.protein),
       fat: Math.round(t.fat), carbs: Math.round(t.carbs),
     });
+    const tpls = await listTemplates();
+    setTemplates(await Promise.all(tpls.map(async (tp) => ({ t: tp, kcal: (await templateNutrition(tp)).kcal }))));
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -217,6 +224,54 @@ function MealSection() {
     load();
   };
 
+  /** 手入力フォームの内容を食事テンプレートとして保存(上限30件) */
+  const saveAsTemplate = async () => {
+    const k = parseFloat(kcal);
+    if (!name.trim() || !Number.isFinite(k)) {
+      Alert.alert('入力エラー', 'テンプレ保存には名前とカロリーが必要です');
+      return;
+    }
+    try {
+      const ingId = newId();
+      await upsertIngredient({
+        id: ingId, name: name.trim(), unit: '食',
+        kcalPerUnit: k,
+        proteinPerUnit: parseFloat(protein) || 0,
+        fatPerUnit: parseFloat(fat) || 0,
+        carbsPerUnit: parseFloat(carbs) || 0,
+        dietaryTags: [],
+      });
+      await upsertTemplate({ id: newId(), name: name.trim(), aliases: [], items: [{ ingredientId: ingId, quantity: 1 }] });
+      Alert.alert('保存しました', `テンプレート「${name.trim()}」を登録しました。ワンタップやチャットの「${name.trim()}」で記録できます。`);
+      load();
+    } catch (e) {
+      if (e instanceof Error && e.message === 'TEMPLATE_LIMIT') {
+        Alert.alert('上限に達しています', '食事テンプレートは30件までです。長押しで不要なものを削除してください。');
+      } else {
+        Alert.alert('保存に失敗しました');
+      }
+    }
+  };
+
+  const recordTemplate = async (item: { t: FoodTemplate; kcal: number }) => {
+    const n = await templateNutrition(item.t);
+    await addMealLog({
+      id: newId(), timestamp: new Date().toISOString(),
+      templateId: item.t.id, freeText: item.t.name,
+      kcal: n.kcal, protein: n.protein, fat: n.fat, carbs: n.carbs,
+      isEstimate: false,
+    });
+    rescheduleReminders().catch(() => {});
+    load();
+  };
+
+  const confirmDeleteTemplate = (item: { t: FoodTemplate; kcal: number }) => {
+    Alert.alert('テンプレートを削除', `「${item.t.name}」を削除しますか?`, [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '削除', style: 'destructive', onPress: async () => { await deleteTemplate(item.t.id); load(); } },
+    ]);
+  };
+
   const confirmDelete = (id: string) => {
     Alert.alert('削除', 'この記録を削除しますか?', [
       { text: 'キャンセル', style: 'cancel' },
@@ -232,6 +287,26 @@ function MealSection() {
         </Text>
         <Text style={styles.totalPfc}>P {totals.protein}g ・ F {totals.fat}g ・ C {totals.carbs}g</Text>
       </Card>
+
+      {templates.length > 0 && (
+        <>
+          <SectionTitle>マイテンプレート(タップで記録)</SectionTitle>
+          <View style={styles.tplWrap}>
+            {templates.map((item) => (
+              <Pressable
+                key={item.t.id}
+                style={styles.tplChip}
+                onPress={() => recordTemplate(item)}
+                onLongPress={() => confirmDeleteTemplate(item)}
+              >
+                <Text style={styles.tplName}>{item.t.name}</Text>
+                <Text style={styles.tplKcal}>{item.kcal}kcal</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.hint}>長押しで削除 ・ {templates.length}/30件</Text>
+        </>
+      )}
 
       <SectionTitle>かんたん記録</SectionTitle>
       <View style={styles.photoRow}>
@@ -346,9 +421,14 @@ function MealSection() {
           <NumInput label="F (g)" value={fat} onChange={setFat} />
           <NumInput label="C (g)" value={carbs} onChange={setCarbs} />
         </View>
-        <Pressable style={[styles.btn, styles.btnPrimary, { marginTop: Spacing.md }]} onPress={recordManual}>
-          <Text style={styles.btnPrimaryText}>記録する</Text>
-        </Pressable>
+        <View style={styles.btnRow}>
+          <Pressable style={[styles.btn, styles.btnGhost]} onPress={saveAsTemplate}>
+            <Text style={styles.btnGhostText}>テンプレに保存</Text>
+          </Pressable>
+          <Pressable style={[styles.btn, styles.btnPrimary]} onPress={recordManual}>
+            <Text style={styles.btnPrimaryText}>記録する</Text>
+          </Pressable>
+        </View>
       </Card>
 
       <SectionTitle>今日の食事</SectionTitle>
@@ -380,6 +460,7 @@ const EMPTY_ROW: StrengthRow = { name: '', weight: '', unit: 'kg', reps: '', set
 function WorkoutSection() {
   const [auto, setAuto] = useState<{ steps?: number; distance?: number; exercise_time?: number; active_energy?: number }>({});
   const [workouts, setWorkouts] = useState<WorkoutLog[]>([]);
+  const [wTemplates, setWTemplates] = useState<WorkoutTemplate[]>([]);
   const [cardio, setCardio] = useState<string | null>(null);
   const [cardioMin, setCardioMin] = useState('');
   const [rows, setRows] = useState<StrengthRow[]>([{ ...EMPTY_ROW }]);
@@ -388,12 +469,64 @@ function WorkoutSection() {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     setWorkouts(await listWorkoutLogs(start.toISOString(), now.toISOString()));
+    setWTemplates(await listWorkoutTemplates());
     const day = await getDay(todayKey());
     setAuto({
       steps: day.steps, distance: day.distance,
       exercise_time: day.exercise_time, active_energy: day.active_energy,
     });
   }, []);
+
+  const recordWTemplate = async (t: WorkoutTemplate) => {
+    await addWorkoutLog({
+      id: newId(), timestamp: new Date().toISOString(),
+      exercises: t.exercises, durationMin: t.durationMin ?? null, note: t.name,
+    });
+    load();
+  };
+
+  const confirmDeleteWTemplate = (t: WorkoutTemplate) => {
+    Alert.alert('テンプレートを削除', `「${t.name}」を削除しますか?`, [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '削除', style: 'destructive', onPress: async () => { await deleteWorkoutTemplate(t.id); load(); } },
+    ]);
+  };
+
+  /** 現在の筋トレ入力行をテンプレートとして保存(上限30件) */
+  const saveRowsAsTemplate = () => {
+    const exercises: ExerciseSet[] = [];
+    for (const r of rows) {
+      if (!r.name.trim()) continue;
+      const reps = parseInt(r.reps, 10);
+      const sets = parseInt(r.sets, 10);
+      if (!Number.isFinite(reps) || !Number.isFinite(sets)) continue;
+      const weight = parseFloat(r.weight);
+      exercises.push({
+        exerciseName: r.name.trim(),
+        weight: Number.isFinite(weight) ? weight : undefined,
+        weightUnit: Number.isFinite(weight) ? r.unit : undefined,
+        reps, sets,
+      });
+    }
+    if (exercises.length === 0) {
+      Alert.alert('入力エラー', '先に種目・回数・セット数を入力してください');
+      return;
+    }
+    Alert.prompt('テンプレート名', '例: 胸の日、いつものメニュー', async (tplName) => {
+      if (!tplName?.trim()) return;
+      try {
+        await upsertWorkoutTemplate({ id: newId(), name: tplName.trim(), exercises, durationMin: null });
+        Alert.alert('保存しました', `「${tplName.trim()}」をワンタップやチャットで記録できます。`);
+        load();
+      } catch (e) {
+        if (e instanceof Error && e.message === 'TEMPLATE_LIMIT') {
+          Alert.alert('上限に達しています', '運動テンプレートは30件までです。長押しで不要なものを削除してください。');
+        } else {
+          Alert.alert('保存に失敗しました');
+        }
+      }
+    });
+  };
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -461,6 +594,26 @@ function WorkoutSection() {
         <Text style={styles.hintLeft}>歩数・消費カロリーは記録不要。自動で収支に反映されます</Text>
       </Card>
 
+      {wTemplates.length > 0 && (
+        <>
+          <SectionTitle>マイテンプレート(タップで記録)</SectionTitle>
+          <View style={styles.tplWrap}>
+            {wTemplates.map((t) => (
+              <Pressable
+                key={t.id}
+                style={styles.tplChip}
+                onPress={() => recordWTemplate(t)}
+                onLongPress={() => confirmDeleteWTemplate(t)}
+              >
+                <Text style={styles.tplName}>{t.name}</Text>
+                <Text style={styles.tplKcal}>{t.exercises.length}種目</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.hint}>長押しで削除 ・ {wTemplates.length}/30件</Text>
+        </>
+      )}
+
       <SectionTitle>有酸素・その他を記録</SectionTitle>
       <Card>
         <View style={styles.chipWrap}>
@@ -513,6 +666,9 @@ function WorkoutSection() {
             <Text style={styles.btnPrimaryText}>記録する</Text>
           </Pressable>
         </View>
+        <Pressable style={[styles.btn, styles.btnGhost, { marginTop: Spacing.sm }]} onPress={saveRowsAsTemplate}>
+          <Text style={styles.btnGhostText}>このメニューをテンプレに保存</Text>
+        </Pressable>
       </Card>
 
       <SectionTitle>今日のトレーニング</SectionTitle>
@@ -747,4 +903,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24, paddingVertical: 12,
   },
   scanCloseText: { color: '#FFF', fontSize: Type.body, fontWeight: '600' },
+  tplWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  tplChip: {
+    backgroundColor: Colors.surface, borderRadius: Radius.sm,
+    borderWidth: 1, borderColor: Colors.accentDim,
+    paddingHorizontal: 12, paddingVertical: 8,
+  },
+  tplName: { color: Colors.text, fontSize: Type.body, fontWeight: '600' },
+  tplKcal: { color: Colors.accent, fontSize: Type.caption, marginTop: 1, fontVariant: ['tabular-nums'] },
 });

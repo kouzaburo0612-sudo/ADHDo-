@@ -11,7 +11,7 @@
 import { getRange } from '@/lib/db';
 import { addDays, toKey } from '@/lib/dates';
 import {
-  dailyIntake, getGoalPlan, getProfile,
+  dailyIntake, getGoalPlan, getProfile, listWorkoutLogs, localDateKey,
   type GoalPlan, type UserProfile,
 } from '@/lib/store';
 import { ageFrom, mifflinStJeor } from '@/utils/tdee';
@@ -23,20 +23,68 @@ export interface DayBalance {
   date: string;
   /** その日の摂取kcal(食事記録なしはnull) */
   intake: number | null;
-  /** その日の推定消費kcal(プロファイル不足はnull) */
+  /** その日の推定消費kcal = TDEE(プロファイル不足はnull) */
   burn: number | null;
   /** 摂取 − 消費。負=赤字(良い)。どちらか欠けるとnull */
   balance: number | null;
+  /**
+   * 暫定値フラグ。今日はまだ歩数・摂取が確定していないため、
+   * 7日平均で補完した暫定TDEEになる(1日が終われば実測で確定)
+   */
+  provisional: boolean;
 }
 
-/** 直近days日の日次収支(日付昇順、今日を含む) */
+/**
+ * 直近days日の日次収支(日付昇順、今日を含む)。
+ *
+ * 消費(TDEE)の計算式:
+ *   TDEE = BMR + 活動 + 運動 + DIT
+ *   - BMR: Mifflin-St Jeor。その日時点の最新体重で毎日動的に計算
+ *   - 活動: HealthKitのactive_energy(NEAT+運動込み)を優先。
+ *     無い日は NEAT = 歩数 × 0.04kcal で近似
+ *   - 運動: active_energyが無い日のみ、トレ記録から加算(時間×6kcal/分、無ければ1回250kcal)
+ *   - DIT(食事誘発性熱産生): 摂取kcal × 0.10
+ *   今日はまだ数値が確定していないため、歩数・活動・摂取(DIT用)を
+ *   「max(現時点の実測, 直近7日平均)」で補完した暫定TDEEを返す(provisional=true)。
+ */
 export async function balanceSeries(days: number): Promise<DayBalance[]> {
   const today = new Date();
+  const todayKey = toKey(today);
   const profile = await getProfile();
   const age = ageFrom(profile.birthDate);
-  const from = addDays(today, -(days + 10)); // 体重のcarry-forward用に余分に取る
+  const from = addDays(today, -(days + 10)); // 体重のcarry-forwardと7日平均用に余分に取る
   const metricMap = await getRange(toKey(from), toKey(today));
   const intakeMap = await dailyIntake(from.toISOString(), today.toISOString());
+
+  // 手動トレ記録(active_energyが無い日の運動消費に使う)
+  const workoutByDay = new Map<string, { count: number; min: number }>();
+  try {
+    for (const w of await listWorkoutLogs(from.toISOString(), today.toISOString())) {
+      const k = localDateKey(w.timestamp);
+      const acc = workoutByDay.get(k) ?? { count: 0, min: 0 };
+      acc.count += 1;
+      acc.min += w.durationMin ?? 0;
+      workoutByDay.set(k, acc);
+    }
+  } catch { /* トレ記録が読めなくてもTDEEは出す */ }
+
+  // 直近7日(今日を除く)の平均: 今日の暫定補完に使う
+  const avg = (xs: number[]): number | null =>
+    xs.length > 0 ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+  const steps7: number[] = [];
+  const active7: number[] = [];
+  const intake7: number[] = [];
+  for (let i = 7; i >= 1; i--) {
+    const k = toKey(addDays(today, -i));
+    const m = metricMap.get(k) ?? {};
+    if (m.steps != null && m.steps > 0) steps7.push(m.steps);
+    if (m.active_energy != null && m.active_energy > 0) active7.push(m.active_energy);
+    const ik = intakeMap.get(k)?.kcal;
+    if (ik != null && ik > 0) intake7.push(ik);
+  }
+  const avgSteps7 = avg(steps7);
+  const avgActive7 = avg(active7);
+  const avgIntake7 = avg(intake7);
 
   const out: DayBalance[] = [];
   let lastWeight: number | null = null;
@@ -46,16 +94,35 @@ export async function balanceSeries(days: number): Promise<DayBalance[]> {
     if (m.weight != null) lastWeight = m.weight;
     if (i > days - 1) continue;
 
+    const isToday = key === todayKey;
     const intakeRaw = intakeMap.get(key)?.kcal;
     const intake = intakeRaw != null && intakeRaw > 0 ? Math.round(intakeRaw) : null;
 
     let burn: number | null = null;
+    let provisional = false;
     if (lastWeight != null && profile.heightCm != null && age != null) {
       const bmr = mifflinStJeor(lastWeight, profile.heightCm, age, profile.sex);
-      const dit = (intake ?? 0) * 0.10;
-      burn = m.active_energy != null && m.active_energy > 0
-        ? Math.round(bmr + m.active_energy + dit)
-        : Math.round(bmr + (m.steps ?? 0) * 0.04 + dit);
+
+      // 今日は実測がまだ積み上がっていないため7日平均で下支えする
+      let steps = m.steps ?? 0;
+      let active = m.active_energy ?? 0;
+      let ditIntake = intake ?? 0;
+      if (isToday) {
+        if (avgSteps7 != null && steps < avgSteps7) { steps = Math.max(steps, avgSteps7); provisional = true; }
+        if (avgActive7 != null && active < avgActive7) { active = Math.max(active, avgActive7); provisional = true; }
+        if (intake == null && avgIntake7 != null) { ditIntake = avgIntake7; provisional = true; }
+        if (intake != null && avgIntake7 != null && intake < avgIntake7) { ditIntake = avgIntake7; provisional = true; }
+      }
+
+      const dit = ditIntake * 0.10;
+      if (active > 50) {
+        // active_energyはNEAT+運動込みの実測。これを最優先
+        burn = Math.round(bmr + active + dit);
+      } else {
+        const wk = workoutByDay.get(key);
+        const workoutKcal = wk ? (wk.min > 0 ? wk.min * 6 : wk.count * 250) : 0;
+        burn = Math.round(bmr + steps * 0.04 + workoutKcal + dit);
+      }
     }
 
     out.push({
@@ -63,6 +130,7 @@ export async function balanceSeries(days: number): Promise<DayBalance[]> {
       intake,
       burn,
       balance: intake != null && burn != null ? intake - burn : null,
+      provisional,
     });
   }
   return out;

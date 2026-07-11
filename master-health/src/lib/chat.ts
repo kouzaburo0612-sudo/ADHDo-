@@ -11,9 +11,11 @@ import { getRange, getSeries } from '@/lib/db';
 import { addDays, toKey } from '@/lib/dates';
 import { getApiKey, loadSettings, saveSettings } from '@/lib/settings';
 import {
-  addMealLog, addWorkoutLog, dailyIntake, getDayAssignment, getDayTypes, getGoalPlan, getProfile,
-  lastExercise, listTemplates, localDateKey, newId, saveDayTypes, saveGoalPlan, saveProfile,
-  setDayAssignment, templateNutrition, upsertIngredient, upsertTemplate,
+  addMealLog, addStressLog, addWorkoutLog, dailyIntake, deleteMealLog, deleteTemplate,
+  deleteWorkoutTemplate, getDayAssignment, getDayTypes, getGoalPlan, getProfile,
+  lastExercise, listTemplates, listWorkoutTemplates, localDateKey, newId, saveDayTypes,
+  saveGoalPlan, saveProfile, setDayAssignment, templateNutrition, upsertIngredient,
+  upsertTemplate, upsertWorkoutTemplate,
   type ExerciseSet, type FoodTemplate,
 } from '@/lib/store';
 import { computeBudget } from '@/utils/budget';
@@ -46,11 +48,12 @@ const TOOLS = [
   },
   {
     name: 'log_workout',
-    description: 'トレーニングを記録する。実行前にユーザー確認カードが表示される。',
+    description: 'トレーニングを記録する。登録済みテンプレート名(template_name)か種目リスト(exercises)のどちらかを渡す。実行前にユーザー確認カードが表示される。',
     input_schema: {
       type: 'object',
       properties: {
         datetime: { type: 'string' },
+        template_name: { type: 'string', description: '登録済み運動テンプレート名(「いつものメニュー」等)' },
         exercises: {
           type: 'array',
           items: {
@@ -68,7 +71,7 @@ const TOOLS = [
         duration_min: { type: 'number' },
         note: { type: 'string' },
       },
-      required: ['exercises'],
+      required: [],
     },
   },
   {
@@ -119,6 +122,66 @@ const TOOLS = [
         minimum_acceptable: { type: 'number', description: '最低ライン(任意)' },
       },
       required: ['metric', 'target_value', 'deadline'],
+    },
+  },
+  {
+    name: 'log_stress',
+    description: 'ストレス・体調の主観報告を記録する。実行前にユーザー確認カードが表示される。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        level: { type: 'number', description: '1=快調 2=ふつう 3=やや疲れ 4=つらい 5=限界' },
+        note: { type: 'string' },
+      },
+      required: ['level'],
+    },
+  },
+  {
+    name: 'add_workout_template',
+    description: 'トレーニングのテンプレートを登録する(上限30件)。「いつものメニュー」等を一発記録できるようになる。実行前にユーザー確認カードが表示される。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        exercises: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              exerciseName: { type: 'string' },
+              weight: { type: 'number' }, weightUnit: { type: 'string', enum: ['lb', 'kg'] },
+              reps: { type: 'number' }, sets: { type: 'number' },
+            },
+            required: ['exerciseName', 'reps', 'sets'],
+          },
+        },
+        duration_min: { type: 'number' },
+      },
+      required: ['name', 'exercises'],
+    },
+  },
+  {
+    name: 'delete_meal_log',
+    description: '食事記録を1件削除する(誤記録の訂正用)。meal_idはquery_recentで確認する。実行前にユーザー確認カードが表示される。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        meal_id: { type: 'string' },
+        description: { type: 'string', description: '確認カードに出す説明(何を消すか)' },
+      },
+      required: ['meal_id'],
+    },
+  },
+  {
+    name: 'delete_template',
+    description: '食事または運動のテンプレートを名前指定で削除する。実行前にユーザー確認カードが表示される。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['food', 'workout'] },
+        name: { type: 'string' },
+      },
+      required: ['kind', 'name'],
     },
   },
   {
@@ -180,7 +243,10 @@ const TOOLS = [
   },
 ] as const;
 
-const MUTATION_TOOLS = new Set(['log_meal', 'log_workout', 'set_day_type', 'add_template', 'set_goal', 'update_settings']);
+const MUTATION_TOOLS = new Set([
+  'log_meal', 'log_workout', 'log_stress', 'set_day_type', 'add_template', 'add_workout_template',
+  'delete_meal_log', 'delete_template', 'set_goal', 'update_settings',
+]);
 
 // ---- 型 ----
 
@@ -239,18 +305,20 @@ async function buildSystemPrompt(): Promise<string> {
   }).join('\n') || '・(まだ記録なし)';
 
   const templates = await listTemplates();
+  const workoutTemplates = await listWorkoutTemplates();
   const goals = profile.goals.map((g) => `${g.label ?? g.metric}: 目標${g.targetValue} 期限${g.deadline}`).join(' / ') || '未設定';
   const flags = profile.dietaryFlags.map((f) => `${f.ingredient}(${f.severity})`).join('、') || 'なし';
 
-  // 今日の収支とカロリー貯金(ゲーム化の文脈)
+  // 今日の残り予算と累積赤字(ゲーム化の文脈)
   let balanceLine = '';
   try {
     const [bal] = (await balanceSeries(1)).slice(-1);
     const bank = await calorieBank();
-    if (bal?.balance != null) {
-      balanceLine = `\n- 今日の収支: ${bal.balance <= 0 ? `${-bal.balance}kcalの赤字(良い)` : `${bal.balance}kcalの黒字(食べ過ぎ)`}`;
+    if (bal?.burn != null) {
+      const remaining = bal.burn - (bal.intake ?? 0);
+      balanceLine = `\n- 今日の${bal.provisional ? '暫定' : ''}TDEE(消費): ${bal.burn}kcal / 摂取: ${bal.intake ?? 0}kcal / 残り予算: ${remaining}kcal`;
     }
-    balanceLine += `\n- カロリー貯金: 累積${bank.bankedKcal}kcal(脂肪${bank.fatKgEquivalent}kg相当)、連続赤字${bank.streakDays}日`;
+    balanceLine += `\n- カロリー赤字の累積: ${bank.bankedKcal}kcal(脂肪${bank.fatKgEquivalent}kg相当)、連続脂肪燃焼${bank.streakDays}日`;
   } catch { /* 補助情報 */ }
 
   // 今日のストレス報告
@@ -264,7 +332,14 @@ async function buildSystemPrompt(): Promise<string> {
     }
   } catch { /* 補助情報 */ }
 
-  return `あなたは健康管理アプリVYTA(ヴァイタ)の中核AIアシスタント。ユーザーの健康記録・照会・分析を自然な日本語チャットで担当する。
+  return `あなたは健康管理アプリVYTA(ヴァイタ)のHealth Manager AI「Mr. Vyta」。ユーザーの健康記録・照会・分析・アプリ設定の変更まで、すべてを日本語チャットで担当する専属マネージャー。
+
+## 絶対ルール(違反は重大なバグとして扱われる)
+- あなたはツールを呼ばない限り、記録も変更も一切できない。「記録します」「記録しました」「登録しておきます」等をテキストで言うだけの応答は禁止
+- 食事の報告(「〜食べた」「朝はプロテイン」「昼はチキンサラダ」等)を受けたら、同じ応答の中で必ずlog_mealを呼ぶ。栄養素が不明ならあなたが概算してis_estimate=trueで渡す。質問で引き延ばさない(量が全く見当つかない場合のみ1回だけ確認してよい)
+- トレの報告→log_workout / ストレスの報告→log_stress / 設定・目標の変更→update_settings / テンプレ登録→add_template・add_workout_template / 誤記録の削除→delete_meal_log
+- 複数件の記録は1件ずつツールを呼ぶ。承認されたら間を置かず次の1件のツールを呼び、全件終わるまで続ける
+- 例: ユーザー「昼にチキンサラダとおにぎり食べた」→ あなた: log_meal(チキンサラダ、概算)を呼ぶ → 承認後 → log_meal(おにぎり、概算)を呼ぶ → 全件完了後に合計を一言報告
 
 ## ユーザー情報
 - 身長: ${profile.heightCm ?? '未設定'}cm / 生年月日: ${profile.birthDate ?? '未設定'} / 性別: ${profile.sex === 'male' ? '男性' : '女性'}
@@ -281,8 +356,11 @@ ${budget ? `- 今週の収支: 予算${budget.budget} / 消費${budget.consumed}
 ## 今日アプリに記録済みの食事(これが正)
 ${mealLines}
 
-## 登録済み食事テンプレート
+## 登録済み食事テンプレート(上限30件)
 ${templates.map((t) => `- ${t.name}${t.aliases.length ? ` (別名: ${t.aliases.join('、')})` : ''}`).join('\n') || '- (なし)'}
+
+## 登録済み運動テンプレート(上限30件)
+${workoutTemplates.map((t) => `- ${t.name}`).join('\n') || '- (なし)'}
 
 ## 応答方針(重要)
 - 日本語(です・ます調)。短く、チャットらしく。1回の返答は長くても5行程度
@@ -290,6 +368,7 @@ ${templates.map((t) => `- ${t.name}${t.aliases.length ? ` (別名: ${t.aliases.j
 - 数値根拠を示す。曖昧な励ましより具体的な数字
 - 「いつもの」等の曖昧な表現はテンプレートの別名と照合する
 - 設定変更もあなたの仕事。「身長168にして」「目標体脂肪率13%で9月末までに」等はupdate_settingsツールで変更する
+- アプリ内の記録・テンプレート・設定・目標はすべてあなたのツールで操作できる。「アプリからはできません」とは言わない
 - 食事の自由入力はあなたがPFCを概算し、is_estimate=trueでlog_mealを呼ぶ
 - あなたはツールを呼ばない限り何も記録できない。「記録します」「記録しますね」と言うだけの応答は禁止。記録の意思があるなら同じ応答の中で必ずlog_meal等のツールを呼ぶ
 - 記録は必ず1件ずつツールを呼ぶ(まとめて複数を1回の応答で呼ばない)。承認されたら残りの件も1件ずつツールを呼び、全件終わるまで続ける
@@ -398,13 +477,66 @@ export async function executeMutation(name: string, input: Record<string, unknow
     return JSON.stringify({ ok: true, recorded: { kcal, protein, fat, carbs } });
   }
   if (name === 'log_workout') {
+    let exercises = (input.exercises ?? []) as ExerciseSet[];
+    let durationMin = input.duration_min != null ? Number(input.duration_min) : null;
+    if (input.template_name) {
+      const templates = await listWorkoutTemplates();
+      const q = String(input.template_name).trim().toLowerCase();
+      const t = templates.find((x) => x.name.toLowerCase() === q);
+      if (t) {
+        exercises = exercises.length > 0 ? exercises : t.exercises;
+        durationMin = durationMin ?? t.durationMin ?? null;
+      }
+    }
+    if (exercises.length === 0) {
+      return JSON.stringify({ error: 'テンプレートが見つからず、種目も指定されていません' });
+    }
     await addWorkoutLog({
       id: newId(), timestamp: String(input.datetime ?? nowIso),
-      exercises: (input.exercises ?? []) as ExerciseSet[],
-      durationMin: input.duration_min != null ? Number(input.duration_min) : null,
+      exercises, durationMin,
       note: input.note ? String(input.note) : null,
     });
     return JSON.stringify({ ok: true });
+  }
+  if (name === 'log_stress') {
+    await addStressLog({
+      id: newId(), timestamp: nowIso,
+      level: Math.max(1, Math.min(5, Math.round(Number(input.level)))),
+      note: input.note ? String(input.note) : null,
+    });
+    return JSON.stringify({ ok: true });
+  }
+  if (name === 'add_workout_template') {
+    try {
+      await upsertWorkoutTemplate({
+        id: newId(), name: String(input.name),
+        exercises: (input.exercises ?? []) as ExerciseSet[],
+        durationMin: input.duration_min != null ? Number(input.duration_min) : null,
+      });
+      return JSON.stringify({ ok: true, template: input.name });
+    } catch (e) {
+      if (e instanceof Error && e.message === 'TEMPLATE_LIMIT') {
+        return JSON.stringify({ error: '運動テンプレートは上限30件です。delete_templateで不要なものを削除してください' });
+      }
+      throw e;
+    }
+  }
+  if (name === 'delete_meal_log') {
+    await deleteMealLog(String(input.meal_id));
+    return JSON.stringify({ ok: true });
+  }
+  if (name === 'delete_template') {
+    const q = String(input.name).trim().toLowerCase();
+    if (input.kind === 'workout') {
+      const t = (await listWorkoutTemplates()).find((x) => x.name.toLowerCase() === q);
+      if (!t) return JSON.stringify({ error: 'テンプレートが見つかりません' });
+      await deleteWorkoutTemplate(t.id);
+    } else {
+      const t = (await listTemplates()).find((x) => x.name.toLowerCase() === q);
+      if (!t) return JSON.stringify({ error: 'テンプレートが見つかりません' });
+      await deleteTemplate(t.id);
+    }
+    return JSON.stringify({ ok: true, deleted: input.name });
   }
   if (name === 'set_day_type') {
     const date = String(input.date ?? toKey(new Date()));
@@ -490,7 +622,14 @@ export async function executeMutation(name: string, input: Record<string, unknow
       aliases: (input.aliases ?? []) as string[],
       items: refs,
     };
-    await upsertTemplate(t);
+    try {
+      await upsertTemplate(t);
+    } catch (e) {
+      if (e instanceof Error && e.message === 'TEMPLATE_LIMIT') {
+        return JSON.stringify({ error: '食事テンプレートは上限30件です。delete_templateで不要なものを削除してください' });
+      }
+      throw e;
+    }
     return JSON.stringify({ ok: true, template: t.name });
   }
   return JSON.stringify({ error: `unknown mutation: ${name}` });
@@ -528,7 +667,17 @@ function summarize(name: string, input: Record<string, unknown>): string {
       .map(([k, v]) => `${labels[k] ?? k}: ${v}`);
     return `設定を変更:\n${lines.join('\n')}`;
   }
-  if (name === 'add_template') return `テンプレート「${input.name}」を登録`;
+  if (name === 'add_template') return `食事テンプレート「${input.name}」を登録`;
+  if (name === 'log_stress') {
+    const labels = ['', '😌 快調', '🙂 ふつう', '😥 やや疲れ', '😰 つらい', '🤯 限界'];
+    return `ストレスを記録: ${labels[Number(input.level)] ?? input.level}${input.note ? `(${input.note})` : ''}`;
+  }
+  if (name === 'add_workout_template') {
+    const ex = (input.exercises ?? []) as ExerciseSet[];
+    return `運動テンプレート「${input.name}」を登録:\n${ex.map((e) => `${e.exerciseName} ${e.weight ?? ''}${e.weightUnit ?? ''} ${e.reps}回×${e.sets}セット`).join('\n')}`;
+  }
+  if (name === 'delete_meal_log') return `食事記録を削除: ${input.description ?? input.meal_id}`;
+  if (name === 'delete_template') return `${input.kind === 'workout' ? '運動' : '食事'}テンプレート「${input.name}」を削除`;
   if (name === 'set_goal') {
     const labelMap: Record<string, string> = { body_fat_pct: '体脂肪率', weight: '体重', steps: '歩数' };
     return `目標を設定: ${labelMap[String(input.metric)] ?? input.metric} ${input.target_value} を ${input.deadline} までに`;
@@ -617,16 +766,40 @@ export async function resumeChat(pending: PendingAction, approved: boolean): Pro
   return runLoop(system, messages);
 }
 
+/**
+ * 「記録します/しました」と言うだけでツールを呼んでいない応答を検知する。
+ * (質問形「記録しますか?」は除外)
+ */
+function claimsActionWithoutTool(text: string): boolean {
+  if (!/(記録|登録|保存|変更|設定|削除)(して(おき)?)?(します|しました|しますね|済みです)/.test(text)) return false;
+  if (/(しますか|しましょうか|いいですか|よろしいですか|どうしますか)/.test(text)) return false;
+  return true;
+}
+
 async function runLoop(system: string, messages: ApiMessage[]): Promise<ChatTurnResult> {
   let collected = '';
+  let nudged = false;
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const res = await callApi(system, messages);
     const text = textOf(res.content);
-    if (text) collected = collected ? `${collected}\n${text}` : text;
 
     if (res.stop_reason !== 'tool_use') {
+      // 「記録します」と言うだけで実際にはツールを呼んでいない応答は、
+      // 1回だけシステム側から強制的にやり直させる(チャットが記録しないバグの恒久対策)
+      if (!nudged && text && claimsActionWithoutTool(text)) {
+        nudged = true;
+        messages.push({ role: 'assistant', content: res.content });
+        messages.push({
+          role: 'user',
+          content: '(システム検証: 直前の応答はツールを呼んでいないため、実際には何も記録・変更されていません。該当するツール(log_meal / log_workout / log_stress / update_settings 等)を今すぐ呼んでください。情報が足りない場合のみユーザーに短く質問してください)',
+        });
+        continue; // この偽の応答テキストはユーザーに見せない
+      }
+      if (text) collected = collected ? `${collected}\n${text}` : text;
       return { text: collected || '(応答なし)', pending: null };
     }
+
+    if (text) collected = collected ? `${collected}\n${text}` : text;
 
     messages.push({ role: 'assistant', content: res.content });
     const toolUses = res.content.filter((b) => b.type === 'tool_use');
