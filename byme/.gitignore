@@ -41,3 +41,7 @@ example
 # generated native folders
 /ios
 /android
+
+# CI credentials (generated in workflows only)
+credentials.json
+ios-credentials/
