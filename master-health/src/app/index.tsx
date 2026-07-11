@@ -1,239 +1,242 @@
-/** ホーム = AIチャット。上部に当日サマリーカード (instructions v2 §1) */
-import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable,
-  StyleSheet, Text, TextInput, View,
-} from 'react-native';
+/** 今日: 体重・体脂肪率・カロリー収支を主役に、スコアと記録を続けて表示 */
+import * as Haptics from 'expo-haptics';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Card } from '@/components/ui';
-import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
-import { adviceErrorMessage } from '@/lib/ai';
-import { currentTdee, resumeChat, sendChat, type PendingAction } from '@/lib/chat';
+import { ScoreRing } from '@/components/ScoreRing';
+import { Card, Chip, SectionTitle } from '@/components/ui';
+import { Colors, Fonts, Spacing, Type, scoreColor } from '@/constants/theme';
+import { useDashboard, useHealthAuth } from '@/hooks/useHealthData';
+import { currentTdee } from '@/lib/chat';
+import { getCustomTags, addCustomTag } from '@/lib/db';
 import { addDays } from '@/lib/dates';
-import { appendChat, dailyIntake, listChat, localDateKey } from '@/lib/store';
-import { syncHealthData } from '@/lib/sync';
-import { computeBudget } from '@/utils/budget';
+import { formatKeyJa, todayKey } from '@/lib/dates';
+import { formatValue, PRESET_TAGS } from '@/lib/metrics';
+import { dailyIntake, localDateKey } from '@/lib/store';
 
-interface Bubble { key: string; role: 'user' | 'assistant'; content: string }
+const CATEGORIES = [
+  { key: 'sleep' as const, label: '睡眠', color: Colors.sleep },
+  { key: 'recovery' as const, label: '回復', color: Colors.recovery },
+  { key: 'body' as const, label: '体組成', color: Colors.body },
+  { key: 'activity' as const, label: '活動量', color: Colors.activity },
+];
 
-const SUGGESTIONS = ['今週あと何kcal使える?', '昼はいつもの', '今日の体重は?', '目標いつ達成できそう?'];
-
-export default function ChatScreen() {
+export default function TodayScreen() {
   const insets = useSafeAreaInsets();
-  const [bubbles, setBubbles] = useState<Bubble[]>([]);
-  const [input, setInput] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [pending, setPending] = useState<PendingAction | null>(null);
-  const [summary, setSummary] = useState<{ kcal: number; remaining: number | null } | null>(null);
-  const listRef = useRef<FlatList<Bubble>>(null);
+  const { status, request } = useHealthAuth();
+  const d = useDashboard();
+  const [customTags, setCustomTags] = useState<{ name: string; emoji: string }[]>([]);
+  const [cal, setCal] = useState<{ eaten: number; left: number | null } | null>(null);
 
   useEffect(() => {
-    (async () => {
-      const history = await listChat();
-      setBubbles(history.map((m) => ({ key: String(m.id), role: m.role, content: m.content })));
-      syncHealthData().catch(() => {});
-      refreshSummary();
-    })();
+    if (status != null && status !== 2) request().catch(() => {});
+  }, [status, request]);
+
+  useEffect(() => {
+    getCustomTags().then(setCustomTags).catch(() => {});
   }, []);
 
-  const refreshSummary = useCallback(async () => {
+  const loadCalories = useCallback(async () => {
     try {
-      const today = new Date();
-      const intake = await dailyIntake(addDays(today, -8).toISOString(), today.toISOString());
-      const kcal = intake.get(localDateKey(today.toISOString()))?.kcal ?? 0;
+      const now = new Date();
+      const intake = await dailyIntake(addDays(now, -1).toISOString(), now.toISOString());
+      const eaten = Math.round(intake.get(localDateKey(now.toISOString()))?.kcal ?? 0);
       const tdee = await currentTdee();
-      let remaining: number | null = null;
-      if (tdee.effective != null) {
-        const b = computeBudget({
-          tdee: tdee.effective, weekStart: 1, today,
-          intakeByDate: new Map([...intake].map(([k, v]) => [k, v.kcal])),
-          weeklyDeficitTarget: 0,
-        });
-        remaining = b.remaining;
-      }
-      setSummary({ kcal: Math.round(kcal), remaining });
-    } catch { /* サマリーは補助情報なので失敗しても無視 */ }
+      setCal({ eaten, left: tdee.effective != null ? Math.round(tdee.effective - eaten) : null });
+    } catch { /* 補助情報 */ }
   }, []);
 
-  const push = useCallback((role: 'user' | 'assistant', content: string) => {
-    setBubbles((prev) => [...prev, { key: `${Date.now()}-${prev.length}`, role, content }]);
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
-  }, []);
+  useFocusEffect(useCallback(() => { loadCalories(); }, [loadCalories]));
 
-  const handleResult = useCallback(async (r: { text: string; pending: PendingAction | null }) => {
-    if (r.text) {
-      push('assistant', r.text);
-      await appendChat('assistant', r.text);
-    }
-    setPending(r.pending);
-    refreshSummary();
-  }, [push, refreshSummary]);
+  const onTag = async (tag: string) => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await d.toggleTag(tag);
+  };
 
-  const send = useCallback(async (text?: string) => {
-    const msg = (text ?? input).trim();
-    if (!msg || busy) return;
-    setInput('');
-    push('user', msg);
-    await appendChat('user', msg);
-    setBusy(true);
-    try {
-      const history = bubbles.map((b) => ({ role: b.role, content: b.content }));
-      const r = await sendChat(msg, history);
-      await handleResult(r);
-    } catch (e) {
-      push('assistant', adviceErrorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  }, [input, busy, bubbles, push, handleResult]);
+  const onAddCustomTag = () => {
+    Alert.prompt('カスタムタグを追加', 'タグ名を入力(例: サウナ)', async (name) => {
+      if (!name?.trim()) return;
+      await addCustomTag(name.trim(), '🏷');
+      setCustomTags(await getCustomTags());
+    });
+  };
 
-  const decide = useCallback(async (approved: boolean) => {
-    if (!pending || busy) return;
-    setBusy(true);
-    const p = pending;
-    setPending(null);
-    try {
-      const r = await resumeChat(p, approved);
-      await handleResult(r);
-    } catch (e) {
-      push('assistant', adviceErrorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  }, [pending, busy, handleResult, push]);
+  const allTags = [...PRESET_TAGS, ...customTags];
+  const weight = d.today.weight;
+  const bodyFat = d.today.body_fat ?? d.forecast?.current ?? null;
+
+  // 空欄を並べない: データがある行だけ表示
+  const statRows = ([
+    ['sleep_total', '睡眠時間', ''],
+    ['hrv', '睡眠時HRV', ' ms'],
+    ['rhr', '安静時心拍', ' bpm'],
+    ['steps', '歩数', ' 歩'],
+    ['active_energy', '消費カロリー', ' kcal'],
+    ['lean_mass', '筋肉量', ' kg'],
+  ] as const).filter(([key]) => d.today[key] != null);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={0}
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={{ paddingTop: insets.top + Spacing.md, paddingBottom: 120, paddingHorizontal: Spacing.md }}
+      refreshControl={<RefreshControl refreshing={d.refreshing} onRefresh={() => { d.refresh(); loadCalories(); }} tintColor={Colors.accent} />}
     >
-      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
-        <Text style={styles.title}>Master Health</Text>
-        {summary && (
-          <Text style={styles.summaryText}>
-            今日 {summary.kcal}kcal
-            {summary.remaining != null ? ` ・ 今週残り ${summary.remaining.toLocaleString()}kcal` : ''}
+      <Text style={styles.date}>{formatKeyJa(todayKey())}</Text>
+
+      {/* 主役: 体重と体脂肪率 */}
+      <View style={styles.heroRow}>
+        <Card style={styles.heroCard}>
+          <Text style={styles.heroLabel}>体重</Text>
+          <Text style={styles.heroValue}>
+            {weight != null ? formatValue('weight', weight) : '–'}
+            <Text style={styles.heroUnit}> kg</Text>
           </Text>
-        )}
+        </Card>
+        <Card style={styles.heroCard}>
+          <Text style={styles.heroLabel}>体脂肪率</Text>
+          <Text style={styles.heroValue}>
+            {bodyFat != null ? formatValue('body_fat', bodyFat) : '–'}
+            <Text style={styles.heroUnit}> %</Text>
+          </Text>
+          {d.forecast && d.forecast.diff > 0 && (
+            <Text style={styles.heroSub}>目標まで {d.forecast.diff.toFixed(1)}%</Text>
+          )}
+          {d.forecast && d.forecast.diff <= 0 && (
+            <Text style={[styles.heroSub, { color: Colors.good }]}>目標達成中</Text>
+          )}
+        </Card>
       </View>
 
-      <FlatList
-        ref={listRef}
-        data={bubbles}
-        keyExtractor={(b) => b.key}
-        contentContainerStyle={styles.listContent}
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>話しかけるだけで記録できます</Text>
-            {SUGGESTIONS.map((s) => (
-              <Pressable key={s} style={styles.suggestion} onPress={() => send(s)}>
-                <Text style={styles.suggestionText}>{s}</Text>
-              </Pressable>
-            ))}
-          </View>
-        }
-        renderItem={({ item }) => (
-          <View style={[styles.bubble, item.role === 'user' ? styles.bubbleUser : styles.bubbleAi]}>
-            <Text style={item.role === 'user' ? styles.bubbleUserText : styles.bubbleAiText}>
-              {item.content}
+      {/* 今日のカロリー */}
+      <Card style={styles.calCard}>
+        <View style={styles.calRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.heroLabel}>今日食べた</Text>
+            <Text style={styles.calValue}>
+              {cal ? cal.eaten.toLocaleString() : '–'}
+              <Text style={styles.heroUnit}> kcal</Text>
             </Text>
           </View>
+          <View style={{ flex: 1, alignItems: 'flex-end' }}>
+            <Text style={styles.heroLabel}>今日あと</Text>
+            <Text style={[styles.calValue, cal?.left != null && cal.left < 0 && { color: Colors.bad }]}>
+              {cal?.left != null ? cal.left.toLocaleString() : '–'}
+              <Text style={styles.heroUnit}> kcal</Text>
+            </Text>
+          </View>
+        </View>
+        {cal?.left == null && (
+          <Text style={styles.calHint}>「あと何kcal」は設定タブで身長・生年月日を入れると出ます</Text>
         )}
-        ListFooterComponent={
-          <>
-            {pending && (
-              <Card style={styles.confirmCard}>
-                <Text style={styles.confirmTitle}>この内容で記録しますか?</Text>
-                <Text style={styles.confirmBody}>{pending.summary}</Text>
-                <View style={styles.confirmRow}>
-                  <Pressable style={[styles.confirmBtn, styles.cancelBtn]} onPress={() => decide(false)}>
-                    <Text style={styles.cancelText}>キャンセル</Text>
-                  </Pressable>
-                  <Pressable style={[styles.confirmBtn, styles.okBtn]} onPress={() => decide(true)}>
-                    <Text style={styles.okText}>記録する</Text>
-                  </Pressable>
-                </View>
-              </Card>
-            )}
-            {busy && <ActivityIndicator color={Colors.accent} style={{ marginVertical: Spacing.md }} />}
-          </>
-        }
-      />
+      </Card>
 
-      <View style={[styles.inputRow, { paddingBottom: Math.max(insets.bottom, Spacing.sm) }]}>
-        <TextInput
-          style={styles.input}
-          value={input}
-          onChangeText={setInput}
-          placeholder="例: 昼はいつもの / ベンチ90lb 8回3セット"
-          placeholderTextColor={Colors.textFaint}
-          multiline
-          editable={!busy}
-        />
-        <Pressable
-          style={[styles.sendBtn, (!input.trim() || busy) && styles.sendBtnDisabled]}
-          onPress={() => send()}
-          disabled={!input.trim() || busy}
-        >
-          <Text style={styles.sendText}>↑</Text>
-        </Pressable>
+      {/* 総合スコア */}
+      <View style={styles.ringWrap}>
+        <ScoreRing score={d.scores.total} />
       </View>
-    </KeyboardAvoidingView>
+
+      <View style={styles.categoryRow}>
+        {CATEGORIES.map((c) => {
+          const v = d.scores[c.key];
+          return (
+            <Card key={c.key} style={styles.categoryCard}>
+              <Text style={[styles.categoryValue, { color: scoreColor(v) }]}>{v ?? '–'}</Text>
+              <View style={styles.categoryLabelRow}>
+                <View style={[styles.dot, { backgroundColor: c.color }]} />
+                <Text style={styles.categoryLabel}>{c.label}</Text>
+              </View>
+            </Card>
+          );
+        })}
+      </View>
+
+      {/* 体調変化の兆候 */}
+      {d.anomalies.length > 0 && (
+        <>
+          <SectionTitle>体調変化の兆候</SectionTitle>
+          {d.anomalies.map((a) => (
+            <Card key={a.metric} style={styles.anomalyCard}>
+              <Text style={styles.anomalyTitle}>
+                {a.z > 0 ? '↑' : '↓'} ベースラインから {Math.abs(a.z).toFixed(1)}σ の逸脱
+              </Text>
+              <Text style={styles.anomalyText}>{a.message}</Text>
+            </Card>
+          ))}
+        </>
+      )}
+
+      {/* 今日の主要数値(データがあるものだけ) */}
+      {statRows.length > 0 && (
+        <>
+          <SectionTitle>今日の記録</SectionTitle>
+          <Card>
+            {statRows.map(([key, label, unit], i) => (
+              <View key={key} style={[styles.statRow, i > 0 && styles.statRowBorder]}>
+                <Text style={styles.statLabel}>{label}</Text>
+                <Text style={styles.statValue}>
+                  {formatValue(key, d.today[key])}
+                  <Text style={styles.statUnit}>{unit}</Text>
+                </Text>
+              </View>
+            ))}
+          </Card>
+        </>
+      )}
+
+      {/* タグ記録 */}
+      <SectionTitle>今日のタグ</SectionTitle>
+      <View style={styles.tagWrap}>
+        {allTags.map((t) => (
+          <Chip
+            key={t.name}
+            label={`${t.emoji} ${t.name}`}
+            active={d.tags.includes(t.name)}
+            onPress={() => onTag(t.name)}
+          />
+        ))}
+        <Chip label="+ 追加" onPress={onAddCustomTag} />
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.bg },
-  header: {
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
+  screen: { flex: 1, backgroundColor: Colors.bg },
+  date: { color: Colors.textSecondary, fontSize: Type.body, textAlign: 'center', marginBottom: Spacing.md },
+  heroRow: { flexDirection: 'row', gap: Spacing.sm },
+  heroCard: { flex: 1, paddingVertical: Spacing.md },
+  heroLabel: { color: Colors.textSecondary, fontSize: Type.caption },
+  heroValue: {
+    color: Colors.text, fontSize: 40, fontFamily: Fonts.display, fontWeight: '700',
+    fontVariant: ['tabular-nums'], marginTop: 4,
   },
-  title: { color: Colors.text, fontSize: Type.title, fontFamily: Fonts.sans, fontWeight: '700' },
-  summaryText: { color: Colors.textSecondary, fontSize: Type.caption, marginTop: 2, fontVariant: ['tabular-nums'] },
-  listContent: { padding: Spacing.md, gap: Spacing.sm, flexGrow: 1 },
-  empty: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: Spacing.sm, paddingTop: Spacing.xl },
-  emptyTitle: { color: Colors.textSecondary, fontSize: Type.body, marginBottom: Spacing.sm },
-  suggestion: {
-    backgroundColor: Colors.surface, borderRadius: 999,
-    paddingHorizontal: Spacing.md, paddingVertical: 10,
-    borderWidth: 1, borderColor: Colors.border,
+  heroUnit: { fontSize: Type.body, color: Colors.textSecondary, fontWeight: '400' },
+  heroSub: { color: Colors.accent, fontSize: Type.caption, marginTop: 4 },
+  calCard: { marginTop: Spacing.sm },
+  calRow: { flexDirection: 'row' },
+  calValue: {
+    color: Colors.text, fontSize: 30, fontFamily: Fonts.display, fontWeight: '700',
+    fontVariant: ['tabular-nums'], marginTop: 2,
   },
-  suggestionText: { color: Colors.accent, fontSize: Type.body },
-  bubble: { maxWidth: '85%', borderRadius: Radius.md, padding: Spacing.sm + 2 },
-  bubbleUser: { alignSelf: 'flex-end', backgroundColor: Colors.accentDim },
-  bubbleAi: { alignSelf: 'flex-start', backgroundColor: Colors.surface },
-  bubbleUserText: { color: Colors.text, fontSize: Type.body, lineHeight: 21 },
-  bubbleAiText: { color: Colors.text, fontSize: Type.body, lineHeight: 21 },
-  confirmCard: { marginTop: Spacing.sm, borderColor: Colors.accent, borderWidth: 1 },
-  confirmTitle: { color: Colors.textSecondary, fontSize: Type.caption, marginBottom: 6 },
-  confirmBody: { color: Colors.text, fontSize: Type.body, lineHeight: 21 },
-  confirmRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md },
-  confirmBtn: { flex: 1, borderRadius: Radius.sm, paddingVertical: 10, alignItems: 'center' },
-  cancelBtn: { backgroundColor: Colors.surfaceRaised },
-  okBtn: { backgroundColor: Colors.accent },
-  cancelText: { color: Colors.textSecondary, fontWeight: '600' },
-  okText: { color: Colors.bg, fontWeight: '700' },
-  inputRow: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.sm,
-    paddingHorizontal: Spacing.md, paddingTop: Spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border,
-    backgroundColor: Colors.bg,
+  calHint: { color: Colors.textFaint, fontSize: Type.caption, marginTop: Spacing.sm },
+  ringWrap: { alignItems: 'center', marginVertical: Spacing.lg },
+  categoryRow: { flexDirection: 'row', gap: Spacing.sm },
+  categoryCard: { flex: 1, alignItems: 'center', paddingVertical: Spacing.md, paddingHorizontal: 4 },
+  categoryValue: {
+    fontSize: Type.metric, fontFamily: Fonts.display, fontWeight: '700', fontVariant: ['tabular-nums'],
   },
-  input: {
-    flex: 1, minHeight: 40, maxHeight: 120,
-    backgroundColor: Colors.surface, borderRadius: Radius.md,
-    paddingHorizontal: Spacing.sm + 4, paddingVertical: 10,
-    color: Colors.text, fontSize: Type.body,
-  },
-  sendBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: Colors.accent, alignItems: 'center', justifyContent: 'center',
-  },
-  sendBtnDisabled: { opacity: 0.4 },
-  sendText: { color: Colors.bg, fontSize: 20, fontWeight: '700' },
+  categoryLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  categoryLabel: { color: Colors.textSecondary, fontSize: Type.caption },
+  anomalyCard: { borderColor: Colors.warn, borderWidth: 1, marginBottom: Spacing.sm },
+  anomalyTitle: { color: Colors.warn, fontSize: Type.label, fontWeight: '700', marginBottom: 4 },
+  anomalyText: { color: Colors.text, fontSize: Type.body, lineHeight: 21 },
+  statRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10 },
+  statRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
+  statLabel: { color: Colors.textSecondary, fontSize: Type.body },
+  statValue: { color: Colors.text, fontSize: Type.body, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  statUnit: { color: Colors.textFaint, fontSize: Type.caption, fontWeight: '400' },
+  tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
 });

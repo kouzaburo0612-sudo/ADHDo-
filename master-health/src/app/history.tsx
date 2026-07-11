@@ -1,6 +1,6 @@
 /** トレンド(History): 日/週/月/年切替・過去参照・比較ビュー・タグ相関 */
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-worklets';
@@ -10,7 +10,14 @@ import { TrendChart } from '@/components/TrendChart';
 import { Card, Chip, SectionTitle, Segmented } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { RANGE_DAYS, useComparison, useSeries, useTagEffects, type RangeMode } from '@/hooks/useHealthData';
+import { useFocusEffect } from 'expo-router';
 import { addDays, formatKeyJa, fromKey, toKey, todayKey } from '@/lib/dates';
+import { currentTdee } from '@/lib/chat';
+import { getSeries } from '@/lib/db';
+import { dailyIntake, getProfile } from '@/lib/store';
+import { computeBudget, type BudgetResult } from '@/utils/budget';
+import { simulateGoal, type ScenarioResult } from '@/utils/simulator';
+import type { TdeeResult } from '@/utils/tdee';
 import { formatValue, METRIC_ORDER, METRICS, type MetricKey } from '@/lib/metrics';
 
 const MODES: { value: RangeMode; label: string }[] = [
@@ -26,6 +33,41 @@ export default function HistoryScreen() {
   const [mode, setMode] = useState<RangeMode>('day');
   const [anchor, setAnchor] = useState(todayKey());
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  const [tdee, setTdee] = useState<TdeeResult | null>(null);
+  const [budget, setBudget] = useState<BudgetResult | null>(null);
+  const [forecasts, setForecasts] = useState<{ label: string; target: number; sim: ScenarioResult }[]>([]);
+
+  const loadInsights = useCallback(async () => {
+    try {
+      const today = new Date();
+      const t = await currentTdee();
+      setTdee(t);
+      const intake = await dailyIntake(addDays(today, -8).toISOString(), today.toISOString());
+      setBudget(t.effective != null
+        ? computeBudget({
+            tdee: t.effective, weekStart: 1, today,
+            intakeByDate: new Map([...intake].map(([k, v]) => [k, v.kcal])),
+            weeklyDeficitTarget: 0,
+          })
+        : null);
+      const profile = await getProfile();
+      const fs: { label: string; target: number; sim: ScenarioResult }[] = [];
+      for (const g of profile.goals) {
+        const m = g.metric === 'body_fat_pct' ? 'body_fat' : g.metric === 'weight' ? 'weight' : null;
+        if (!m) continue;
+        const series = await getSeries(m as never, toKey(addDays(today, -90)), toKey(today));
+        fs.push({
+          label: g.label ?? (g.metric === 'body_fat_pct' ? '体脂肪率' : '体重'),
+          target: g.targetValue,
+          sim: simulateGoal(series.map((p) => ({ date: p.date, value: p.value })), g.targetValue),
+        });
+      }
+      setForecasts(fs);
+    } catch { /* 補助情報 */ }
+  }, []);
+
+  useFocusEffect(useCallback(() => { loadInsights(); }, [loadInsights]));
 
   const { points } = useSeries(metric, mode, anchor);
   const compare = useComparison(metric);
@@ -59,6 +101,42 @@ export default function HistoryScreen() {
       style={styles.screen}
       contentContainerStyle={{ paddingTop: insets.top + Spacing.md, paddingBottom: 120, paddingHorizontal: Spacing.md }}
     >
+      {/* 目標達成予測 */}
+      {forecasts.map((f) => (
+        <Card key={f.label} style={styles.goalCard}>
+          <Text style={styles.goalLabel}>{f.label} {f.target} まで</Text>
+          {f.sim.median ? (
+            <>
+              <Text style={styles.goalMain}>{fmtShortDate(f.sim.median)} 到達見込み</Text>
+              <Text style={styles.goalSub}>順調なら {fmtShortDate(f.sim.optimistic)} ・ 停滞すると {fmtShortDate(f.sim.pessimistic)}</Text>
+            </>
+          ) : (
+            <Text style={styles.goalSub}>直近のトレンドが目標方向でないため予測できません</Text>
+          )}
+        </Card>
+      ))}
+
+      {/* 週次収支(週単位はこのページで見る) */}
+      {budget && (
+        <Card style={styles.goalCard}>
+          <Text style={styles.goalLabel}>今週のカロリー収支(月曜はじまり)</Text>
+          <View style={styles.budgetRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.budgetNum}>{budget.remaining.toLocaleString()}</Text>
+              <Text style={styles.budgetCap}>残り kcal</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.budgetNum}>{budget.perDayRecommended.toLocaleString()}</Text>
+              <Text style={styles.budgetCap}>日割り推奨 kcal</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.budgetNum}>{tdee?.effective ?? '–'}</Text>
+              <Text style={styles.budgetCap}>実績TDEE kcal/日</Text>
+            </View>
+          </View>
+        </Card>
+      )}
+
       {/* 指標セレクタ */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.metricRow}>
         {METRIC_ORDER.map((k) => (
@@ -168,7 +246,20 @@ function formatDelta(metric: MetricKey, delta: number): string {
   return `${sign}${abs}${def.asDuration ? '' : def.unit}`;
 }
 
+function fmtShortDate(iso: string | null): string {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
 const styles = StyleSheet.create({
+  goalCard: { marginBottom: Spacing.sm },
+  goalLabel: { color: Colors.textSecondary, fontSize: Type.caption },
+  goalMain: { color: Colors.text, fontSize: 22, fontWeight: '700', marginTop: 4 },
+  goalSub: { color: Colors.textFaint, fontSize: Type.caption, marginTop: 4 },
+  budgetRow: { flexDirection: 'row', marginTop: Spacing.sm, gap: Spacing.sm },
+  budgetNum: { color: Colors.text, fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  budgetCap: { color: Colors.textFaint, fontSize: 11, marginTop: 2 },
   screen: { flex: 1, backgroundColor: Colors.bg },
   metricRow: { flexDirection: 'row', gap: Spacing.sm },
   navRow: {

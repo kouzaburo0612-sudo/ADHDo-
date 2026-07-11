@@ -31,7 +31,7 @@ export interface MetricDef {
 export const METRICS: Record<MetricKey, MetricDef> = {
   weight:        { key: 'weight',        label: '体重',        unit: 'kg',    decimals: 1, higherIsBetter: null,  aggregation: 'last' },
   body_fat:      { key: 'body_fat',      label: '体脂肪率',    unit: '%',     decimals: 1, higherIsBetter: false, aggregation: 'last' },
-  lean_mass:     { key: 'lean_mass',     label: '除脂肪体重',  unit: 'kg',    decimals: 1, higherIsBetter: true,  aggregation: 'last' },
+  lean_mass:     { key: 'lean_mass',     label: '筋肉量',  unit: 'kg',    decimals: 1, higherIsBetter: true,  aggregation: 'last' },
   sleep_total:   { key: 'sleep_total',   label: '睡眠時間',    unit: '分',    decimals: 0, higherIsBetter: true,  aggregation: 'sum', asDuration: true },
   sleep_deep:    { key: 'sleep_deep',    label: '深い睡眠',    unit: '分',    decimals: 0, higherIsBetter: true,  aggregation: 'sum', asDuration: true },
   sleep_rem:     { key: 'sleep_rem',     label: 'レム睡眠',    unit: '分',    decimals: 0, higherIsBetter: true,  aggregation: 'sum', asDuration: true },

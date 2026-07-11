@@ -205,6 +205,15 @@ async function buildSystemPrompt(): Promise<string> {
   for (const [, day] of metricMap) if (day.weight != null) weights.push(day.weight);
   const weightMa = mean(weights.slice(-7));
 
+  const todayMeals = await (await import('@/lib/store')).listMealLogs(
+    new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString(),
+    today.toISOString(),
+  );
+  const mealLines = todayMeals.map((m) => {
+    const t = new Date(m.timestamp);
+    return `・${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} ${m.freeText ?? 'テンプレート食'} ${Math.round(m.kcal)}kcal`;
+  }).join('\n') || '・(まだ記録なし)';
+
   const templates = await listTemplates();
   const goals = profile.goals.map((g) => `${g.label ?? g.metric}: 目標${g.targetValue} 期限${g.deadline}`).join(' / ') || '未設定';
   const flags = profile.dietaryFlags.map((f) => `${f.ingredient}(${f.severity})`).join('、') || 'なし';
@@ -223,14 +232,21 @@ async function buildSystemPrompt(): Promise<string> {
 - 実績TDEE: 活動ベース${tdee.activity ?? '算出中'} / 逆算ベース${tdee.reverse ?? `不可(食事記録${tdee.loggedDays}/14日)`}
 ${budget ? `- 今週の収支: 予算${budget.budget} / 消費${budget.consumed} / 残り${budget.remaining}kcal (残り${budget.daysLeft}日、日割り${budget.perDayRecommended}kcal)` : ''}
 
+## 今日アプリに記録済みの食事(これが正)
+${mealLines}
+
 ## 登録済み食事テンプレート
 ${templates.map((t) => `- ${t.name}${t.aliases.length ? ` (別名: ${t.aliases.join('、')})` : ''}`).join('\n') || '- (なし)'}
 
-## 応答方針
-- 日本語(です・ます調)。簡潔に。数値根拠を示す
+## 応答方針(重要)
+- 日本語(です・ます調)。短く、チャットらしく。1回の返答は長くても5行程度
+- 表示はプレーンテキストのみ。マークダウン記法(** ## | --- \` など)は一切使わない。強調したい数値はそのまま書く。箇条書きが必要なら「・」だけを使う
+- 数値根拠を示す。曖昧な励ましより具体的な数字
 - 「いつもの」等の曖昧な表現はテンプレートの別名と照合する
 - 食事の自由入力はあなたがPFCを概算し、is_estimate=trueでlog_mealを呼ぶ
-- 記録系ツールは確認カードで承認されてから確定する(勝手に確定した扱いにしない)
+- 記録は必ず1件ずつツールを呼ぶ(まとめて複数を1回の応答で呼ばない)。承認されたら次の1件に進む
+- 記録系ツールは確認カードで承認されてから確定する。承認前に「記録しました」と言わない
+- 記録済みかどうかはquery_recentで確認してから答える(推測で「記録されていません」と言わない)
 - 回避食材が食事に含まれる場合は必ず指摘する
 - 医学的診断はしない。今日の日付: ${todayKey}`;
 }
@@ -438,10 +454,13 @@ async function callApi(system: string, messages: ApiMessage[]): Promise<{ conten
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 2048,
-      thinking: { type: 'disabled' },
-      output_config: { effort: 'medium' },
+      // adaptive思考でツール選択の精度を上げる(「AIがアホ」対策)
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'high' },
       system,
       tools: TOOLS,
+      // 記録系を1件ずつ確認カードに流すため、並列ツール呼び出しを禁止
+      tool_choice: { type: 'auto', disable_parallel_tool_use: true },
       messages,
     }),
   });
@@ -454,7 +473,21 @@ async function callApi(system: string, messages: ApiMessage[]): Promise<{ conten
 }
 
 function textOf(content: { type: string; text?: string }[]): string {
-  return content.filter((b) => b.type === 'text' && b.text).map((b) => b.text).join('\n').trim();
+  const raw = content.filter((b) => b.type === 'text' && b.text).map((b) => b.text).join('\n').trim();
+  return stripMarkdown(raw);
+}
+
+/** モデルがマークダウンを混ぜてきた場合の保険(プレーンテキスト化) */
+export function stripMarkdown(s: string): string {
+  return s
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^#{1,4}\s*/gm, '')
+    .replace(/^\s*[-*]\s+/gm, '・')
+    .replace(/^---+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /**

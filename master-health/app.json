@@ -37,6 +37,13 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "食事の写真からカロリーを推定するために写真ライブラリを使用します。",
+          "cameraPermission": "食事の写真を撮ってカロリーを推定するためにカメラを使用します。"
+        }
+      ],
+      [
         "@kingstinct/react-native-healthkit",
         {
           "NSHealthShareUsageDescription": "WithingsとOura RingがApple Healthに記録した体組成・睡眠・心拍などのデータを読み取り、健康ダッシュボードとして表示するために使用します。",

@@ -30,20 +30,20 @@ export default function RootLayout() {
           labelStyle={{ color: Colors.textSecondary, selected: { color: Colors.accent } }}
         >
           <NativeTabs.Trigger name="index">
+            <NativeTabs.Trigger.Label>今日</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon sf={{ default: 'heart.text.square', selected: 'heart.text.square.fill' }} />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="chat">
             <NativeTabs.Trigger.Label>チャット</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf={{ default: 'bubble.left.and.text.bubble.right', selected: 'bubble.left.and.text.bubble.right.fill' }} />
           </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="dashboard">
-            <NativeTabs.Trigger.Label>今日</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon sf={{ default: 'heart.text.square', selected: 'heart.text.square.fill' }} />
+          <NativeTabs.Trigger name="report">
+            <NativeTabs.Trigger.Label>報告</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon sf={{ default: 'fork.knife.circle', selected: 'fork.knife.circle.fill' }} />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="history">
             <NativeTabs.Trigger.Label>トレンド</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf="chart.xyaxis.line" />
-          </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="insights">
-            <NativeTabs.Trigger.Label>インサイト</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon sf={{ default: 'sparkles', selected: 'sparkles' }} />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="settings">
             <NativeTabs.Trigger.Label>設定</NativeTabs.Trigger.Label>

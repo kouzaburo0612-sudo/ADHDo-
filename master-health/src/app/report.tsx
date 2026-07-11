@@ -1,0 +1,287 @@
+/** 報告: 食事の記録。写真AI分析 or 手入力。今日の合計と一覧もここで見る */
+import * as ImagePicker from 'expo-image-picker';
+import { useCallback, useState } from 'react';
+import {
+  ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+} from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { Card, SectionTitle } from '@/components/ui';
+import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
+import { adviceErrorMessage } from '@/lib/ai';
+import {
+  addMealLog, dailyIntake, deleteMealLog, listMealLogs, localDateKey, newId, type MealLog,
+} from '@/lib/store';
+import { estimateFoodFromPhoto, type FoodEstimate } from '@/lib/vision';
+
+export default function ReportScreen() {
+  const insets = useSafeAreaInsets();
+  const [meals, setMeals] = useState<MealLog[]>([]);
+  const [totals, setTotals] = useState({ kcal: 0, protein: 0, fat: 0, carbs: 0 });
+  const [analyzing, setAnalyzing] = useState(false);
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [estimate, setEstimate] = useState<FoodEstimate | null>(null);
+  // 手入力フォーム
+  const [name, setName] = useState('');
+  const [kcal, setKcal] = useState('');
+  const [protein, setProtein] = useState('');
+  const [fat, setFat] = useState('');
+  const [carbs, setCarbs] = useState('');
+
+  const load = useCallback(async () => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const list = await listMealLogs(start.toISOString(), now.toISOString());
+    setMeals(list);
+    const t = (await dailyIntake(start.toISOString(), now.toISOString()))
+      .get(localDateKey(now.toISOString())) ?? { kcal: 0, protein: 0, fat: 0, carbs: 0 };
+    setTotals({
+      kcal: Math.round(t.kcal), protein: Math.round(t.protein),
+      fat: Math.round(t.fat), carbs: Math.round(t.carbs),
+    });
+  }, []);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const pick = async (fromCamera: boolean) => {
+    const fn = fromCamera ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync;
+    if (fromCamera) {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) { Alert.alert('カメラの許可が必要です'); return; }
+    }
+    const result = await fn({
+      mediaTypes: ['images'],
+      quality: 0.4,
+      base64: true,
+      allowsEditing: false,
+    });
+    if (result.canceled || !result.assets[0]?.base64) return;
+    const asset = result.assets[0];
+    setPhotoUri(asset.uri);
+    setEstimate(null);
+    setAnalyzing(true);
+    try {
+      const est = await estimateFoodFromPhoto(asset.base64!, asset.mimeType ?? 'image/jpeg');
+      setEstimate(est);
+    } catch (e) {
+      Alert.alert('分析できませんでした', adviceErrorMessage(e));
+      setPhotoUri(null);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const recordEstimate = async () => {
+    if (!estimate) return;
+    await addMealLog({
+      id: newId(), timestamp: new Date().toISOString(),
+      freeText: estimate.name,
+      kcal: estimate.kcal, protein: estimate.protein, fat: estimate.fat, carbs: estimate.carbs,
+      isEstimate: true,
+    });
+    setEstimate(null);
+    setPhotoUri(null);
+    load();
+  };
+
+  const recordManual = async () => {
+    const k = parseFloat(kcal);
+    if (!name.trim() || !Number.isFinite(k)) {
+      Alert.alert('入力エラー', '名前とカロリーは必須です');
+      return;
+    }
+    await addMealLog({
+      id: newId(), timestamp: new Date().toISOString(),
+      freeText: name.trim(),
+      kcal: k,
+      protein: parseFloat(protein) || 0,
+      fat: parseFloat(fat) || 0,
+      carbs: parseFloat(carbs) || 0,
+      isEstimate: false,
+    });
+    setName(''); setKcal(''); setProtein(''); setFat(''); setCarbs('');
+    load();
+  };
+
+  const confirmDelete = (id: string) => {
+    Alert.alert('削除', 'この記録を削除しますか?', [
+      { text: 'キャンセル', style: 'cancel' },
+      { text: '削除', style: 'destructive', onPress: async () => { await deleteMealLog(id); load(); } },
+    ]);
+  };
+
+  return (
+    <ScrollView
+      style={styles.root}
+      contentContainerStyle={{ paddingTop: insets.top + Spacing.md, padding: Spacing.md, paddingBottom: 120 }}
+      keyboardShouldPersistTaps="handled"
+    >
+      <Text style={styles.title}>食事を報告</Text>
+
+      {/* 今日の合計 */}
+      <Card style={styles.totalCard}>
+        <Text style={styles.totalKcal}>
+          {totals.kcal.toLocaleString()}<Text style={styles.totalUnit}> kcal</Text>
+        </Text>
+        <Text style={styles.totalPfc}>P {totals.protein}g ・ F {totals.fat}g ・ C {totals.carbs}g</Text>
+      </Card>
+
+      {/* 写真から */}
+      <SectionTitle>写真から記録</SectionTitle>
+      <View style={styles.photoRow}>
+        <Pressable style={styles.photoBtn} onPress={() => pick(true)} disabled={analyzing}>
+          <Text style={styles.photoBtnIcon}>📷</Text>
+          <Text style={styles.photoBtnText}>撮影する</Text>
+        </Pressable>
+        <Pressable style={styles.photoBtn} onPress={() => pick(false)} disabled={analyzing}>
+          <Text style={styles.photoBtnIcon}>🖼</Text>
+          <Text style={styles.photoBtnText}>写真を選ぶ</Text>
+        </Pressable>
+      </View>
+
+      {photoUri && (
+        <Card style={{ marginTop: Spacing.sm }}>
+          <Image source={{ uri: photoUri }} style={styles.preview} resizeMode="cover" />
+          {analyzing && (
+            <View style={styles.analyzing}>
+              <ActivityIndicator color={Colors.accent} />
+              <Text style={styles.analyzingText}>AIが分析中…</Text>
+            </View>
+          )}
+          {estimate && (
+            <>
+              <Text style={styles.estName}>{estimate.name}</Text>
+              <Text style={styles.estKcal}>
+                {estimate.kcal.toLocaleString()}<Text style={styles.totalUnit}> kcal</Text>
+              </Text>
+              <Text style={styles.totalPfc}>
+                P {estimate.protein}g ・ F {estimate.fat}g ・ C {estimate.carbs}g
+                {estimate.note ? `(${estimate.note})` : ''}
+              </Text>
+              <View style={styles.btnRow}>
+                <Pressable style={[styles.btn, styles.btnGhost]} onPress={() => { setEstimate(null); setPhotoUri(null); }}>
+                  <Text style={styles.btnGhostText}>やり直す</Text>
+                </Pressable>
+                <Pressable style={[styles.btn, styles.btnPrimary]} onPress={recordEstimate}>
+                  <Text style={styles.btnPrimaryText}>この内容で記録</Text>
+                </Pressable>
+              </View>
+            </>
+          )}
+        </Card>
+      )}
+
+      {/* 手入力 */}
+      <SectionTitle>手入力で記録</SectionTitle>
+      <Card>
+        <TextInput
+          style={styles.input}
+          value={name} onChangeText={setName}
+          placeholder="料理名(例: 牛丼 並盛)"
+          placeholderTextColor={Colors.textFaint}
+        />
+        <View style={styles.inputGrid}>
+          <NumInput label="kcal" value={kcal} onChange={setKcal} />
+          <NumInput label="P (g)" value={protein} onChange={setProtein} />
+          <NumInput label="F (g)" value={fat} onChange={setFat} />
+          <NumInput label="C (g)" value={carbs} onChange={setCarbs} />
+        </View>
+        <Pressable style={[styles.btn, styles.btnPrimary, { marginTop: Spacing.md }]} onPress={recordManual}>
+          <Text style={styles.btnPrimaryText}>記録する</Text>
+        </Pressable>
+      </Card>
+
+      {/* 今日の食事一覧 */}
+      <SectionTitle>今日の食事</SectionTitle>
+      {meals.length === 0 ? (
+        <Card><Text style={styles.muted}>まだ記録がありません</Text></Card>
+      ) : meals.map((m) => (
+        <Pressable key={m.id} onLongPress={() => confirmDelete(m.id)}>
+          <Card style={styles.mealRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.mealName}>
+                {m.freeText ?? 'テンプレート食'}{m.isEstimate ? <Text style={styles.est}> AI概算</Text> : null}
+              </Text>
+              <Text style={styles.mealTime}>{fmtTime(m.timestamp)} ・ P{Math.round(m.protein)} F{Math.round(m.fat)} C{Math.round(m.carbs)}</Text>
+            </View>
+            <Text style={styles.mealKcal}>{Math.round(m.kcal)}</Text>
+          </Card>
+        </Pressable>
+      ))}
+      {meals.length > 0 && <Text style={styles.hint}>長押しで削除できます</Text>}
+    </ScrollView>
+  );
+}
+
+function NumInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <View style={styles.numWrap}>
+      <Text style={styles.numLabel}>{label}</Text>
+      <TextInput
+        style={styles.numInput}
+        value={value} onChangeText={onChange}
+        keyboardType="decimal-pad"
+        placeholder="0" placeholderTextColor={Colors.textFaint}
+      />
+    </View>
+  );
+}
+
+function fmtTime(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: Colors.bg },
+  title: { color: Colors.text, fontSize: Type.title, fontFamily: Fonts.sans, fontWeight: '700' },
+  totalCard: { marginTop: Spacing.md, alignItems: 'center', paddingVertical: Spacing.lg },
+  totalKcal: {
+    color: Colors.text, fontSize: 44, fontFamily: Fonts.display, fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  totalUnit: { fontSize: Type.body, color: Colors.textSecondary, fontWeight: '400' },
+  totalPfc: { color: Colors.textSecondary, fontSize: Type.body, marginTop: 4, fontVariant: ['tabular-nums'] },
+  photoRow: { flexDirection: 'row', gap: Spacing.sm },
+  photoBtn: {
+    flex: 1, backgroundColor: Colors.surface, borderRadius: Radius.md,
+    alignItems: 'center', paddingVertical: Spacing.lg,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  photoBtnIcon: { fontSize: 28 },
+  photoBtnText: { color: Colors.text, fontSize: Type.body, marginTop: 6, fontWeight: '600' },
+  preview: { width: '100%', height: 180, borderRadius: Radius.sm, backgroundColor: Colors.bg },
+  analyzing: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: Spacing.md },
+  analyzingText: { color: Colors.textSecondary, fontSize: Type.body },
+  estName: { color: Colors.text, fontSize: Type.body, fontWeight: '700', marginTop: Spacing.md },
+  estKcal: {
+    color: Colors.text, fontSize: 32, fontFamily: Fonts.display, fontWeight: '700',
+    fontVariant: ['tabular-nums'], marginTop: 2,
+  },
+  btnRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md },
+  btn: { flex: 1, borderRadius: Radius.sm, paddingVertical: 12, alignItems: 'center' },
+  btnPrimary: { backgroundColor: Colors.accent },
+  btnPrimaryText: { color: Colors.bg, fontWeight: '700', fontSize: Type.body },
+  btnGhost: { backgroundColor: Colors.surfaceRaised },
+  btnGhostText: { color: Colors.textSecondary, fontWeight: '600', fontSize: Type.body },
+  input: {
+    backgroundColor: Colors.bg, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.border,
+    color: Colors.text, paddingHorizontal: 12, paddingVertical: 10, fontSize: Type.body,
+  },
+  inputGrid: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
+  numWrap: { flex: 1 },
+  numLabel: { color: Colors.textSecondary, fontSize: Type.caption, marginBottom: 4 },
+  numInput: {
+    backgroundColor: Colors.bg, borderRadius: Radius.sm, borderWidth: 1, borderColor: Colors.border,
+    color: Colors.text, paddingHorizontal: 8, paddingVertical: 8, fontSize: Type.body,
+    fontVariant: ['tabular-nums'], textAlign: 'center',
+  },
+  muted: { color: Colors.textFaint, fontSize: Type.body },
+  mealRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.sm, gap: Spacing.sm },
+  mealName: { color: Colors.text, fontSize: Type.body },
+  mealTime: { color: Colors.textFaint, fontSize: Type.caption, marginTop: 2, fontVariant: ['tabular-nums'] },
+  mealKcal: { color: Colors.text, fontSize: Type.body, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  est: { color: Colors.warn, fontSize: Type.caption },
+  hint: { color: Colors.textFaint, fontSize: Type.caption, textAlign: 'center', marginTop: Spacing.sm },
+});
