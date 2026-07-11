@@ -137,30 +137,6 @@ export default function SettingsScreen() {
         />
       </Card>
 
-      <SectionTitle>総合スコアの重み</SectionTitle>
-      <Card>
-        {([
-          ['sleep', '睡眠'],
-          ['recovery', '回復'],
-          ['body', '体組成'],
-          ['activity', '活動量'],
-        ] as const).map(([key, label]) => (
-          <View key={key} style={styles.weightRow}>
-            <Text style={styles.rowLabel}>{label}</Text>
-            <View style={styles.stepper}>
-              <Pressable style={styles.stepBtn} onPress={() => updateWeight(key, -0.05)}>
-                <Text style={styles.stepBtnText}>−</Text>
-              </Pressable>
-              <Text style={styles.weightValue}>{Math.round((settings.weights[key] / weightTotal) * 100)}%</Text>
-              <Pressable style={styles.stepBtn} onPress={() => updateWeight(key, 0.05)}>
-                <Text style={styles.stepBtnText}>+</Text>
-              </Pressable>
-            </View>
-          </View>
-        ))}
-        <Text style={styles.hint}>合計が100%になるよう自動で正規化されます</Text>
-      </Card>
-
       <SectionTitle>HealthKit</SectionTitle>
       <Card>
         <View style={styles.weightRow}>

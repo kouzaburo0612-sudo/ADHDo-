@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable,
-  ScrollView, StyleSheet, Text, TextInput, View,
+  StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -21,13 +21,15 @@ const SUGGESTIONS = ['今日あと何kcal食べられる?', '昼はいつもの'
 
 /**
  * 入力欄の上に常時表示するワンタップ操作。
- * 絵文字は本文と別のTextノードで描画する(異体字セレクタ付き絵文字が
- * ラベル全体を不可視にするiOSのフォント解決問題を避けるため)。
+ * 注意: 横スクロールのScrollViewに入れるとiOS(Fabric)でラベルが描画されない
+ * 事象が2ビルド連続で再現したため、送信ボタンと同じ「素のView + Pressable + Text」
+ * 構成の固定2段グリッドにしている。構造を変えるときは実機で必ず表示確認すること。
  */
 const QUICK_ACTIONS = [
   { emoji: '🍚', label: '食事を記録', text: '食事を記録したい' },
-  { emoji: '🔥', label: 'あと何kcal?', text: '今日あと何kcal食べられる?' },
   { emoji: '💪', label: 'トレを記録', text: 'トレーニングを記録したい' },
+  { emoji: '🧠', label: 'ストレス報告', text: '今日のストレスを報告したい' },
+  { emoji: '🔥', label: 'あと何kcal?', text: '今日あと何kcal食べられる?' },
   { emoji: '📊', label: '今日の調子', text: '今日のコンディションを教えて' },
   { emoji: '🎯', label: '目標の進捗', text: '目標達成の見込みを教えて' },
 ];
@@ -122,7 +124,7 @@ export default function ChatScreen() {
       keyboardVerticalOffset={0}
     >
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
-        <Text style={styles.title}>VYTA</Text>
+        <Text style={styles.title}>AIチャット</Text>
         {summary && (
           <Text style={styles.summaryText}>
             今日 {summary.kcal}kcal 摂取
@@ -176,20 +178,20 @@ export default function ChatScreen() {
         }
       />
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.quickBar}
-        contentContainerStyle={styles.quickBarContent}
-        keyboardShouldPersistTaps="handled"
-      >
+      <View style={styles.quickBar}>
         {QUICK_ACTIONS.map((q) => (
-          <Pressable key={q.label} style={styles.quickBtn} onPress={() => send(q.text)} disabled={busy}>
-            <Text style={styles.quickEmoji}>{q.emoji}</Text>
-            <Text style={styles.quickText} allowFontScaling={false}>{q.label}</Text>
+          <Pressable
+            key={q.label}
+            style={({ pressed }) => [styles.quickBtn, pressed && { opacity: 0.6 }]}
+            onPress={() => send(q.text)}
+            disabled={busy}
+          >
+            <Text style={styles.quickText} allowFontScaling={false} numberOfLines={1}>
+              {q.emoji} {q.label}
+            </Text>
           </Pressable>
         ))}
-      </ScrollView>
+      </View>
 
       <View style={[styles.inputRow, { paddingBottom: Math.max(insets.bottom, Spacing.sm) }]}>
         <TextInput
@@ -246,16 +248,20 @@ const styles = StyleSheet.create({
   okBtn: { backgroundColor: Colors.accent },
   cancelText: { color: Colors.textSecondary, fontWeight: '600' },
   okText: { color: Colors.bg, fontWeight: '700' },
-  quickBar: { flexGrow: 0, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
-  quickBarContent: { gap: 8, paddingHorizontal: Spacing.md, paddingVertical: 8 },
-  quickBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: Colors.surfaceRaised, borderRadius: 999,
-    paddingHorizontal: 14, paddingVertical: 9,
-    borderWidth: 1, borderColor: Colors.accentDim,
+  quickBar: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
+    paddingHorizontal: Spacing.md, paddingTop: 8, paddingBottom: 2,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border,
+    backgroundColor: Colors.bg,
   },
-  quickEmoji: { fontSize: 14 },
-  quickText: { color: '#F0F5F1', fontSize: 13, fontWeight: '600' },
+  quickBtn: {
+    flexBasis: '31.5%', flexGrow: 1,
+    minHeight: 38, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.surfaceRaised, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.accentDim,
+    paddingHorizontal: 6, paddingVertical: 8,
+  },
+  quickText: { color: '#F0F5F1', fontSize: 12, fontWeight: '600' },
   inputRow: {
     flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.sm,
     paddingHorizontal: Spacing.md, paddingTop: 4,

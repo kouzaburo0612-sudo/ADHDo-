@@ -9,7 +9,7 @@ import { METRICS, type MetricKey } from '@/lib/metrics';
 import { DEFAULT_SETTINGS, loadSettings, type Settings } from '@/lib/settings';
 import { syncHealthData } from '@/lib/sync';
 import { computeTagEffects, detectAnomalies, forecastBodyFat, type Anomaly, type GoalForecast, type TagEffect } from '@/utils/baseline';
-import { computeScores, type Scores } from '@/utils/score';
+import { computeScores, EMPTY_CATEGORY, type Scores } from '@/utils/score';
 
 /** HealthKit読み取り許可(nullは判定中) */
 export function useHealthAuth() {
@@ -30,7 +30,9 @@ export interface Dashboard {
   toggleTag: (tag: string) => Promise<void>;
 }
 
-const EMPTY_SCORES: Scores = { total: null, sleep: null, recovery: null, body: null, activity: null };
+const EMPTY_SCORES: Scores = {
+  condition: EMPTY_CATEGORY, sleep: EMPTY_CATEGORY, activity: EMPTY_CATEGORY, body: EMPTY_CATEGORY,
+};
 
 export function useDashboard(): Dashboard {
   const [loading, setLoading] = useState(true);
@@ -48,6 +50,7 @@ export function useDashboard(): Dashboard {
     const range = await db.getRange(daysAgoKey(60), tk);
 
     const todayMetrics = range.get(tk) ?? {};
+    const yesterdayMetrics = range.get(daysAgoKey(1)) ?? {};
     const history: Partial<Record<MetricKey, number[]>> = {};
     for (const [date, day] of range) {
       if (date === tk) continue;
@@ -61,7 +64,7 @@ export function useDashboard(): Dashboard {
 
     setSettings(s);
     setToday(todayMetrics);
-    setScores(computeScores({ today: todayMetrics, history, settings: s }));
+    setScores(computeScores({ today: todayMetrics, yesterday: yesterdayMetrics, history, settings: s }));
     setAnomalies(detectAnomalies(todayMetrics, history));
     setForecast(forecastBodyFat(bfSeries, s.bodyFatGoal));
     setTags(await db.getTags(tk));

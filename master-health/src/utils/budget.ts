@@ -60,7 +60,11 @@ export function computeBudget(input: BudgetInput): BudgetResult {
   const dayIndex = Math.floor((input.today.getTime() - start.getTime()) / 86400000);
   const daysLeft = 7 - dayIndex; // 今日を含む
   const remaining = budget - consumed;
-  const perDayRecommended = daysLeft > 0 ? Math.round(remaining / daysLeft) : 0;
+  // 週の途中から記録を始めると残額÷残日数が非現実的に膨らむため、TDEEでキャップする
+  // (「1日5,732kcal食べてよい」のような推奨を出さない)
+  const perDayRecommended = daysLeft > 0
+    ? Math.min(Math.round(remaining / daysLeft), Math.round(input.tdee))
+    : 0;
   // 経過日数に対する均等配分と比べて消費が先行していれば超過ペース
   const expectedByNow = (budget / 7) * (dayIndex + 1);
   return {

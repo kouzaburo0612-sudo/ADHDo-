@@ -158,6 +158,16 @@ export default function HistoryScreen() {
                 {goal.pfcGrams && (
                   <Text style={styles.intakeSub}>P {goal.pfcGrams.p}g ・ F {goal.pfcGrams.f}g ・ C {goal.pfcGrams.c}g</Text>
                 )}
+                {goal.plan.intakeMode === 'auto' && goal.avgBurn != null && goal.requiredDailyDeficit != null && (
+                  <Text style={styles.intakeFormula}>
+                    計算式: 実績消費 {goal.avgBurn.toLocaleString()} − 必要赤字 {goal.requiredDailyDeficit.toLocaleString()}(脂肪1kg ≈ 7,200kcal)
+                  </Text>
+                )}
+                {goal.bmr != null && goal.targetIntakeKcal < goal.bmr && (
+                  <Text style={styles.intakeWarn}>
+                    ⚠️ 基礎代謝({goal.bmr.toLocaleString()}kcal)を下回っています。このペースは速すぎるため、目標日を後ろにずらすのがおすすめです
+                  </Text>
+                )}
               </View>
             )}
           </>
@@ -282,8 +292,10 @@ export default function HistoryScreen() {
                 <Text style={styles.budgetCap}>今週残り kcal</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.budgetNum}>{budget.perDayRecommended.toLocaleString()}</Text>
-                <Text style={styles.budgetCap}>日割り推奨 kcal</Text>
+                <Text style={styles.budgetNum}>
+                  {(goal?.targetIntakeKcal ?? budget.perDayRecommended).toLocaleString()}
+                </Text>
+                <Text style={styles.budgetCap}>今日の目標摂取 kcal</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.budgetNum}>{tdee?.effective ?? '–'}</Text>
@@ -552,6 +564,8 @@ const styles = StyleSheet.create({
   },
   intakeMain: { color: Colors.accent, fontSize: Type.body, fontWeight: '700', fontVariant: ['tabular-nums'] },
   intakeSub: { color: Colors.textSecondary, fontSize: Type.caption, marginTop: 2, fontVariant: ['tabular-nums'] },
+  intakeFormula: { color: Colors.textFaint, fontSize: Type.caption, marginTop: 4, fontVariant: ['tabular-nums'] },
+  intakeWarn: { color: Colors.warn, fontSize: Type.caption, marginTop: 6, lineHeight: 16 },
   barsRow: { flexDirection: 'row', gap: 3, marginTop: Spacing.sm },
   barCol: { flex: 1, alignItems: 'center' },
   barHalfTop: { height: 46, width: '100%', justifyContent: 'flex-end' },

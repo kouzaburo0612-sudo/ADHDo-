@@ -1,184 +1,315 @@
 /**
- * 総合健康スコアの算出ロジック
- * =============================
+ * スコアエンジン (Oura準拠の4スコア + 根拠つき)
+ * ==============================================
  *
- * 設計方針(調整するときはここを読む):
+ * 総合スコアは廃止し、Ouraと同じ考え方の4スコアを出す:
+ * - コンディション (Ouraのコンディション/readiness相当):
+ *   安静時心拍・HRVバランス・体温・昨晩の睡眠・前日の活動バランス
+ * - 睡眠 (Ouraのsleep score相当):
+ *   合計睡眠・深い睡眠・レム睡眠・いつもとの比較
+ * - 活動 (Ouraのactivity score相当):
+ *   歩数・アクティブカロリー・エクササイズ時間
+ * - 体組成 (VYTA独自): 目標体脂肪率との位置 + 30日トレンド
  *
- * 1. カテゴリ別スコア(睡眠・回復・体組成・活動量)を各0-100で算出し、
- *    設定画面の重みで加重平均して総合スコアを出す。
- *    データが無いカテゴリは除外し、残りの重みを再正規化する。
+ * 各スコアは contributor(構成要素)ごとの部分点を持ち、UIで根拠を表示する。
  *
- * 2. 各指標の評価は2本立て:
- *    - 相対評価: 本人の「過去60日ベースライン」からのzスコア。
- *      score = 50 + z * 20 (±2.5σで0/100に張り付く)。
- *      「いつもの自分と比べてどうか」を表す。ウェアラブル指標(HRV・心拍等)は
- *      個人差が大きく絶対値の基準が立てにくいため、これを主軸にする。
- *    - 絶対評価: 一般的な健康基準(睡眠7時間以上、歩数目標等)との比較。
- *      目標に対する達成率ベース。
- *    カテゴリごとに両者をブレンドする(比率は各関数のコメント参照)。
- *
- * 3. zスコア→点数の変換に20/σを使う理由:
- *    ±1σ(普段の変動範囲)が30〜70点に収まり、日々の揺らぎで極端な点数が
- *    出ない。2.5σ超え(明確な異常)だけが0/100に達する。
+ * 評価方法:
+ * - 相対評価: 過去60日ベースラインからのzスコア → 50 + z*20 (±2.5σで0/100)。
+ *   ウェアラブル指標は個人差が大きいため「いつもの自分と比べてどうか」を主軸にする。
+ * - 絶対評価: 一般基準(睡眠7.5h、深い睡眠90分、歩数目標等)に対する達成率。
  */
-import { clamp, zScore } from '@/utils/stats';
+import { clamp, zScore, mean } from '@/utils/stats';
 import type { MetricKey } from '@/lib/metrics';
-import type { ScoreWeights, Settings } from '@/lib/settings';
+import type { Settings } from '@/lib/settings';
 
 export interface ScoreInput {
   /** 当日の値 */
   today: Partial<Record<MetricKey, number>>;
+  /** 前日の値(コンディションの「前日の活動」用) */
+  yesterday: Partial<Record<MetricKey, number>>;
   /** 過去60日(当日を含まない)の指標ごとの履歴 */
   history: Partial<Record<MetricKey, number[]>>;
   settings: Settings;
 }
 
-export interface Scores {
-  total: number | null;
-  sleep: number | null;
-  recovery: number | null;
-  body: number | null;
-  activity: number | null;
+/** スコアの構成要素(根拠表示用) */
+export interface ScorePart {
+  label: string;
+  /** 実測値と基準を人間向けに説明する短文 */
+  detail: string;
+  score: number | null;
+  weight: number;
 }
+
+export interface CategoryScore {
+  score: number | null;
+  parts: ScorePart[];
+}
+
+export interface Scores {
+  condition: CategoryScore;
+  sleep: CategoryScore;
+  activity: CategoryScore;
+  body: CategoryScore;
+}
+
+export const EMPTY_CATEGORY: CategoryScore = { score: null, parts: [] };
+
+// ---- 共通ヘルパー ----
 
 /** 相対評価: ベースラインからのzスコアを0-100に写像 */
 function relative(value: number | undefined, history: number[] | undefined, higherIsBetter: boolean): number | null {
-  if (value == null || !history || history.length < 7) return null; // 1週間分未満は評価しない
+  if (value == null || !history || history.length < 7) return null;
   const z = zScore(value, history);
   if (z == null) return null;
   const signed = higherIsBetter ? z : -z;
   return clamp(50 + signed * 20, 0, 100);
 }
 
-/** 絶対評価: 目標達成率(cap以上で満点) */
-function ratioScore(value: number, goal: number, cap = 1.0): number {
+/** 絶対評価: 目標達成率(goal以上で満点) */
+function ratioScore(value: number, goal: number): number {
   if (goal <= 0) return 100;
-  return clamp((value / goal / cap) * 100, 0, 100);
+  return clamp((value / goal) * 100, 0, 100);
 }
 
-/**
- * 睡眠スコア
- * - 睡眠時間(重み0.5): 絶対評価70% + 相対評価30%。
- *   目標時間(初期値7.5h)に対して、不足は線形減点。超過は減点しない
- *   (寝すぎのペナルティは初版では入れない。必要になったら追加)。
- * - 深い睡眠(0.25)・レム睡眠(0.25): 相対評価のみ。
- *   ステージ配分の理想値は個人差が大きすぎるため、絶対基準は使わない。
- */
-export function sleepScore(input: ScoreInput): number | null {
+function avgOf(history: number[] | undefined): number | null {
+  if (!history || history.length < 7) return null;
+  return mean(history.slice(-60));
+}
+
+function fmtDuration(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return h > 0 ? `${h}h${String(m).padStart(2, '0')}m` : `${m}m`;
+}
+
+/** 非null部分点の加重平均 */
+function combine(parts: ScorePart[]): number | null {
+  const usable = parts.filter((p) => p.score != null);
+  if (usable.length === 0) return null;
+  const wSum = usable.reduce((a, p) => a + p.weight, 0);
+  return Math.round(clamp(usable.reduce((a, p) => a + p.score! * p.weight, 0) / wSum, 0, 100));
+}
+
+/** 相対評価の説明文 */
+function vsUsual(value: number, avg: number | null, unit: string, decimals = 0): string {
+  const v = value.toFixed(decimals);
+  if (avg == null) return `${v}${unit}(基準データ蓄積中)`;
+  return `${v}${unit}(60日平均 ${avg.toFixed(decimals)}${unit})`;
+}
+
+// ---- 睡眠スコア (Oura準拠) ----
+
+export function sleepScoreDetail(input: ScoreInput): CategoryScore {
   const { today, history, settings } = input;
   const total = today.sleep_total;
-  if (total == null) return null;
+  if (total == null) return { score: null, parts: [] };
 
-  const abs = ratioScore(total, settings.sleepGoalMin);
+  const goal = settings.sleepGoalMin; // 初期値 7.5h
+  const parts: ScorePart[] = [];
+
+  // 合計睡眠: 目標に対する達成率(Ouraの「合計睡眠」)
+  parts.push({
+    label: '合計睡眠',
+    detail: `${fmtDuration(total)} / 目標 ${fmtDuration(goal)}`,
+    score: ratioScore(total, goal),
+    weight: 0.35,
+  });
+
+  // 深い睡眠: 90分を満点基準(一般的な理想量)+ 本人比
+  const deep = today.sleep_deep;
+  if (deep != null) {
+    const abs = ratioScore(deep, 90);
+    const rel = relative(deep, history.sleep_deep, true);
+    parts.push({
+      label: '深い睡眠',
+      detail: `${fmtDuration(deep)} / 理想 1h30m`,
+      score: rel == null ? abs : abs * 0.6 + rel * 0.4,
+      weight: 0.25,
+    });
+  }
+
+  // レム睡眠: 90分を満点基準
+  const rem = today.sleep_rem;
+  if (rem != null) {
+    const abs = ratioScore(rem, 90);
+    const rel = relative(rem, history.sleep_rem, true);
+    parts.push({
+      label: 'レム睡眠',
+      detail: `${fmtDuration(rem)} / 理想 1h30m`,
+      score: rel == null ? abs : abs * 0.6 + rel * 0.4,
+      weight: 0.25,
+    });
+  }
+
+  // いつもとの比較(睡眠の安定性)
   const rel = relative(total, history.sleep_total, true);
-  const durationScore = rel == null ? abs : abs * 0.7 + rel * 0.3;
+  if (rel != null) {
+    parts.push({
+      label: 'いつもとの比較',
+      detail: vsUsual(total / 60, (avgOf(history.sleep_total) ?? 0) / 60 || null, 'h', 1),
+      score: rel,
+      weight: 0.15,
+    });
+  }
 
-  const deep = relative(today.sleep_deep, history.sleep_deep, true);
-  const rem = relative(today.sleep_rem, history.sleep_rem, true);
-
-  let score = durationScore * 0.5;
-  let weight = 0.5;
-  if (deep != null) { score += deep * 0.25; weight += 0.25; }
-  if (rem != null) { score += rem * 0.25; weight += 0.25; }
-  return clamp(score / weight, 0, 100);
+  return { score: combine(parts), parts };
 }
 
-/**
- * 回復スコア(HRV・安静時心拍・体表温)
- * - HRV(重み0.5): 相対評価。高いほど良い。
- * - 安静時心拍(0.35): 相対評価。低いほど良い。
- * - 体表温(0.15): 平常から離れるほど減点(|z|1つで-20点)。
- *   方向を問わないのは、上振れ(発熱・炎症)も下振れ(環境要因等)も
- *   「普段と違う」シグナルとして扱うため。
- */
-export function recoveryScore(input: ScoreInput): number | null {
-  const { today, history } = input;
-  const hrv = relative(today.hrv, history.hrv, true);
-  const rhr = relative(today.rhr, history.rhr, false);
+// ---- コンディションスコア (Ouraのreadiness準拠) ----
 
-  let temp: number | null = null;
+export function conditionScoreDetail(input: ScoreInput): CategoryScore {
+  const { today, yesterday, history } = input;
+  const parts: ScorePart[] = [];
+
+  // HRVバランス: 本人ベースライン比(高いほど良い)
+  if (today.hrv != null) {
+    parts.push({
+      label: 'HRVバランス',
+      detail: vsUsual(today.hrv, avgOf(history.hrv), 'ms'),
+      score: relative(today.hrv, history.hrv, true),
+      weight: 0.3,
+    });
+  }
+
+  // 安静時心拍: 本人ベースライン比(低いほど良い)
+  if (today.rhr != null) {
+    parts.push({
+      label: '安静時心拍',
+      detail: vsUsual(today.rhr, avgOf(history.rhr), 'bpm'),
+      score: relative(today.rhr, history.rhr, false),
+      weight: 0.25,
+    });
+  }
+
+  // 体温: 平常から離れるほど減点(上振れも下振れも異常シグナル)
   if (today.wrist_temp != null && history.wrist_temp && history.wrist_temp.length >= 7) {
     const z = zScore(today.wrist_temp, history.wrist_temp);
-    if (z != null) temp = clamp(100 - Math.abs(z) * 20, 0, 100);
+    if (z != null) {
+      parts.push({
+        label: '体温',
+        detail: `平常との差 ${z >= 0 ? '+' : ''}${(today.wrist_temp - (avgOf(history.wrist_temp) ?? today.wrist_temp)).toFixed(2)}°C`,
+        score: clamp(100 - Math.abs(z) * 20, 0, 100),
+        weight: 0.15,
+      });
+    }
   }
 
-  const parts: { v: number; w: number }[] = [];
-  if (hrv != null) parts.push({ v: hrv, w: 0.5 });
-  if (rhr != null) parts.push({ v: rhr, w: 0.35 });
-  if (temp != null) parts.push({ v: temp, w: 0.15 });
-  if (parts.length === 0) return null;
-  const wSum = parts.reduce((a, p) => a + p.w, 0);
-  return clamp(parts.reduce((a, p) => a + p.v * p.w, 0) / wSum, 0, 100);
+  // 昨晩の睡眠
+  const sleep = sleepScoreDetail(input);
+  if (sleep.score != null) {
+    parts.push({
+      label: '昨晩の睡眠',
+      detail: `睡眠スコア ${sleep.score}`,
+      score: sleep.score,
+      weight: 0.2,
+    });
+  }
+
+  // 前日の活動バランス: 動きすぎも動かなすぎも回復に響く(|z|で減点)
+  if (yesterday.active_energy != null && history.active_energy && history.active_energy.length >= 7) {
+    const z = zScore(yesterday.active_energy, history.active_energy);
+    if (z != null) {
+      parts.push({
+        label: '前日の活動バランス',
+        detail: z > 1 ? 'いつもより多め' : z < -1 ? 'いつもより少なめ' : 'いつも並み',
+        score: clamp(100 - Math.max(0, Math.abs(z) - 0.5) * 25, 0, 100),
+        weight: 0.1,
+      });
+    }
+  }
+
+  return { score: combine(parts), parts };
 }
 
-/**
- * 体組成スコア(体脂肪率の目標達成 + トレンド)
- * - 位置(重み0.7): 目標体脂肪率との差。目標以下で100点、
- *   1%上回るごとに-8点(例: 目標14.9%で18.9%なら68点)。
- *   「-8点/%」は、±4%の範囲でスコアが意味を持つように選んだ係数。
- * - トレンド(0.3): 直近30日ベースラインとの相対評価(低いほど良い)。
- *   日々の測定ノイズを吸収しつつ、改善方向なら加点される。
- * - 体脂肪率が無い日は体重で代用(目標体重設定時のみ)。
- */
-export function bodyScore(input: ScoreInput): number | null {
+// ---- 活動スコア (Ouraのactivity準拠) ----
+
+export function activityScoreDetail(input: ScoreInput): CategoryScore {
   const { today, history, settings } = input;
+  const parts: ScorePart[] = [];
+
+  if (today.steps != null) {
+    parts.push({
+      label: '歩数',
+      detail: `${Math.round(today.steps).toLocaleString()}歩 / 目標 ${settings.stepsGoal.toLocaleString()}歩`,
+      score: ratioScore(today.steps, settings.stepsGoal),
+      weight: 0.4,
+    });
+  }
+
+  if (today.active_energy != null) {
+    const abs = ratioScore(today.active_energy, 450); // Ouraのデイリー目標中庸値
+    const rel = relative(today.active_energy, history.active_energy, true);
+    parts.push({
+      label: 'アクティブカロリー',
+      detail: `${Math.round(today.active_energy)}kcal / 目標 450kcal`,
+      score: rel == null ? abs : abs * 0.6 + rel * 0.4,
+      weight: 0.35,
+    });
+  }
+
+  if (today.exercise_time != null) {
+    parts.push({
+      label: 'エクササイズ時間',
+      detail: `${Math.round(today.exercise_time)}分 / 目標 30分`,
+      score: ratioScore(today.exercise_time, 30),
+      weight: 0.25,
+    });
+  }
+
+  return { score: combine(parts), parts };
+}
+
+// ---- 体組成スコア (VYTA独自) ----
+
+export function bodyScoreDetail(input: ScoreInput): CategoryScore {
+  const { today, history, settings } = input;
+  const parts: ScorePart[] = [];
   const bf = today.body_fat ?? lastOf(history.body_fat);
+
   if (bf != null) {
-    const position = clamp(100 - Math.max(0, bf - settings.bodyFatGoal) * 8, 0, 100);
+    // 位置: 目標以下で100点、1%上回るごとに-8点
+    parts.push({
+      label: '目標との位置',
+      detail: `体脂肪率 ${bf.toFixed(1)}% / 目標 ${settings.bodyFatGoal}%`,
+      score: clamp(100 - Math.max(0, bf - settings.bodyFatGoal) * 8, 0, 100),
+      weight: 0.7,
+    });
     const rel = relative(bf, history.body_fat, false);
-    return rel == null ? position : clamp(position * 0.7 + rel * 0.3, 0, 100);
-  }
-  if (settings.weightGoal != null) {
+    if (rel != null) {
+      parts.push({
+        label: '30日トレンド',
+        detail: rel >= 55 ? '改善方向' : rel <= 45 ? '悪化方向' : '横ばい',
+        score: rel,
+        weight: 0.3,
+      });
+    }
+  } else if (settings.weightGoal != null) {
     const w = today.weight ?? lastOf(history.weight);
-    if (w == null) return null;
-    return clamp(100 - Math.max(0, w - settings.weightGoal) * 5, 0, 100);
+    if (w != null) {
+      parts.push({
+        label: '目標体重との位置',
+        detail: `${w.toFixed(1)}kg / 目標 ${settings.weightGoal}kg`,
+        score: clamp(100 - Math.max(0, w - settings.weightGoal) * 5, 0, 100),
+        weight: 1,
+      });
+    }
   }
-  return null;
+
+  return { score: combine(parts), parts };
 }
 
-/**
- * 活動量スコア(歩数 + アクティブカロリー)
- * - 歩数(重み0.6): 絶対評価。目標歩数に対する達成率。
- * - アクティブカロリー(0.4): 相対評価。「いつもより動いたか」。
- *   カロリーの絶対目標は個人差・機器差が大きいため使わない。
- */
-export function activityScore(input: ScoreInput): number | null {
-  const { today, history, settings } = input;
-  const parts: { v: number; w: number }[] = [];
-  if (today.steps != null) parts.push({ v: ratioScore(today.steps, settings.stepsGoal), w: 0.6 });
-  const energy = relative(today.active_energy, history.active_energy, true);
-  if (energy != null) parts.push({ v: energy, w: 0.4 });
-  if (parts.length === 0) return null;
-  const wSum = parts.reduce((a, p) => a + p.w, 0);
-  return clamp(parts.reduce((a, p) => a + p.v * p.w, 0) / wSum, 0, 100);
-}
+// ---- まとめ ----
 
-/** 総合スコア: カテゴリの加重平均(欠測カテゴリは重みを再正規化) */
 export function computeScores(input: ScoreInput): Scores {
-  const s: Scores = {
-    sleep: roundOrNull(sleepScore(input)),
-    recovery: roundOrNull(recoveryScore(input)),
-    body: roundOrNull(bodyScore(input)),
-    activity: roundOrNull(activityScore(input)),
-    total: null,
+  return {
+    condition: conditionScoreDetail(input),
+    sleep: sleepScoreDetail(input),
+    activity: activityScoreDetail(input),
+    body: bodyScoreDetail(input),
   };
-  const w = input.settings.weights;
-  const parts: { v: number; w: number }[] = [];
-  (['sleep', 'recovery', 'body', 'activity'] as (keyof ScoreWeights)[]).forEach((k) => {
-    const v = s[k];
-    if (v != null && w[k] > 0) parts.push({ v, w: w[k] });
-  });
-  if (parts.length > 0) {
-    const wSum = parts.reduce((a, p) => a + p.w, 0);
-    s.total = Math.round(parts.reduce((a, p) => a + p.v * p.w, 0) / wSum);
-  }
-  return s;
 }
 
 function lastOf(xs: number[] | undefined): number | null {
   return xs && xs.length > 0 ? xs[xs.length - 1] : null;
-}
-
-function roundOrNull(x: number | null): number | null {
-  return x == null ? null : Math.round(x);
 }

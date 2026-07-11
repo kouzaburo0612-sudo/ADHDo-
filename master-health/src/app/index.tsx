@@ -10,7 +10,6 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ScoreRing } from '@/components/ScoreRing';
 import { Card, Chip, SectionTitle } from '@/components/ui';
 import { Colors, Fonts, Spacing, Type, scoreColor } from '@/constants/theme';
 import { useDashboard, useHealthAuth } from '@/hooks/useHealthData';
@@ -19,11 +18,12 @@ import { addDays, formatKeyJa, fromKey, toKey, todayKey } from '@/lib/dates';
 import { BODY_DETAIL_ORDER, METRICS, formatValue, PRESET_TAGS, type MetricKey } from '@/lib/metrics';
 import { balanceSeries, calorieBank, KCAL_PER_KG_FAT, type BankSummary, type DayBalance } from '@/utils/deficit';
 
+/** 左から: コンディション・睡眠・活動・体組成 (Ouraと同じ並び感) */
 const CATEGORIES = [
+  { key: 'condition' as const, label: 'コンディション', color: Colors.recovery },
   { key: 'sleep' as const, label: '睡眠', color: Colors.sleep },
-  { key: 'recovery' as const, label: '回復', color: Colors.recovery },
+  { key: 'activity' as const, label: '活動', color: Colors.activity },
   { key: 'body' as const, label: '体組成', color: Colors.body },
-  { key: 'activity' as const, label: '活動量', color: Colors.activity },
 ];
 
 interface DayData {
@@ -43,6 +43,8 @@ export default function MyBodyScreen() {
   const [day, setDay] = useState<DayData | null>(null);
   const [bank, setBank] = useState<BankSummary | null>(null);
   const [customTags, setCustomTags] = useState<{ name: string; emoji: string }[]>([]);
+  /** 根拠を展開中のスコアカード */
+  const [expanded, setExpanded] = useState<(typeof CATEGORIES)[number]['key'] | null>(null);
 
   const isToday = dateKey === todayKey();
 
@@ -72,7 +74,7 @@ export default function MyBodyScreen() {
       const balance = series.length > 0 ? series[0] : null;
       const tags = await getTags(key);
       setDay({ metrics, weight, bodyFat, balance, tags });
-      setBank(await calorieBank());
+      setBank(await calorieBank(key)); // その日「時点まで」の累積
     } catch { /* 表示は次のフォーカスで再試行 */ }
   }, []);
 
@@ -145,6 +147,56 @@ export default function MyBodyScreen() {
           </Pressable>
         </View>
 
+        {/* スコア(コンディション・睡眠・活動・体組成)。タップで根拠を表示 */}
+        {isToday && (
+          <>
+            <View style={styles.categoryRow}>
+              {CATEGORIES.map((c) => {
+                const v = d.scores[c.key].score;
+                return (
+                  <Pressable
+                    key={c.key}
+                    style={{ flex: 1 }}
+                    onPress={() => setExpanded(expanded === c.key ? null : c.key)}
+                  >
+                    <Card style={[styles.categoryCard, expanded === c.key && { borderColor: c.color, borderWidth: 1 }]}>
+                      <Text style={[styles.categoryValue, { color: scoreColor(v) }]}>{v ?? '–'}</Text>
+                      <View style={styles.categoryLabelRow}>
+                        <View style={[styles.dot, { backgroundColor: c.color }]} />
+                        <Text style={styles.categoryLabel} numberOfLines={1} adjustsFontSizeToFit>
+                          {c.label}
+                        </Text>
+                      </View>
+                    </Card>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {expanded != null && (
+              <Card style={styles.breakdownCard}>
+                <Text style={styles.breakdownTitle}>
+                  {CATEGORIES.find((c) => c.key === expanded)?.label}スコアの根拠
+                </Text>
+                {d.scores[expanded].parts.length === 0 ? (
+                  <Text style={styles.balanceEmpty}>この日は算出に必要なデータがありません</Text>
+                ) : (
+                  d.scores[expanded].parts.map((p, i) => (
+                    <View key={p.label} style={[styles.statRow, i > 0 && styles.statRowBorder]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.statLabel}>{p.label}</Text>
+                        <Text style={styles.breakdownDetail}>{p.detail}</Text>
+                      </View>
+                      <Text style={[styles.statValue, { color: scoreColor(p.score) }]}>
+                        {p.score != null ? Math.round(p.score) : '–'}
+                      </Text>
+                    </View>
+                  ))
+                )}
+              </Card>
+            )}
+          </>
+        )}
+
         {/* 主役: 体重と体脂肪率 */}
         <View style={styles.heroRow}>
           <Card style={styles.heroCard}>
@@ -176,7 +228,7 @@ export default function MyBodyScreen() {
             {bal != null && (
               <View style={[styles.badge, { backgroundColor: deficit ? Colors.accentDim : '#5C2320' }]}>
                 <Text style={[styles.badgeText, { color: deficit ? Colors.deficit : Colors.surplus }]}>
-                  {deficit ? '🔥 赤字' : '黒字'}
+                  {deficit ? '🔥 脂肪燃焼' : '食べ過ぎ'}
                 </Text>
               </View>
             )}
@@ -195,19 +247,19 @@ export default function MyBodyScreen() {
           ) : (
             <Text style={styles.balanceEmpty}>
               {day?.balance?.intake == null
-                ? '食事を記録すると収支が出ます(報告タブ or チャット)'
+                ? '食事を記録すると収支が出ます(実績報告タブ or AIチャット)'
                 : '設定タブで身長・生年月日を入れると消費カロリーを計算できます'}
             </Text>
           )}
         </Card>
 
-        {/* カロリー貯金(ゲーム化) */}
+        {/* カロリー赤字の累積(ゲーム化) */}
         {bank && (bank.countedDays > 0 || bank.neededKcal != null) && (
           <Card style={styles.bankCard}>
             <View style={styles.balanceHead}>
-              <Text style={styles.heroLabel}>カロリー貯金</Text>
+              <Text style={styles.heroLabel}>{isToday ? 'カロリー赤字(累積)' : 'この日時点のカロリー赤字(累積)'}</Text>
               {bank.streakDays >= 2 && (
-                <Text style={styles.streakText}>🔥 {bank.streakDays}日連続赤字</Text>
+                <Text style={styles.streakText}>🔥 {bank.streakDays}日連続脂肪燃焼中</Text>
               )}
             </View>
             <Text style={styles.bankValue}>
@@ -229,29 +281,6 @@ export default function MyBodyScreen() {
               <Text style={styles.balanceSub}>トレンドタブで目標体重を設定すると進捗バーが出ます</Text>
             )}
           </Card>
-        )}
-
-        {/* 総合スコア(今日のみ) */}
-        {isToday && (
-          <>
-            <View style={styles.ringWrap}>
-              <ScoreRing score={d.scores.total} />
-            </View>
-            <View style={styles.categoryRow}>
-              {CATEGORIES.map((c) => {
-                const v = d.scores[c.key];
-                return (
-                  <Card key={c.key} style={styles.categoryCard}>
-                    <Text style={[styles.categoryValue, { color: scoreColor(v) }]}>{v ?? '–'}</Text>
-                    <View style={styles.categoryLabelRow}>
-                      <View style={[styles.dot, { backgroundColor: c.color }]} />
-                      <Text style={styles.categoryLabel}>{c.label}</Text>
-                    </View>
-                  </Card>
-                );
-              })}
-            </View>
-          </>
         )}
 
         {/* 体調変化の兆候(今日のみ) */}
@@ -350,9 +379,11 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm, overflow: 'hidden',
   },
   progressFill: { height: 10, borderRadius: 5, backgroundColor: Colors.accent },
-  ringWrap: { alignItems: 'center', marginVertical: Spacing.lg },
-  categoryRow: { flexDirection: 'row', gap: Spacing.sm },
-  categoryCard: { flex: 1, alignItems: 'center', paddingVertical: Spacing.md, paddingHorizontal: 4 },
+  categoryRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
+  categoryCard: { alignItems: 'center', paddingVertical: Spacing.md, paddingHorizontal: 4 },
+  breakdownCard: { marginBottom: Spacing.sm },
+  breakdownTitle: { color: Colors.textSecondary, fontSize: Type.caption, marginBottom: 4 },
+  breakdownDetail: { color: Colors.textFaint, fontSize: Type.caption, marginTop: 2 },
   categoryValue: {
     fontSize: Type.metric, fontFamily: Fonts.display, fontWeight: '700', fontVariant: ['tabular-nums'],
   },

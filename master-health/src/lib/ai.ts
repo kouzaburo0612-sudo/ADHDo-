@@ -39,7 +39,7 @@ export function buildDataSummary(days: DaySummary[]): string {
       parts.push(`${METRICS[k].label}${formatValue(k, d.metrics[k])}${METRICS[k].asDuration ? '' : METRICS[k].unit}`);
     });
     if (d.tags.length > 0) parts.push(`タグ:${d.tags.join('・')}`);
-    if (d.scores?.total != null) parts.push(`総合スコア${d.scores.total}`);
+    if (d.scores?.condition.score != null) parts.push(`コンディションスコア${d.scores.condition.score}`);
     lines.push(`${formatKeyJa(d.date)}: ${parts.join(' / ') || 'データなし'}`);
   }
   return lines.join('\n');

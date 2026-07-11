@@ -83,28 +83,33 @@ export interface BankSummary {
   progress: number | null;
 }
 
-/** カロリー貯金の集計。目標開始日(なければ直近90日)以降の赤字を積み上げる */
-export async function calorieBank(): Promise<BankSummary> {
+/**
+ * カロリー赤字の累積を集計する。目標開始日(なければ直近90日)以降が対象。
+ * @param untilKey この日付「時点まで」の累積にする(省略時は今日まで)。
+ *                 My Bodyで過去日を見たとき、その日時点の値を出すために使う。
+ */
+export async function calorieBank(untilKey?: string): Promise<BankSummary> {
   const plan = await getGoalPlan();
   const today = new Date();
+  const endKey = untilKey ?? toKey(today);
   const startKey = plan.startDate ?? toKey(addDays(today, -90));
   const span = Math.max(1, Math.min(400,
     Math.round((today.getTime() - new Date(startKey).getTime()) / 86400000) + 1));
-  const series = await balanceSeries(span);
+  const upto = (await balanceSeries(span)).filter((d) => d.date <= endKey);
 
   let banked = 0;
   let counted = 0;
-  for (const d of series) {
+  for (const d of upto) {
     if (d.date < startKey || d.balance == null) continue;
-    banked += -d.balance; // 赤字(負のbalance)を正の貯金として積む
+    banked += -d.balance; // 赤字(負のbalance)を正の累積として積む
     counted++;
   }
 
-  // ストリーク: 末尾(今日)から遡って赤字が続く日数。今日が未記録ならスキップして昨日から
+  // ストリーク: 末尾(対象日)から遡って赤字が続く日数。対象日が未記録ならスキップして前日から
   let streak = 0;
-  for (let i = series.length - 1; i >= 0; i--) {
-    const d = series[i];
-    if (i === series.length - 1 && d.balance == null) continue;
+  for (let i = upto.length - 1; i >= 0; i--) {
+    const d = upto[i];
+    if (i === upto.length - 1 && d.balance == null) continue;
     if (d.balance != null && d.balance < 0) streak++;
     else break;
   }
@@ -138,6 +143,8 @@ export interface GoalNumbers {
   requiredDailyDeficit: number | null;
   /** 平均消費(活動ベースTDEEの14日平均) */
   avgBurn: number | null;
+  /** 基礎代謝(これを下回る摂取目標は警告する) */
+  bmr: number | null;
   /** 目標摂取カロリー(auto=消費−必要赤字 / custom=手入力) */
   targetIntakeKcal: number | null;
   /** PFC目標グラム */
@@ -157,6 +164,11 @@ export async function goalNumbers(): Promise<GoalNumbers> {
   const series = await balanceSeries(14);
   const burns = series.map((d) => d.burn).filter((b): b is number => b != null);
   const avgBurn = burns.length ? Math.round(burns.reduce((a, b) => a + b, 0) / burns.length) : null;
+
+  const age = ageFrom(profile.birthDate);
+  const bmr = currentWeightKg != null && profile.heightCm != null && age != null
+    ? mifflinStJeor(currentWeightKg, profile.heightCm, age, profile.sex)
+    : null;
 
   let remainingKg: number | null = null;
   let daysLeft: number | null = null;
@@ -190,6 +202,6 @@ export async function goalNumbers(): Promise<GoalNumbers> {
 
   return {
     plan, profile, currentWeightKg, remainingKg, daysLeft,
-    paceKgPerWeek, requiredDailyDeficit, avgBurn, targetIntakeKcal, pfcGrams,
+    paceKgPerWeek, requiredDailyDeficit, avgBurn, bmr, targetIntakeKcal, pfcGrams,
   };
 }

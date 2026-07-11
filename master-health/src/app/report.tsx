@@ -10,7 +10,7 @@ import {
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Card, Chip, SectionTitle, Segmented } from '@/components/ui';
+import { Card, Chip, SectionTitle } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { adviceErrorMessage } from '@/lib/ai';
 import { lookupBarcode, type BarcodeProduct } from '@/lib/barcode';
@@ -47,17 +47,23 @@ export default function ReportScreen() {
       contentContainerStyle={{ paddingTop: insets.top + Spacing.md, padding: Spacing.md, paddingBottom: 120 }}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.title}>報告</Text>
-      <View style={{ marginTop: Spacing.sm }}>
-        <Segmented
-          options={[
-            { value: 'meal', label: '🍚 食事' },
-            { value: 'workout', label: '💪 運動' },
-            { value: 'stress', label: '🧠 ストレス' },
-          ]}
-          value={tab}
-          onChange={setTab}
-        />
+      <Text style={styles.title}>実績報告</Text>
+      {/* 大きく目立つ切り替えタブ(食事/運動/ストレス) */}
+      <View style={styles.bigTabs}>
+        {([
+          { value: 'meal' as const, emoji: '🍚', label: '食事' },
+          { value: 'workout' as const, emoji: '💪', label: '運動' },
+          { value: 'stress' as const, emoji: '🧠', label: 'ストレス' },
+        ]).map((t) => (
+          <Pressable
+            key={t.value}
+            style={[styles.bigTab, tab === t.value && styles.bigTabActive]}
+            onPress={() => setTab(t.value)}
+          >
+            <Text style={styles.bigTabEmoji}>{t.emoji}</Text>
+            <Text style={[styles.bigTabLabel, tab === t.value && styles.bigTabLabelActive]}>{t.label}</Text>
+          </Pressable>
+        ))}
       </View>
       {tab === 'meal' && <MealSection />}
       {tab === 'workout' && <WorkoutSection />}
@@ -647,6 +653,16 @@ function fmtTime(iso: string): string {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.bg },
   title: { color: Colors.text, fontSize: Type.title, fontFamily: Fonts.sans, fontWeight: '700' },
+  bigTabs: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.md },
+  bigTab: {
+    flex: 1, alignItems: 'center', paddingVertical: Spacing.md,
+    backgroundColor: Colors.surface, borderRadius: Radius.md,
+    borderWidth: 2, borderColor: Colors.border,
+  },
+  bigTabActive: { backgroundColor: Colors.accentDim, borderColor: Colors.accent },
+  bigTabEmoji: { fontSize: 26 },
+  bigTabLabel: { color: Colors.textSecondary, fontSize: Type.body, fontWeight: '600', marginTop: 4 },
+  bigTabLabelActive: { color: Colors.text, fontWeight: '700' },
   totalCard: { marginTop: Spacing.md, alignItems: 'center', paddingVertical: Spacing.lg },
   totalKcal: {
     color: Colors.text, fontSize: 44, fontFamily: Fonts.display, fontWeight: '700',

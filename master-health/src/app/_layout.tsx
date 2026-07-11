@@ -1,11 +1,13 @@
 import { DarkTheme, ThemeProvider } from 'expo-router';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { Onboarding } from '@/components/Onboarding';
 import { Colors } from '@/constants/theme';
+import { kvGet, kvSet } from '@/lib/db';
 import { rescheduleReminders } from '@/lib/notifications';
 
 const theme = {
@@ -21,14 +23,23 @@ const theme = {
 };
 
 export default function RootLayout() {
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
   // 起動時とフォアグラウンド復帰時にリマインダー(朝プラン・食事)を予約し直す
   useEffect(() => {
     rescheduleReminders().catch(() => {});
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') rescheduleReminders().catch(() => {});
     });
+    // 初回起動のみチュートリアルを出す
+    kvGet('onboarded_v1').then((v) => { if (!v) setShowOnboarding(true); }).catch(() => {});
     return () => sub.remove();
   }, []);
+
+  const finishOnboarding = () => {
+    setShowOnboarding(false);
+    kvSet('onboarded_v1', 'done').catch(() => {});
+  };
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -46,11 +57,11 @@ export default function RootLayout() {
             <NativeTabs.Trigger.Icon sf={{ default: 'heart.text.square', selected: 'heart.text.square.fill' }} />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="chat">
-            <NativeTabs.Trigger.Label>チャット</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Label>AIチャット</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf={{ default: 'bubble.left.and.text.bubble.right', selected: 'bubble.left.and.text.bubble.right.fill' }} />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="report">
-            <NativeTabs.Trigger.Label>報告</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Label>実績報告</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf={{ default: 'fork.knife.circle', selected: 'fork.knife.circle.fill' }} />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="history">
@@ -62,6 +73,7 @@ export default function RootLayout() {
             <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
           </NativeTabs.Trigger>
         </NativeTabs>
+        <Onboarding visible={showOnboarding} onDone={finishOnboarding} />
       </ThemeProvider>
     </GestureHandlerRootView>
   );
