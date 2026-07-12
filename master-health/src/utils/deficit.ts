@@ -69,14 +69,16 @@ export async function balanceSeries(days: number): Promise<DayBalance[]> {
   const plan = await getGoalPlan();
   const age = ageFrom(profile.birthDate);
   const from = addDays(today, -(days + 10)); // 体重のcarry-forwardと7日平均用に余分に取る
+  // 上限は「今日の終わり」まで取る(今晩の食事など、現在時刻より後の記録も当日分に含める)
+  const dayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
   const metricMap = await getRange(toKey(from), toKey(today));
-  const intakeMap = await dailyIntake(from.toISOString(), today.toISOString());
+  const intakeMap = await dailyIntake(from.toISOString(), dayEnd.toISOString());
 
   // 手動トレ記録(HealthKitワークアウトが無い日のEATに使う)
   // cardio: 有酸素プリセット(reps=1,sets=1の単一種目)として記録される
   const workoutByDay = new Map<string, { strengthMin: number; cardioMin: number; count: number }>();
   try {
-    for (const w of await listWorkoutLogs(from.toISOString(), today.toISOString())) {
+    for (const w of await listWorkoutLogs(from.toISOString(), dayEnd.toISOString())) {
       const k = localDateKey(w.timestamp);
       const acc = workoutByDay.get(k) ?? { strengthMin: 0, cardioMin: 0, count: 0 };
       const isCardio = w.exercises.length === 1 && w.exercises[0].reps === 1 && w.exercises[0].sets === 1;
@@ -188,23 +190,23 @@ export interface BankSummary {
 }
 
 /**
- * カロリー赤字の累積を集計する。目標開始日(なければ直近90日)以降が対象。
+ * カロリー赤字の累積を集計する。記録があるすべての日(直近400日)が対象で、
+ * 目標を編集してもリセットされない(v3.6までは目標編集で起点が今日に戻り、
+ * 前日以前の赤字が消えて見えるバグがあった)。
+ * 進捗バーは「現在の体組成から目標までに必要な残り赤字」を基準にする:
+ *   目標まで = 残り必要赤字 / 達成率 = 累積 ÷ (累積 + 残り必要赤字)
  * @param untilKey この日付「時点まで」の累積にする(省略時は今日まで)。
  *                 My Bodyで過去日を見たとき、その日時点の値を出すために使う。
  */
 export async function calorieBank(untilKey?: string): Promise<BankSummary> {
-  const plan = await getGoalPlan();
   const today = new Date();
   const endKey = untilKey ?? toKey(today);
-  const startKey = plan.startDate ?? toKey(addDays(today, -90));
-  const span = Math.max(1, Math.min(400,
-    Math.round((today.getTime() - new Date(startKey).getTime()) / 86400000) + 1));
-  const upto = (await balanceSeries(span)).filter((d) => d.date <= endKey);
+  const upto = (await balanceSeries(400)).filter((d) => d.date <= endKey);
 
   let banked = 0;
   let counted = 0;
   for (const d of upto) {
-    if (d.date < startKey || d.balance == null) continue;
+    if (d.balance == null) continue;
     banked += -d.balance; // 赤字(負のbalance)を正の累積として積む
     counted++;
   }
@@ -218,9 +220,14 @@ export async function calorieBank(untilKey?: string): Promise<BankSummary> {
     else break;
   }
 
-  const needed = plan.targetWeightKg != null && plan.startWeightKg != null && plan.startWeightKg > plan.targetWeightKg
-    ? (plan.startWeightKg - plan.targetWeightKg) * KCAL_PER_KG_FAT
-    : null;
+  // 残り必要赤字は「今の体組成 → 目標」から算出(過去の起点体重に依存しない)
+  let needed: number | null = null;
+  try {
+    const g = await goalNumbers();
+    if (g.remainingKg != null) {
+      needed = Math.round(banked) + Math.max(0, Math.round(g.remainingKg * KCAL_PER_KG_FAT));
+    }
+  } catch { /* 目標未設定なら進捗バーなし */ }
 
   return {
     bankedKcal: Math.round(banked),

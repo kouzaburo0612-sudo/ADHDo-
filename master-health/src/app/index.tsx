@@ -19,6 +19,7 @@ import type { Scores } from '@/utils/score';
 import { getCustomTags, addCustomTag, addTag, removeTag, getTags, getRange } from '@/lib/db';
 import { addDays, formatKeyJa, fromKey, toKey, todayKey } from '@/lib/dates';
 import { BODY_DETAIL_ORDER, METRICS, formatValue, PRESET_TAGS, type MetricKey } from '@/lib/metrics';
+import { listMealLogs, listTemplates, listWorkoutLogs, localDateKey } from '@/lib/store';
 import { balanceSeries, calorieBank, KCAL_PER_KG_FAT, type BankSummary, type DayBalance } from '@/utils/deficit';
 
 /** 左から: コンディション・睡眠・活動・体組成 (Ouraと同じ並び感) */
@@ -29,6 +30,9 @@ const CATEGORIES = [
   { key: 'body' as const, label: '体組成', color: Colors.body },
 ];
 
+interface MealRow { id: string; time: string; label: string; kcal: number }
+interface WorkoutRow { id: string; time: string; label: string; detail: string }
+
 interface DayData {
   metrics: Partial<Record<MetricKey, number>>;
   /** 体重・体脂肪率は7日以内の直近値で補完(計測しない日も空欄にしない) */
@@ -36,7 +40,15 @@ interface DayData {
   bodyFat: number | null;
   balance: DayBalance | null;
   tags: string[];
+  /** その日に記録された食事・運動(実績報告タブ/AIチャット経由) */
+  meals: MealRow[];
+  workouts: WorkoutRow[];
 }
+
+const hhmm = (iso: string): string => {
+  const t = new Date(iso);
+  return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+};
 
 export default function MyBodyScreen() {
   const insets = useSafeAreaInsets();
@@ -78,7 +90,38 @@ export default function MyBodyScreen() {
       const series = await balanceSeries(daysBack + 1);
       const balance = series.length > 0 ? series[0] : null;
       const tags = await getTags(key);
-      setDay({ metrics, weight, bodyFat, balance, tags });
+
+      // その日の食事・運動リスト。前後1日広めに取ってローカル日付で絞る
+      // (タイムスタンプのTZ表現の揺れがあっても取りこぼさない)
+      const dayStart = fromKey(key);
+      const qFrom = addDays(dayStart, -1).toISOString();
+      const qTo = addDays(dayStart, 2).toISOString();
+      const tplName = new Map((await listTemplates()).map((t) => [t.id, t.name]));
+      const meals: MealRow[] = (await listMealLogs(qFrom, qTo))
+        .filter((m) => localDateKey(m.timestamp) === key)
+        .sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
+        .map((m) => ({
+          id: m.id,
+          time: hhmm(m.timestamp),
+          label: m.freeText ?? (m.templateId != null ? tplName.get(m.templateId) : null) ?? '食事',
+          kcal: Math.round(m.kcal),
+        }));
+      const workouts: WorkoutRow[] = (await listWorkoutLogs(qFrom, qTo))
+        .filter((w) => localDateKey(w.timestamp) === key)
+        .sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
+        .map((w) => {
+          const isCardio = w.exercises.length === 1 && w.exercises[0].reps === 1 && w.exercises[0].sets === 1;
+          const label = isCardio
+            ? w.exercises[0].exerciseName
+            : w.exercises.map((e) => e.exerciseName).join('・') || 'トレーニング';
+          const detail = [
+            w.durationMin != null ? `${Math.round(w.durationMin)}分` : null,
+            !isCardio && w.exercises.length > 0 ? `${w.exercises.length}種目` : null,
+          ].filter(Boolean).join(' ・ ');
+          return { id: w.id, time: hhmm(w.timestamp), label, detail };
+        });
+
+      setDay({ metrics, weight, bodyFat, balance, tags, meals, workouts });
       setScores(await scoresForDate(key)); // 過去日も同じフォーマットでスコアを出す
       setBank(await calorieBank(key)); // その日「時点まで」の累積
     } catch { /* 表示は次のフォーカスで再試行 */ }
@@ -136,7 +179,7 @@ export default function MyBodyScreen() {
     <GestureDetector gesture={swipe}>
       <ScrollView
         style={styles.screen}
-        contentContainerStyle={{ paddingTop: insets.top + Spacing.md, paddingBottom: 120, paddingHorizontal: Spacing.md }}
+        contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 120, paddingHorizontal: Spacing.md }}
         refreshControl={<RefreshControl refreshing={d.refreshing} onRefresh={() => { d.refresh(); loadDay(dateKey); }} tintColor={Colors.accent} />}
       >
         {/* 日付ナビゲーション(スワイプでも移動可)+ 設定 */}
@@ -351,6 +394,53 @@ export default function MyBodyScreen() {
           </Card>
         )}
 
+        {/* その日の食事・運動の記録 */}
+        <SectionTitle>{isToday ? '今日の食事' : 'この日の食事'}</SectionTitle>
+        <Card>
+          {day != null && day.meals.length > 0 ? (
+            <>
+              {day.meals.map((m, i) => (
+                <View key={m.id} style={[styles.statRow, i > 0 && styles.statRowBorder]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
+                    <Text style={styles.logTime}>{m.time}</Text>
+                    <Text style={styles.statLabel} numberOfLines={1}>{m.label}</Text>
+                  </View>
+                  <Text style={styles.statValue}>{m.kcal.toLocaleString()}<Text style={styles.statUnit}> kcal</Text></Text>
+                </View>
+              ))}
+              <View style={[styles.statRow, styles.statRowBorder]}>
+                <Text style={[styles.statLabel, { fontWeight: '700', color: Colors.text }]}>合計</Text>
+                <Text style={[styles.statValue, { color: Colors.accent }]}>
+                  {day.meals.reduce((a, m) => a + m.kcal, 0).toLocaleString()}<Text style={styles.statUnit}> kcal</Text>
+                </Text>
+              </View>
+            </>
+          ) : (
+            <Text style={styles.balanceEmpty}>{isToday ? 'まだ記録がありません(実績報告タブ or Mr. Vyta)' : 'この日の食事記録はありません'}</Text>
+          )}
+        </Card>
+
+        <SectionTitle>{isToday ? '今日の運動' : 'この日の運動'}</SectionTitle>
+        <Card>
+          {day != null && day.workouts.length > 0 ? (
+            day.workouts.map((w, i) => (
+              <View key={w.id} style={[styles.statRow, i > 0 && styles.statRowBorder]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
+                  <Text style={styles.logTime}>{w.time}</Text>
+                  <Text style={styles.statLabel} numberOfLines={1}>{w.label}</Text>
+                </View>
+                {w.detail !== '' && <Text style={styles.statValue}>{w.detail}</Text>}
+              </View>
+            ))
+          ) : (
+            <Text style={styles.balanceEmpty}>
+              {day?.metrics.workout_energy != null
+                ? `手動の記録なし(Apple Watchのワークアウト ${formatValue('workout_energy', day.metrics.workout_energy)}kcal は消費に反映済み)`
+                : isToday ? 'まだ記録がありません(実績報告タブ or Mr. Vyta)' : 'この日の運動記録はありません'}
+            </Text>
+          )}
+        </Card>
+
         {/* 体調変化の兆候(今日のみ) */}
         {isToday && d.anomalies.length > 0 && (
           <>
@@ -474,6 +564,7 @@ const styles = StyleSheet.create({
   statRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10 },
   statRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
   statLabel: { color: Colors.textSecondary, fontSize: Type.body },
+  logTime: { color: Colors.textFaint, fontSize: Type.caption, fontVariant: ['tabular-nums'], width: 40 },
   statValue: { color: Colors.text, fontSize: Type.body, fontWeight: '600', fontVariant: ['tabular-nums'] },
   statUnit: { color: Colors.textFaint, fontSize: Type.caption, fontWeight: '400' },
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },

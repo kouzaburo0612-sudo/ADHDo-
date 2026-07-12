@@ -37,7 +37,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        datetime: { type: 'string', description: 'ISO 8601。省略時は現在時刻。「昨日の夜」等は具体時刻に変換する' },
+        datetime: { type: 'string', description: '端末ローカル時刻でタイムゾーン記号なしの "YYYY-MM-DDTHH:mm:ss" 形式(例 2026-07-12T20:30:00)。省略時は現在時刻。「昨日の夜」等はシステムプロンプトの現在時刻を基準に具体時刻へ変換する。ZやUTCオフセットは付けない' },
         template_name: { type: 'string', description: '登録済みテンプレート名または別名' },
         free_text: { type: 'string', description: '自由入力の食事内容(テンプレートでない場合)' },
         kcal: { type: 'number' }, protein: { type: 'number' }, fat: { type: 'number' }, carbs: { type: 'number' },
@@ -52,7 +52,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        datetime: { type: 'string' },
+        datetime: { type: 'string', description: '端末ローカル時刻・タイムゾーン記号なし(例 2026-07-12T19:00:00)。省略時は現在時刻' },
         template_name: { type: 'string', description: '登録済み運動テンプレート名(「いつものメニュー」等)' },
         exercises: {
           type: 'array',
@@ -278,7 +278,8 @@ async function buildSystemPrompt(): Promise<string> {
   const dt = dayTypes.find((d) => d.id === dtId);
 
   const from = addDays(today, -14);
-  const intake = await dailyIntake(from.toISOString(), today.toISOString());
+  const dayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  const intake = await dailyIntake(from.toISOString(), dayEnd.toISOString());
   const todayIntake = intake.get(localDateKey(today.toISOString())) ?? { kcal: 0, protein: 0, fat: 0, carbs: 0 };
 
   const metricMap = await getRange(toKey(from), todayKey);
@@ -297,7 +298,7 @@ async function buildSystemPrompt(): Promise<string> {
 
   const todayMeals = await (await import('@/lib/store')).listMealLogs(
     new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString(),
-    today.toISOString(),
+    dayEnd.toISOString(),
   );
   const mealLines = todayMeals.map((m) => {
     const t = new Date(m.timestamp);
@@ -325,7 +326,7 @@ async function buildSystemPrompt(): Promise<string> {
   let stressLine = '';
   try {
     const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const stress = await (await import('@/lib/store')).listStressLogs(dayStart.toISOString(), today.toISOString());
+    const stress = await (await import('@/lib/store')).listStressLogs(dayStart.toISOString(), dayEnd.toISOString());
     if (stress.length > 0) {
       const labels = ['', '快調', 'ふつう', 'やや疲れ', 'つらい', '限界'];
       stressLine = `\n- 今日のストレス報告: ${stress.map((s) => `${labels[s.level] ?? s.level}${s.note ? `(${s.note})` : ''}`).join('、')}`;
@@ -338,6 +339,8 @@ async function buildSystemPrompt(): Promise<string> {
 - あなたはツールを呼ばない限り、記録も変更も一切できない。「記録します」「記録しました」「登録しておきます」等をテキストで言うだけの応答は禁止
 - 食事の報告(「〜食べた」「朝はプロテイン」「昼はチキンサラダ」等)を受けたら、同じ応答の中で必ずlog_mealを呼ぶ。栄養素が不明ならあなたが概算してis_estimate=trueで渡す。質問で引き延ばさない(量が全く見当つかない場合のみ1回だけ確認してよい)
 - トレの報告→log_workout / ストレスの報告→log_stress / 設定・目標の変更→update_settings / テンプレ登録→add_template・add_workout_template / 誤記録の削除→delete_meal_log
+- 食事の写真が送られてきたら、写真を分析して料理名とkcal/P/F/Cを概算し、同じ応答の中で必ずlog_meal(is_estimate=true)を呼ぶ。「〜ですね」と内容を言うだけの応答は禁止
+- 記録のdatetimeは端末ローカル時刻でタイムゾーン記号なし(例 2026-07-12T20:30:00)。「昨日の夜」は昨日の20:00など具体的なローカル時刻にする
 - 複数件の記録は1件ずつツールを呼ぶ。承認されたら間を置かず次の1件のツールを呼び、全件終わるまで続ける
 - 例: ユーザー「昼にチキンサラダとおにぎり食べた」→ あなた: log_meal(チキンサラダ、概算)を呼ぶ → 承認後 → log_meal(おにぎり、概算)を呼ぶ → 全件完了後に合計を一言報告
 
@@ -376,7 +379,8 @@ ${workoutTemplates.map((t) => `- ${t.name}`).join('\n') || '- (なし)'}
 - カロリー赤字はユーザーの楽しみ。赤字が出た日は具体的な数字(貯金額・脂肪換算)で褒める
 - 記録済みかどうかはquery_recentで確認してから答える(推測で「記録されていません」と言わない)
 - 回避食材が食事に含まれる場合は必ず指摘する
-- 医学的診断はしない。今日の日付: ${todayKey}`;
+- 医学的診断はしない
+- 今日の日付: ${todayKey} / 現在時刻: ${String(today.getHours()).padStart(2, '0')}:${String(today.getMinutes()).padStart(2, '0')}(端末ローカル)`;
 }
 
 /** TDEE計算に必要な入力を組み立てる */
@@ -385,7 +389,8 @@ export async function currentTdee() {
   const from = addDays(today, -20); // MA7計算のため余分に取る
   const profile = await getProfile();
   const metricMap = await getRange(toKey(from), toKey(today));
-  const intake = await dailyIntake(from.toISOString(), today.toISOString());
+  const dayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  const intake = await dailyIntake(from.toISOString(), dayEnd.toISOString());
 
   const days: TdeeInput['days'] = [];
   const weightsSoFar: number[] = [];
@@ -418,7 +423,8 @@ async function runQueryTool(name: string, input: Record<string, unknown>): Promi
     const tdee = await currentTdee();
     if (tdee.effective == null) return JSON.stringify({ error: 'TDEE算出に必要なデータ(体重・身長・生年月日)が不足しています' });
     const from = addDays(today, -8);
-    const intake = await dailyIntake(from.toISOString(), today.toISOString());
+    const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const intake = await dailyIntake(from.toISOString(), end.toISOString());
     const b = computeBudget({
       tdee: tdee.effective, weekStart: 1, today,
       intakeByDate: new Map([...intake].map(([k, v]) => [k, v.kcal])),
@@ -442,8 +448,9 @@ async function runQueryTool(name: string, input: Record<string, unknown>): Promi
   if (name === 'query_recent') {
     const daysN = Number(input.days ?? 3);
     const from = addDays(today, -daysN);
-    const meals = await (await import('@/lib/store')).listMealLogs(from.toISOString(), today.toISOString());
-    const workouts = await (await import('@/lib/store')).listWorkoutLogs(from.toISOString(), today.toISOString());
+    const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const meals = await (await import('@/lib/store')).listMealLogs(from.toISOString(), end.toISOString());
+    const workouts = await (await import('@/lib/store')).listWorkoutLogs(from.toISOString(), end.toISOString());
     let last: unknown = null;
     if (input.exercise_name) last = await lastExercise(String(input.exercise_name));
     return JSON.stringify({ meals, workouts, lastExercise: last });
@@ -452,6 +459,17 @@ async function runQueryTool(name: string, input: Record<string, unknown>): Promi
 }
 
 // ---- 記録系ツールの実行(承認後に呼ばれる) ----
+
+/**
+ * モデルが渡すdatetimeをUTCのISO文字列に正規化する。
+ * タイムゾーン記号なしのローカル時刻はDateがローカルとして解釈するので、
+ * toISOString()で保存形式を統一する(混在すると範囲クエリから漏れる)。
+ */
+function normalizeIso(v: unknown, fallback: string): string {
+  if (v == null || v === '') return fallback;
+  const d = new Date(String(v));
+  return isNaN(d.getTime()) ? fallback : d.toISOString();
+}
 
 export async function executeMutation(name: string, input: Record<string, unknown>): Promise<string> {
   const nowIso = new Date().toISOString();
@@ -468,7 +486,7 @@ export async function executeMutation(name: string, input: Record<string, unknow
       }
     }
     await addMealLog({
-      id: newId(), timestamp: String(input.datetime ?? nowIso),
+      id: newId(), timestamp: normalizeIso(input.datetime, nowIso),
       templateId, freeText: input.free_text ? String(input.free_text) : null,
       kcal, protein, fat, carbs, isEstimate: Boolean(input.is_estimate),
     });
@@ -492,7 +510,7 @@ export async function executeMutation(name: string, input: Record<string, unknow
       return JSON.stringify({ error: 'テンプレートが見つからず、種目も指定されていません' });
     }
     await addWorkoutLog({
-      id: newId(), timestamp: String(input.datetime ?? nowIso),
+      id: newId(), timestamp: normalizeIso(input.datetime, nowIso),
       exercises, durationMin,
       note: input.note ? String(input.note) : null,
     });
@@ -737,15 +755,32 @@ export function stripMarkdown(s: string): string {
     .trim();
 }
 
+export interface ChatImage {
+  /** base64エンコード済みJPEG/PNGデータ(データURI接頭辞なし) */
+  base64: string;
+  mediaType: string;
+}
+
 /**
  * 1ターン実行。照会ツールは自動処理し、記録ツールが出たらpendingで返す。
  * @param history これまでの表示用履歴(user/assistantテキストのみ)
+ * @param image 添付画像(食事写真など)。contentのimageブロックとして送る
  */
-export async function sendChat(userText: string, history: { role: 'user' | 'assistant'; content: string }[]): Promise<ChatTurnResult> {
+export async function sendChat(
+  userText: string,
+  history: { role: 'user' | 'assistant'; content: string }[],
+  image?: ChatImage,
+): Promise<ChatTurnResult> {
   const system = await buildSystemPrompt();
+  const userContent: unknown = image
+    ? [
+        { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.base64 } },
+        { type: 'text', text: userText || 'この食事の写真を分析して記録してください。' },
+      ]
+    : userText;
   const messages: ApiMessage[] = [
     ...history.slice(-20).map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user', content: userText },
+    { role: 'user', content: userContent },
   ];
   return runLoop(system, messages);
 }

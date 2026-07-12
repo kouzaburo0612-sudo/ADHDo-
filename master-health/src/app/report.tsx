@@ -48,7 +48,7 @@ export default function ReportScreen() {
   return (
     <ScrollView
       style={styles.root}
-      contentContainerStyle={{ paddingTop: insets.top + Spacing.md, padding: Spacing.md, paddingBottom: 120 }}
+      contentContainerStyle={{ paddingTop: insets.top, padding: Spacing.md, paddingBottom: 120 }}
       keyboardShouldPersistTaps="handled"
     >
       <BrandHeader sub="実績報告" />
@@ -101,9 +101,10 @@ function MealSection() {
   const load = useCallback(async () => {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const list = await listMealLogs(start.toISOString(), now.toISOString());
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const list = await listMealLogs(start.toISOString(), end.toISOString());
     setMeals(list);
-    const t = (await dailyIntake(start.toISOString(), now.toISOString()))
+    const t = (await dailyIntake(start.toISOString(), end.toISOString()))
       .get(localDateKey(now.toISOString())) ?? { kcal: 0, protein: 0, fat: 0, carbs: 0 };
     setTotals({
       kcal: Math.round(t.kcal), protein: Math.round(t.protein),
@@ -468,7 +469,8 @@ function WorkoutSection() {
   const load = useCallback(async () => {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    setWorkouts(await listWorkoutLogs(start.toISOString(), now.toISOString()));
+    const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    setWorkouts(await listWorkoutLogs(start.toISOString(), dayEnd.toISOString()));
     setWTemplates(await listWorkoutTemplates());
     const day = await getDay(todayKey());
     setAuto({
@@ -712,7 +714,8 @@ function StressSection() {
   const load = useCallback(async () => {
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    setLogs(await listStressLogs(start.toISOString(), now.toISOString()));
+    const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    setLogs(await listStressLogs(start.toISOString(), dayEnd.toISOString()));
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));

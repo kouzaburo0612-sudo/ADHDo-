@@ -106,7 +106,7 @@ export default function TeamScreen() {
   return (
     <ScrollView
       style={styles.root}
-      contentContainerStyle={{ paddingTop: insets.top + Spacing.md, padding: Spacing.md, paddingBottom: 120 }}
+      contentContainerStyle={{ paddingTop: insets.top, padding: Spacing.md, paddingBottom: 120 }}
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={Colors.accent} />}
     >

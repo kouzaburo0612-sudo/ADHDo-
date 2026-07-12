@@ -73,7 +73,32 @@ db.execAsync(`
     note TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_stress_ts ON stress_logs(timestamp);
-`).catch((e) => console.warn('store init failed', e));
+`)
+  .then(() => normalizeLogTimestamps())
+  .catch((e) => console.warn('store init failed', e));
+
+/**
+ * 一度だけ、ログのタイムスタンプをUTCのISO文字列(toISOString)に揃える。
+ * チャット経由の記録でタイムゾーン記号なしのローカル時刻文字列が混在すると、
+ * BETWEENの文字列比較で範囲から漏れて「記録したのに反映されない」事故になるため。
+ */
+async function normalizeLogTimestamps(): Promise<void> {
+  const FLAG = 'ts_normalize_v37';
+  const done = await db.getFirstAsync<{ value: string }>('SELECT value FROM kv WHERE key = ?', FLAG).catch(() => null);
+  if (done) return;
+  for (const table of ['meal_logs', 'workout_logs', 'stress_logs']) {
+    try {
+      const rows = await db.getAllAsync<{ id: string; timestamp: string }>(`SELECT id, timestamp FROM ${table}`);
+      for (const r of rows) {
+        const d = new Date(r.timestamp);
+        if (isNaN(d.getTime())) continue;
+        const iso = d.toISOString();
+        if (iso !== r.timestamp) await db.runAsync(`UPDATE ${table} SET timestamp = ? WHERE id = ?`, iso, r.id);
+      }
+    } catch { /* テーブル単位で失敗しても他を続ける */ }
+  }
+  await db.runAsync('INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', FLAG, 'done').catch(() => {});
+}
 
 // ---- 型 (instructions v2 準拠) ----
 

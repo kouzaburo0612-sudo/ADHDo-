@@ -111,7 +111,7 @@ export default function HistoryScreen() {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={{ paddingTop: insets.top + Spacing.md, paddingBottom: 120, paddingHorizontal: Spacing.md }}
+      contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 120, paddingHorizontal: Spacing.md }}
     >
       <View style={{ marginBottom: Spacing.md }}>
         <BrandHeader sub="トレンド" />
@@ -482,16 +482,15 @@ function GoalEditModal({ visible, goal, onClose, onSave }: {
     const fn = parseInt(f, 10) || 25;
     const cn = parseInt(c, 10) || 45;
     const prev = goal?.plan;
-    // 目標が変わったら累積赤字の起点をリセット(現体重・今日から数え直す)
-    const changed = prev?.targetWeightKg !== targetWeightKg
-      || prev?.targetBodyFatPct !== targetBodyFatPct || prev?.targetDate !== targetDate;
+    // 起点は初回設定時のみ記録する。目標を編集しても累積赤字はリセットしない
+    // (以前はここでリセットしていたため「累積が累積にならない」バグになっていた)
     onSave({
       priority,
       targetBodyFatPct,
       targetWeightKg,
       targetDate,
-      startWeightKg: changed || prev?.startWeightKg == null ? goal?.currentWeightKg ?? prev?.startWeightKg ?? null : prev.startWeightKg,
-      startDate: changed || prev?.startDate == null ? todayKey() : prev.startDate,
+      startWeightKg: prev?.startWeightKg ?? goal?.currentWeightKg ?? null,
+      startDate: prev?.startDate ?? todayKey(),
       intakeMode,
       customIntakeKcal: parseFloat(customKcal) || null,
       pfc: { p: pn, f: fn, c: cn },

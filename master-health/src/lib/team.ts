@@ -215,7 +215,8 @@ export async function buildSnapshot(share: ShareSettings): Promise<SnapshotPaylo
 
   if (share.stress) {
     const from = addDays(today, -2);
-    const logs = await listStressLogs(from.toISOString(), today.toISOString());
+    const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const logs = await listStressLogs(from.toISOString(), end.toISOString());
     if (logs.length > 0) {
       p.stressLevel = Math.max(...logs.map((l) => l.level));
       if (p.stressLevel >= 4) p.flags.push('stress_high');

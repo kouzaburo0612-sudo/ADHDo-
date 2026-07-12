@@ -1,7 +1,9 @@
 /** ホーム = AIチャット。上部に当日サマリーカード (instructions v2 §1) */
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, Alert, FlatList, Image, KeyboardAvoidingView, Platform, Pressable,
   StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,12 +13,26 @@ import { Card } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { adviceErrorMessage } from '@/lib/ai';
 import { maybeAutoPost } from '@/lib/autopost';
-import { resumeChat, sendChat, stripMarkdown, type PendingAction } from '@/lib/chat';
+import { resumeChat, sendChat, stripMarkdown, type ChatImage, type PendingAction } from '@/lib/chat';
 import { appendChat, listChat } from '@/lib/store';
 import { syncHealthData } from '@/lib/sync';
 import { balanceSeries } from '@/utils/deficit';
 
-interface Bubble { key: string; role: 'user' | 'assistant'; content: string }
+interface Bubble { key: string; role: 'user' | 'assistant'; content: string; imageUri?: string }
+
+/** APIの画像制限(1枚5MB)対策: 長辺1568pxへ縮小しJPEG品質0.7で再圧縮してbase64化 */
+async function prepareImage(uri: string, width: number, height: number): Promise<ChatImage & { previewUri: string }> {
+  const MAX_EDGE = 1568;
+  const ctx = ImageManipulator.manipulate(uri);
+  if (Math.max(width, height) > MAX_EDGE) {
+    if (width >= height) ctx.resize({ width: MAX_EDGE });
+    else ctx.resize({ height: MAX_EDGE });
+  }
+  const ref = await ctx.renderAsync();
+  const out = await ref.saveAsync({ compress: 0.7, format: SaveFormat.JPEG, base64: true });
+  if (!out.base64) throw new Error('IMAGE_ENCODE');
+  return { base64: out.base64, mediaType: 'image/jpeg', previewUri: out.uri };
+}
 
 const SUGGESTIONS = ['今日あと何kcal食べられる?', '昼はいつもの', '今日の体重は?', '目標いつ達成できそう?'];
 
@@ -72,8 +88,8 @@ export default function ChatScreen() {
     } catch { /* サマリーは補助情報なので失敗しても無視 */ }
   }, []);
 
-  const push = useCallback((role: 'user' | 'assistant', content: string) => {
-    setBubbles((prev) => [...prev, { key: `${Date.now()}-${prev.length}`, role, content }]);
+  const push = useCallback((role: 'user' | 'assistant', content: string, imageUri?: string) => {
+    setBubbles((prev) => [...prev, { key: `${Date.now()}-${prev.length}`, role, content, imageUri }]);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
   }, []);
 
@@ -103,6 +119,57 @@ export default function ChatScreen() {
       setBusy(false);
     }
   }, [input, busy, bubbles, push, handleResult]);
+
+  /** 写真を選んで(または撮って)そのまま送信。食事写真→AIがlog_mealで記録する流れ */
+  const sendPhoto = useCallback(async (fromCamera: boolean) => {
+    if (busy) return;
+    try {
+      if (fromCamera) {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) { Alert.alert('カメラの許可が必要です', '設定アプリ > VYTA からカメラを許可してください'); return; }
+      }
+      const fn = fromCamera ? ImagePicker.launchCameraAsync : ImagePicker.launchImageLibraryAsync;
+      const result = await fn({ mediaTypes: ['images'], quality: 1, allowsEditing: false });
+      if (result.canceled || !result.assets[0]) return;
+      const asset = result.assets[0];
+
+      const text = input.trim();
+      setInput('');
+      setBusy(true);
+      let img: ChatImage & { previewUri: string };
+      try {
+        img = await prepareImage(asset.uri, asset.width ?? 0, asset.height ?? 0);
+      } catch {
+        push('assistant', '画像を送信できませんでした(画像の圧縮に失敗)。別の写真でお試しください。');
+        setBusy(false);
+        return;
+      }
+      const label = text ? `📷 写真を送信: ${text}` : '📷 食事の写真を送信';
+      push('user', label, img.previewUri);
+      await appendChat('user', label); // 履歴にはテキストだけ残す(画像は当該ターンのみAPIへ)
+      try {
+        const history = bubbles.map((b) => ({ role: b.role, content: b.content }));
+        const r = await sendChat(text, history, { base64: img.base64, mediaType: img.mediaType });
+        await handleResult(r);
+      } catch (e) {
+        push('assistant', `画像を送信できませんでした(${adviceErrorMessage(e)})`);
+      } finally {
+        setBusy(false);
+      }
+    } catch {
+      push('assistant', '画像を送信できませんでした(写真へのアクセスに失敗)。');
+      setBusy(false);
+    }
+  }, [busy, input, bubbles, push, handleResult]);
+
+  const attachPhoto = useCallback(() => {
+    if (busy) return;
+    Alert.alert('食事の写真を送る', 'AIが内容を認識してカロリーを概算し、確認後に記録します', [
+      { text: '📷 撮影する', onPress: () => sendPhoto(true) },
+      { text: '🖼 ライブラリから選ぶ', onPress: () => sendPhoto(false) },
+      { text: 'キャンセル', style: 'cancel' },
+    ]);
+  }, [busy, sendPhoto]);
 
   const decide = useCallback(async (approved: boolean) => {
     if (!pending || busy) return;
@@ -151,6 +218,9 @@ export default function ChatScreen() {
         }
         renderItem={({ item }) => (
           <View style={[styles.bubble, item.role === 'user' ? styles.bubbleUser : styles.bubbleAi]}>
+            {item.imageUri != null && (
+              <Image source={{ uri: item.imageUri }} style={styles.bubbleImage} resizeMode="cover" />
+            )}
             <Text selectable style={item.role === 'user' ? styles.bubbleUserText : styles.bubbleAiText}>
               {/* 過去バージョンで保存された履歴にマークダウンが残っている場合も表示時に除去 */}
               {item.role === 'assistant' ? stripMarkdown(item.content) : item.content}
@@ -194,6 +264,14 @@ export default function ChatScreen() {
       </View>
 
       <View style={[styles.inputRow, { paddingBottom: Math.max(insets.bottom, Spacing.sm) }]}>
+        <Pressable
+          style={[styles.photoBtn, busy && { opacity: 0.4 }]}
+          onPress={attachPhoto}
+          disabled={busy}
+          hitSlop={6}
+        >
+          <Text style={styles.photoBtnText}>📷</Text>
+        </Pressable>
         <TextInput
           style={styles.input}
           value={input}
@@ -239,6 +317,13 @@ const styles = StyleSheet.create({
   bubbleAi: { alignSelf: 'flex-start', backgroundColor: Colors.surface },
   bubbleUserText: { color: Colors.text, fontSize: Type.body, lineHeight: 21 },
   bubbleAiText: { color: Colors.text, fontSize: Type.body, lineHeight: 21 },
+  bubbleImage: { width: 200, height: 150, borderRadius: Radius.sm, marginBottom: 6 },
+  photoBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  photoBtnText: { fontSize: 18 },
   confirmCard: { marginTop: Spacing.sm, borderColor: Colors.accent, borderWidth: 1 },
   confirmTitle: { color: Colors.textSecondary, fontSize: Type.caption, marginBottom: 6 },
   confirmBody: { color: Colors.text, fontSize: Type.body, lineHeight: 21 },
