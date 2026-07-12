@@ -13,7 +13,7 @@ import { Card } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { adviceErrorMessage } from '@/lib/ai';
 import { maybeAutoPost } from '@/lib/autopost';
-import { resumeChat, sendChat, stripMarkdown, type ChatImage, type PendingAction } from '@/lib/chat';
+import { maybeCompactHistory, resumeChat, sendChat, stripMarkdown, type ChatImage, type PendingAction } from '@/lib/chat';
 import { appendChat, listChat } from '@/lib/store';
 import { syncHealthData } from '@/lib/sync';
 import { balanceSeries } from '@/utils/deficit';
@@ -100,6 +100,8 @@ export default function ChatScreen() {
     }
     setPending(r.pending);
     refreshSummary();
+    // 履歴が溜まっていたら裏で要約圧縮(失敗しても次ターンで再試行)
+    maybeCompactHistory().catch(() => {});
   }, [push, refreshSummary]);
 
   const send = useCallback(async (text?: string) => {

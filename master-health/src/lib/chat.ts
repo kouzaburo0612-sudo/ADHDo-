@@ -7,16 +7,18 @@
  *   PendingActionとしてUIへ返し、確認カードの承認後に resumeChat() で続行する
  *   (誤記録防止。instructions v2 §1.2)
  */
-import { getRange, getSeries } from '@/lib/db';
+import { getRange, getSeries, kvGet, kvSet } from '@/lib/db';
 import { addDays, toKey } from '@/lib/dates';
 import { getApiKey, loadSettings, saveSettings } from '@/lib/settings';
 import {
-  addMealLog, addStressLog, addWorkoutLog, dailyIntake, deleteMealLog, deleteTemplate,
+  addMealLog, addMemory, addStressLog, addWorkoutLog, chatCount, dailyIntake,
+  deleteChatUpTo, deleteMealLog, deleteMemory, deleteTemplate,
   deleteWorkoutTemplate, getDayAssignment, getDayTypes, getGoalPlan, getProfile,
-  lastExercise, listTemplates, listWorkoutTemplates, localDateKey, newId, saveDayTypes,
+  lastExercise, listMemories, listTemplates, listWorkoutTemplates, localDateKey, newId,
+  oldestChat, saveDayTypes,
   saveGoalPlan, saveProfile, setDayAssignment, templateNutrition, upsertIngredient,
   upsertTemplate, upsertWorkoutTemplate,
-  type ExerciseSet, type FoodTemplate,
+  type ExerciseSet, type FoodTemplate, type MemoryCategory,
 } from '@/lib/store';
 import { computeBudget } from '@/utils/budget';
 import { balanceSeries, calorieBank } from '@/utils/deficit';
@@ -33,7 +35,11 @@ const MAX_TURNS = 6;
 const TOOLS = [
   {
     name: 'log_meal',
-    description: '食事を記録する。テンプレート名が特定できればtemplate_nameを指定(PFCは自動計算)。自由入力の食事はkcal/protein/fat/carbsをあなたが概算してis_estimate=trueで渡す。実行前にユーザー確認カードが表示される。',
+    description: `食事を記録する。テンプレート名が特定できればtemplate_nameを指定(PFCは自動計算)。自由入力の食事はkcal/protein/fat/carbsをあなたが概算してis_estimate=trueで渡す。実行前にユーザー確認カードが表示される。
+使用例:
+1. 「昼はいつもの」→ 登録テンプレートの別名「いつもの」と照合し log_meal(template_name="いつもの", datetime=今日の12:30)
+2. 「昨日の夜ステーキ300gとサラダ食べた」→ log_meal(free_text="ステーキ300gとサラダ", kcal=750, protein=60, fat=50, carbs=10, is_estimate=true, datetime=昨日の19:30 ※現在日時から昨日を機械的に解決)
+3. 「朝プロテイン飲んだ」→ テンプレート「プロテイン」があればtemplate_name指定、なければ概算(kcal=120, protein=25等)でis_estimate=true, datetime=今日の07:30`,
     input_schema: {
       type: 'object',
       properties: {
@@ -48,7 +54,11 @@ const TOOLS = [
   },
   {
     name: 'log_workout',
-    description: 'トレーニングを記録する。登録済みテンプレート名(template_name)か種目リスト(exercises)のどちらかを渡す。実行前にユーザー確認カードが表示される。',
+    description: `トレーニングを記録する。登録済みテンプレート名(template_name)か種目リスト(exercises)のどちらかを渡す。実行前にユーザー確認カードが表示される。
+使用例:
+1. 「いつものメニューやった」→ log_workout(template_name="いつものメニュー")
+2. 「ベンチ90lb 8回3セットとスクワット100lb 10回3セット」→ log_workout(exercises=[{exerciseName:"ベンチプレス",weight:90,weightUnit:"lb",reps:8,sets:3},{exerciseName:"スクワット",weight:100,weightUnit:"lb",reps:10,sets:3}])
+3. 「昨日30分走った」→ log_workout(exercises=[{exerciseName:"ランニング",reps:1,sets:1}], duration_min=30, datetime=昨日の時刻) ※有酸素はreps=1,sets=1の単一種目で表す`,
     input_schema: {
       type: 'object',
       properties: {
@@ -208,6 +218,27 @@ const TOOLS = [
     },
   },
   {
+    name: 'save_memory',
+    description: '会話から今後も重要な事実を長期メモリに保存する(セッションを跨いで保持され、毎回システムプロンプトに注入される)。例:「朝トレは体調に合わない(7/10判明)」「プロテイン山盛り=155kcalで運用」「7/11〜24はゲスト滞在で外食が増える」。同じ内容が既にメモリにある場合は保存しない。確認カードなしで即実行される。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: '保存する内容(1件1事実、簡潔に。日付が関わるなら絶対日付で書く)' },
+        category: { type: 'string', enum: ['preference', 'decision', 'context', 'issue'], description: 'preference=嗜好 / decision=決定事項 / context=状況(期間限定の事情など) / issue=未解決の課題' },
+      },
+      required: ['content', 'category'],
+    },
+  },
+  {
+    name: 'delete_memory',
+    description: '古くなった・解決済み・誤っている長期メモリを削除する。memory_idはシステムプロンプトのメモリ一覧に併記されているidを使う。確認カードなしで即実行される。',
+    input_schema: {
+      type: 'object',
+      properties: { memory_id: { type: 'string' } },
+      required: ['memory_id'],
+    },
+  },
+  {
     name: 'query_budget',
     description: '今週のカロリー収支(週予算・消費済み・残り・日割り推奨)を照会する。',
     input_schema: { type: 'object', properties: {}, required: [] },
@@ -269,6 +300,15 @@ export interface ChatTurnResult {
 
 // ---- システムプロンプト構築 (instructions v2 §4) ----
 
+const WEEKDAYS_JA = ['日', '月', '火', '水', '木', '金', '土'] as const;
+
+/** 対象日時を人間向けに(確認カード・プロンプト用) */
+function fmtDateTimeJa(v?: unknown): string {
+  let d = v != null && v !== '' ? new Date(String(v)) : new Date();
+  if (isNaN(d.getTime())) d = new Date();
+  return `${d.getMonth() + 1}/${d.getDate()}(${WEEKDAYS_JA[d.getDay()]}) ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 async function buildSystemPrompt(): Promise<string> {
   const profile = await getProfile();
   const dayTypes = await getDayTypes();
@@ -276,6 +316,11 @@ async function buildSystemPrompt(): Promise<string> {
   const todayKey = toKey(today);
   const dtId = await getDayAssignment(todayKey);
   const dt = dayTypes.find((d) => d.id === dtId);
+
+  // 現在日時の絶対化(「昨日」「一昨日」の解決基準)
+  let tz = '';
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? ''; } catch { /* Intl非対応環境 */ }
+  const nowLine = `${todayKey}(${WEEKDAYS_JA[today.getDay()]}) ${String(today.getHours()).padStart(2, '0')}:${String(today.getMinutes()).padStart(2, '0')}${tz ? ` (${tz})` : ''}`;
 
   const from = addDays(today, -14);
   const dayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
@@ -333,7 +378,54 @@ async function buildSystemPrompt(): Promise<string> {
     }
   } catch { /* 補助情報 */ }
 
+  // 直近14日の日次サマリー(1日1行)
+  let dailyLines = '';
+  try {
+    const workouts14 = await (await import('@/lib/store')).listWorkoutLogs(from.toISOString(), dayEnd.toISOString());
+    const workoutDays = new Set(workouts14.map((w) => localDateKey(w.timestamp)));
+    const lines: string[] = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = addDays(today, -i);
+      const k = toKey(d);
+      const m = metricMap.get(k) ?? {};
+      const ik = intake.get(k);
+      const assigned = await getDayAssignment(k);
+      const dayTypeName = dayTypes.find((x) => x.id === assigned)?.name ?? '通常日';
+      lines.push(
+        `${k}(${WEEKDAYS_JA[d.getDay()]}) ${dayTypeName} `
+        + `摂取${ik != null ? `${Math.round(ik.kcal)}kcal/P${Math.round(ik.protein)}g` : '記録なし'} `
+        + `歩数${m.steps != null ? Math.round(m.steps).toLocaleString() : '-'} `
+        + `トレ${workoutDays.has(k) ? '有' : '-'} `
+        + `体重${m.weight != null ? `${m.weight.toFixed(1)}kg` : '-'}`,
+      );
+    }
+    dailyLines = lines.join('\n');
+  } catch { dailyLines = '(取得失敗)'; }
+
+  // 長期メモリ(save_memoryで保存されたもの)と未解決の申し送り
+  let memoryLines = '- (なし)';
+  let issueLines = '- (なし)';
+  try {
+    const memories = await listMemories();
+    const catLabel: Record<MemoryCategory, string> = { preference: '嗜好', decision: '決定', context: '状況', issue: '未解決' };
+    const normal = memories.filter((m) => m.category !== 'issue');
+    const issues = memories.filter((m) => m.category === 'issue');
+    if (normal.length > 0) memoryLines = normal.map((m) => `- [${catLabel[m.category]}] ${m.content} (id:${m.id})`).join('\n');
+    if (issues.length > 0) issueLines = issues.map((m) => `- ${m.content} (id:${m.id})`).join('\n');
+  } catch { /* メモリなしでも動く */ }
+
+  // 圧縮済みの古い会話の要約
+  let pastSummary = '';
+  try { pastSummary = (await kvGet('chat_summary')) ?? ''; } catch { /* なし */ }
+
+  const supplements = profile.supplements.map((s) => `${s.name}${s.timing ? `(${s.timing})` : ''}`).join('、') || 'なし';
+
   return `あなたは健康管理アプリVYTA(ヴァイタ)のHealth Manager AI「Mr. Vyta」。ユーザーの健康記録・照会・分析・アプリ設定の変更まで、すべてを日本語チャットで担当する専属マネージャー。
+
+## 現在日時(すべての相対表現はここから解決する)
+${nowLine}
+- 「昨日」「一昨日」「今朝」等はこの現在日時から機械的に解決する
+- 「7/10の夜」のような絶対日付が発言に含まれる場合は、相対表現より絶対日付を優先する
 
 ## 絶対ルール(違反は重大なバグとして扱われる)
 - あなたはツールを呼ばない限り、記録も変更も一切できない。「記録します」「記録しました」「登録しておきます」等をテキストで言うだけの応答は禁止
@@ -344,13 +436,23 @@ async function buildSystemPrompt(): Promise<string> {
 - 複数件の記録は1件ずつツールを呼ぶ。承認されたら間を置かず次の1件のツールを呼び、全件終わるまで続ける
 - 例: ユーザー「昼にチキンサラダとおにぎり食べた」→ あなた: log_meal(チキンサラダ、概算)を呼ぶ → 承認後 → log_meal(おにぎり、概算)を呼ぶ → 全件完了後に合計を一言報告
 
-## ユーザー情報
+## ユーザープロファイル
 - 身長: ${profile.heightCm ?? '未設定'}cm / 生年月日: ${profile.birthDate ?? '未設定'} / 性別: ${profile.sex === 'male' ? '男性' : '女性'}
 - 目標: ${goals}
 - 回避食材(DietaryFlag): ${flags}
+- サプリメント: ${supplements}
 - 今日のDayType: ${dt?.name ?? '通常日'}
 
-## 直近実績
+## 長期メモリ(過去の会話で保存した重要事項。常に踏まえて応答する)
+${memoryLines}
+
+## 未解決の申し送り事項
+${issueLines}
+${pastSummary ? `\n## 過去の会話の要約(古い履歴を圧縮したもの)\n${pastSummary}\n` : ''}
+## 直近14日の日次サマリー(1日1行)
+${dailyLines}
+
+## 本日の状態
 - 今日の摂取: ${Math.round(todayIntake.kcal)}kcal (P${Math.round(todayIntake.protein)}g F${Math.round(todayIntake.fat)}g C${Math.round(todayIntake.carbs)}g)
 - 体重7日平均: ${weightMa != null ? weightMa.toFixed(1) + 'kg' : 'データなし'}
 - 実績TDEE: 活動ベース${tdee.activity ?? '算出中'} / 逆算ベース${tdee.reverse ?? `不可(食事記録${tdee.loggedDays}/14日)`}${balanceLine}${stressLine}
@@ -365,10 +467,15 @@ ${templates.map((t) => `- ${t.name}${t.aliases.length ? ` (別名: ${t.aliases.j
 ## 登録済み運動テンプレート(上限30件)
 ${workoutTemplates.map((t) => `- ${t.name}`).join('\n') || '- (なし)'}
 
-## 応答方針(重要)
-- 日本語(です・ます調)。短く、チャットらしく。1回の返答は長くても5行程度
+## 応答スタイル(必ず守る)
+- 日本語・標準語の敬語(です・ます調)。関西弁・タメ口は使わない
+- 短く、チャットらしく。1回の返答は長くても5行程度
 - 表示はプレーンテキストのみ。マークダウン記法(** ## | --- \` など)は一切使わない。強調したい数値はそのまま書く。箇条書きが必要なら「・」だけを使う
-- 数値根拠を示す。曖昧な励ましより具体的な数字
+- 数値には必ず根拠(どの記録・どの計算に基づくか)を添える。概算の場合は「概算」と明示する
+- ユーザーの発言と記録データが矛盾する場合、勝手に解釈せず短く確認する
+- わからないことは推測で埋めず「わかりません」と言う(その上で確認手段を提案する)
+
+## 応答方針(重要)
 - 「いつもの」等の曖昧な表現はテンプレートの別名と照合する
 - 設定変更もあなたの仕事。「身長168にして」「目標体脂肪率13%で9月末までに」等はupdate_settingsツールで変更する
 - アプリ内の記録・テンプレート・設定・目標はすべてあなたのツールで操作できる。「アプリからはできません」とは言わない
@@ -376,11 +483,12 @@ ${workoutTemplates.map((t) => `- ${t.name}`).join('\n') || '- (なし)'}
 - あなたはツールを呼ばない限り何も記録できない。「記録します」「記録しますね」と言うだけの応答は禁止。記録の意思があるなら同じ応答の中で必ずlog_meal等のツールを呼ぶ
 - 記録は必ず1件ずつツールを呼ぶ(まとめて複数を1回の応答で呼ばない)。承認されたら残りの件も1件ずつツールを呼び、全件終わるまで続ける
 - 記録系ツールは確認カードで承認されてから確定する。承認前に「記録しました」と言わない
+- ツールがエラーを返したら、エラー内容に沿って入力を修正して再試行する。それでも無理ならユーザーに状況を正直に伝える
+- 会話の中で今後も重要な事実(嗜好・決定事項・期間限定の状況・未解決の課題)が出たらsave_memoryで保存する。重複は保存しない。解決・失効したメモリはdelete_memoryで消す
 - カロリー赤字はユーザーの楽しみ。赤字が出た日は具体的な数字(貯金額・脂肪換算)で褒める
 - 記録済みかどうかはquery_recentで確認してから答える(推測で「記録されていません」と言わない)
 - 回避食材が食事に含まれる場合は必ず指摘する
-- 医学的診断はしない
-- 今日の日付: ${todayKey} / 現在時刻: ${String(today.getHours()).padStart(2, '0')}:${String(today.getMinutes()).padStart(2, '0')}(端末ローカル)`;
+- 医学的診断はしない`;
 }
 
 /** TDEE計算に必要な入力を組み立てる */
@@ -444,6 +552,24 @@ async function runQueryTool(name: string, input: Record<string, unknown>): Promi
     const pf = await planForecast();
     if (!pf.hasPlan) return JSON.stringify({ error: '目標が未設定です(トレンドタブまたはupdate_settingsで設定できます)' });
     return JSON.stringify(pf);
+  }
+  if (name === 'save_memory') {
+    const category = String(input.category ?? 'context') as MemoryCategory;
+    const content = String(input.content ?? '').trim();
+    if (!content) return JSON.stringify({ error: 'contentが空です' });
+    try {
+      const id = await addMemory(category, content);
+      return JSON.stringify({ ok: true, saved: { id, category, content } });
+    } catch (e) {
+      if (e instanceof Error && e.message === 'MEMORY_LIMIT') {
+        return JSON.stringify({ error: 'メモリは上限100件です。delete_memoryで古いものを削除してから保存してください' });
+      }
+      throw e;
+    }
+  }
+  if (name === 'delete_memory') {
+    await deleteMemory(String(input.memory_id));
+    return JSON.stringify({ ok: true, deleted: input.memory_id });
   }
   if (name === 'query_recent') {
     const daysN = Number(input.days ?? 3);
@@ -665,11 +791,13 @@ function summarize(name: string, input: Record<string, unknown>): string {
   if (name === 'log_meal') {
     const what = input.template_name ?? input.free_text ?? '食事';
     const est = input.is_estimate ? '(AI概算)' : '';
-    return `食事を記録: ${what}${est}\n${input.kcal ?? '?'}kcal / P${input.protein ?? '?'} F${input.fat ?? '?'} C${input.carbs ?? '?'}`;
+    return `${fmtDateTimeJa(input.datetime)} の食事として記録: ${what}${est}\n${input.kcal ?? '?'}kcal / P${input.protein ?? '?'} F${input.fat ?? '?'} C${input.carbs ?? '?'}`;
   }
   if (name === 'log_workout') {
     const ex = (input.exercises ?? []) as ExerciseSet[];
-    return `トレーニングを記録:\n${ex.map((e) => `${e.exerciseName} ${e.weight ?? ''}${e.weightUnit ?? ''} ${e.reps}回×${e.sets}セット`).join('\n')}`;
+    const head = `${fmtDateTimeJa(input.datetime)} のトレーニングとして記録:`;
+    if (ex.length === 0 && input.template_name) return `${head}\nテンプレート「${input.template_name}」`;
+    return `${head}\n${ex.map((e) => `${e.exerciseName} ${e.weight ?? ''}${e.weightUnit ?? ''} ${e.reps}回×${e.sets}セット`).join('\n')}`;
   }
   if (name === 'set_day_type') return `${input.date ?? '今日'} を「${input.day_type_name}」に設定`;
   if (name === 'update_settings') {
@@ -779,7 +907,8 @@ export async function sendChat(
       ]
     : userText;
   const messages: ApiMessage[] = [
-    ...history.slice(-20).map((m) => ({ role: m.role, content: m.content })),
+    // 直近30往復(60メッセージ)。それより古い分は要約されてシステムプロンプトに入る
+    ...history.slice(-60).map((m) => ({ role: m.role, content: m.content })),
     { role: 'user', content: userContent },
   ];
   return runLoop(system, messages);
@@ -788,9 +917,19 @@ export async function sendChat(
 /** 確認カード承認/拒否後の継続 */
 export async function resumeChat(pending: PendingAction, approved: boolean): Promise<ChatTurnResult> {
   const system = await buildSystemPrompt();
-  const result = approved
-    ? await executeMutation(pending.toolName, pending.input)
-    : JSON.stringify({ cancelled: true, note: 'ユーザーが確認カードでキャンセルした' });
+  let result: string;
+  if (approved) {
+    try {
+      result = await executeMutation(pending.toolName, pending.input);
+    } catch (e) {
+      // 実行失敗を無言で飲み込まず、AIに返して自己修正させる
+      result = JSON.stringify({
+        error: `ツール実行に失敗しました: ${e instanceof Error ? e.message : String(e)}。入力を修正して再試行するか、ユーザーに状況を伝えてください`,
+      });
+    }
+  } else {
+    result = JSON.stringify({ cancelled: true, note: 'ユーザーが確認カードでキャンセルした' });
+  }
   const messages: ApiMessage[] = [
     ...pending.messages,
     {
@@ -855,15 +994,72 @@ async function runLoop(system: string, messages: ApiMessage[]): Promise<ChatTurn
           },
         };
       }
+      let queryResult: string;
+      try {
+        queryResult = await runQueryTool(name, input);
+      } catch (e) {
+        // 照会失敗もAIに返して言い換え・再試行させる(無言の失敗を作らない)
+        queryResult = JSON.stringify({ error: `照会に失敗しました: ${e instanceof Error ? e.message : String(e)}` });
+      }
       results.push({
         type: 'tool_result',
         tool_use_id: tu.id,
-        content: await runQueryTool(name, input),
+        content: queryResult,
       });
     }
     messages.push({ role: 'user', content: results });
   }
   return { text: collected || '(処理が長くなりすぎたため中断しました)', pending: null };
+}
+
+/**
+ * 会話履歴の圧縮パイプライン。
+ * 保存件数が160を超えたら、古い分(直近120件を残す)をAIに要約させて
+ * kv('chat_summary')へ統合保存し、原文を削除する。
+ * 要約はシステムプロンプトの「過去の会話の要約」として毎回注入される。
+ * チャット画面からターン完了後にfire-and-forgetで呼ぶ(失敗しても次回再試行)。
+ */
+export async function maybeCompactHistory(): Promise<void> {
+  const KEEP = 120;
+  const count = await chatCount();
+  if (count <= 160) return;
+  const old = await oldestChat(count - KEEP);
+  if (old.length === 0) return;
+
+  const apiKey = await getApiKey();
+  if (!apiKey) return;
+  const prev = (await kvGet('chat_summary')) ?? '';
+  const logText = old
+    .map((m) => `${m.role === 'user' ? 'ユーザー' : 'AI'}: ${m.content}`)
+    .join('\n')
+    .slice(0, 30000);
+
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1024,
+      thinking: { type: 'disabled' },
+      output_config: { effort: 'low' },
+      system: '健康管理アプリの会話ログを圧縮する係。今後の会話に必要な事実(食習慣・決定事項・数値の運用ルール・未解決の話題)だけを残す。挨拶や一時的なやり取りは捨てる。',
+      messages: [{
+        role: 'user',
+        content: `${prev ? `これまでの要約:\n${prev}\n\n` : ''}追加の会話ログ:\n${logText}\n\n上記を統合して、日本語の箇条書き(・)で500字以内に要約してください。要約本文のみを出力。`,
+      }],
+    }),
+  });
+  if (!res.ok) return; // 次回のターン後に再試行される
+  const data: { content?: { type: string; text?: string }[] } = await res.json();
+  const summary = (data.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+  if (!summary) return;
+  await kvSet('chat_summary', summary.slice(0, 2000));
+  await deleteChatUpTo(old[old.length - 1].id);
 }
 
 export { TOOLS };

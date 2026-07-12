@@ -73,6 +73,12 @@ db.execAsync(`
     note TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_stress_ts ON stress_logs(timestamp);
+  CREATE TABLE IF NOT EXISTS memories (
+    id TEXT PRIMARY KEY,
+    category TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `)
   .then(() => normalizeLogTimestamps())
   .catch((e) => console.warn('store init failed', e));
@@ -532,6 +538,57 @@ export async function listChat(limit = 100): Promise<ChatMessage[]> {
 
 export async function clearChat(): Promise<void> {
   await db.runAsync('DELETE FROM chat_messages');
+}
+
+export async function chatCount(): Promise<number> {
+  const row = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) as n FROM chat_messages');
+  return row?.n ?? 0;
+}
+
+/** 古い順にlimit件(履歴の要約・圧縮用) */
+export async function oldestChat(limit: number): Promise<ChatMessage[]> {
+  return db.getAllAsync<ChatMessage>('SELECT * FROM chat_messages ORDER BY id ASC LIMIT ?', limit);
+}
+
+export async function deleteChatUpTo(maxId: number): Promise<void> {
+  await db.runAsync('DELETE FROM chat_messages WHERE id <= ?', maxId);
+}
+
+// ---- 会話メモリ(長期記憶) ----
+
+export type MemoryCategory = 'preference' | 'decision' | 'context' | 'issue';
+
+export interface Memory {
+  id: string;
+  category: MemoryCategory;
+  content: string;
+  createdAt: string;
+}
+
+const MEMORY_LIMIT = 100;
+
+export async function listMemories(): Promise<Memory[]> {
+  const rows = await db.getAllAsync<{ id: string; category: string; content: string; created_at: string }>(
+    'SELECT * FROM memories ORDER BY created_at ASC',
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    category: (['preference', 'decision', 'context', 'issue'].includes(r.category) ? r.category : 'context') as MemoryCategory,
+    content: r.content,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function addMemory(category: MemoryCategory, content: string): Promise<string> {
+  const row = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) as n FROM memories');
+  if ((row?.n ?? 0) >= MEMORY_LIMIT) throw new Error('MEMORY_LIMIT');
+  const id = newId();
+  await db.runAsync('INSERT INTO memories (id, category, content) VALUES (?, ?, ?)', id, category, content);
+  return id;
+}
+
+export async function deleteMemory(id: string): Promise<void> {
+  await db.runAsync('DELETE FROM memories WHERE id = ?', id);
 }
 
 // ---- utils ----
