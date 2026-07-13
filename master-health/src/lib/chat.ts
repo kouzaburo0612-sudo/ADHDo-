@@ -21,7 +21,7 @@ import {
   type ExerciseSet, type FoodTemplate, type MemoryCategory,
 } from '@/lib/store';
 import { computeBudget } from '@/utils/budget';
-import { balanceSeries, calorieBank } from '@/utils/deficit';
+import { balanceSeries, calorieBank, goalNumbers, targetIntakeToday } from '@/utils/deficit';
 import { planForecast } from '@/utils/forecast';
 import { computeTdee, type TdeeInput } from '@/utils/tdee';
 import { mean } from '@/utils/stats';
@@ -218,6 +218,19 @@ const TOOLS = [
     },
   },
   {
+    name: 'query_logs',
+    description: 'DB内の記録(食事・トレーニング・ストレス・体組成などの計測値)を任意の期間で照会する。記録の有無や内容について発言する前に、必ずこのツールかquery_recentで実データを確認すること。システムプロンプトに見えていない記録も、このツールで確認できる。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from_date: { type: 'string', description: '開始日 YYYY-MM-DD(ローカル)' },
+        to_date: { type: 'string', description: '終了日 YYYY-MM-DD(ローカル、この日を含む)。省略時は今日' },
+        type: { type: 'string', enum: ['meals', 'workouts', 'stress', 'metrics', 'all'], description: '照会する記録の種類。metricsは体重・体脂肪率・歩数等の計測値' },
+      },
+      required: ['from_date', 'type'],
+    },
+  },
+  {
     name: 'save_memory',
     description: '会話から今後も重要な事実を長期メモリに保存する(セッションを跨いで保持され、毎回システムプロンプトに注入される)。例:「朝トレは体調に合わない(7/10判明)」「プロテイン山盛り=155kcalで運用」「7/11〜24はゲスト滞在で外食が増える」。同じ内容が既にメモリにある場合は保存しない。確認カードなしで即実行される。',
     input_schema: {
@@ -355,14 +368,22 @@ async function buildSystemPrompt(): Promise<string> {
   const goals = profile.goals.map((g) => `${g.label ?? g.metric}: 目標${g.targetValue} 期限${g.deadline}`).join(' / ') || '未設定';
   const flags = profile.dietaryFlags.map((f) => `${f.ingredient}(${f.severity})`).join('、') || 'なし';
 
-  // 今日の残り予算と累積赤字(ゲーム化の文脈)
+  // 今日の残り予算(目標摂取基準)と累積赤字(ゲーム化の文脈)
   let balanceLine = '';
   try {
     const [bal] = (await balanceSeries(1)).slice(-1);
     const bank = await calorieBank();
     if (bal?.burn != null) {
-      const remaining = bal.burn - (bal.intake ?? 0);
-      balanceLine = `\n- 今日の${bal.provisional ? '暫定' : ''}TDEE(消費): ${bal.burn}kcal / 摂取: ${bal.intake ?? 0}kcal / 残り予算: ${remaining}kcal`;
+      const g = await goalNumbers();
+      const target = targetIntakeToday(g, bal.burn);
+      const remainTdee = bal.burn - (bal.intake ?? 0);
+      balanceLine = `\n- 今日の${bal.provisional ? '暫定' : ''}TDEE(消費): ${bal.burn}kcal / 摂取: ${bal.intake ?? 0}kcal`;
+      if (target != null) {
+        balanceLine += `\n- 今日の目標摂取: ${target}kcal(TDEE − 必要赤字${g.requiredDailyDeficit ?? 0}、下限BMR)/ 目標まであと: ${target - (bal.intake ?? 0)}kcal / 維持ライン(TDEE)まで: ${remainTdee}kcal`;
+        balanceLine += `\n- 「あと何kcal食べられる」への回答は目標摂取基準(${target - (bal.intake ?? 0)}kcal)を主とし、維持ラインを従として添える`;
+      } else {
+        balanceLine += ` / 維持ラインまで: ${remainTdee}kcal`;
+      }
     }
     balanceLine += `\n- カロリー赤字の累積: ${bank.bankedKcal}kcal(脂肪${bank.fatKgEquivalent}kg相当)、連続脂肪燃焼${bank.streakDays}日`;
   } catch { /* 補助情報 */ }
@@ -402,6 +423,36 @@ async function buildSystemPrompt(): Promise<string> {
     dailyLines = lines.join('\n');
   } catch { dailyLines = '(取得失敗)'; }
 
+  // 直近14日の食事・トレ記録(全件)。AIが「見えない=存在しない」と幻覚しないための正データ
+  let mealLog14 = '(記録なし)';
+  let workoutLog14 = '(記録なし)';
+  try {
+    const store = await import('@/lib/store');
+    const meals14 = await store.listMealLogs(from.toISOString(), dayEnd.toISOString());
+    const byDay = new Map<string, string[]>();
+    for (const m of [...meals14].reverse()) { // DESC→ASC
+      const k = localDateKey(m.timestamp);
+      const t = new Date(m.timestamp);
+      const arr = byDay.get(k) ?? [];
+      arr.push(`${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} ${m.freeText ?? 'テンプレート食'} ${Math.round(m.kcal)}kcal`);
+      byDay.set(k, arr);
+    }
+    if (byDay.size > 0) {
+      mealLog14 = [...byDay.entries()].map(([k, arr]) => `${k}: ${arr.join(' / ')}`).join('\n');
+    }
+    const workouts14b = await store.listWorkoutLogs(from.toISOString(), dayEnd.toISOString());
+    const wByDay = new Map<string, string[]>();
+    for (const w of [...workouts14b].reverse()) {
+      const k = localDateKey(w.timestamp);
+      const arr = wByDay.get(k) ?? [];
+      arr.push(`${w.exercises.map((e) => e.exerciseName).join('・') || 'トレーニング'}${w.durationMin != null ? ` ${Math.round(w.durationMin)}分` : ''}`);
+      wByDay.set(k, arr);
+    }
+    if (wByDay.size > 0) {
+      workoutLog14 = [...wByDay.entries()].map(([k, arr]) => `${k}: ${arr.join(' / ')}`).join('\n');
+    }
+  } catch { /* 全件が読めなくてもquery_logsで確認できる */ }
+
   // 長期メモリ(save_memoryで保存されたもの)と未解決の申し送り
   let memoryLines = '- (なし)';
   let issueLines = '- (なし)';
@@ -435,6 +486,8 @@ ${nowLine}
 - 記録のdatetimeは端末ローカル時刻でタイムゾーン記号なし(例 2026-07-12T20:30:00)。「昨日の夜」は昨日の20:00など具体的なローカル時刻にする
 - 複数件の記録は1件ずつツールを呼ぶ。承認されたら間を置かず次の1件のツールを呼び、全件終わるまで続ける
 - 例: ユーザー「昼にチキンサラダとおにぎり食べた」→ あなた: log_meal(チキンサラダ、概算)を呼ぶ → 承認後 → log_meal(おにぎり、概算)を呼ぶ → 全件完了後に合計を一言報告
+- 記録の有無について発言する前に、必ずquery_logsまたはquery_recentで実際のデータを確認すること。コンテキストに見えない=存在しない、ではない。確認せずに「記録が抜けています」「まだ記録されていません」と言うことを禁止する
+- 既に記録済みのデータを再登録しない。登録前に上の「直近14日の食事記録」やquery_logsで同じ内容が無いか確認する
 
 ## ユーザープロファイル
 - 身長: ${profile.heightCm ?? '未設定'}cm / 生年月日: ${profile.birthDate ?? '未設定'} / 性別: ${profile.sex === 'male' ? '男性' : '女性'}
@@ -460,6 +513,12 @@ ${budget ? `- 今週の収支: 予算${budget.budget} / 消費${budget.consumed}
 
 ## 今日アプリに記録済みの食事(これが正)
 ${mealLines}
+
+## 直近14日の食事記録(全件・これが正。記録なしの日は行ごと省略)
+${mealLog14}
+
+## 直近14日のトレーニング記録(全件)
+${workoutLog14}
 
 ## 登録済み食事テンプレート(上限30件)
 ${templates.map((t) => `- ${t.name}${t.aliases.length ? ` (別名: ${t.aliases.join('、')})` : ''}`).join('\n') || '- (なし)'}
@@ -552,6 +611,42 @@ async function runQueryTool(name: string, input: Record<string, unknown>): Promi
     const pf = await planForecast();
     if (!pf.hasPlan) return JSON.stringify({ error: '目標が未設定です(トレンドタブまたはupdate_settingsで設定できます)' });
     return JSON.stringify(pf);
+  }
+  if (name === 'query_logs') {
+    const fromDate = String(input.from_date ?? toKey(addDays(today, -7)));
+    const toDate = String(input.to_date ?? toKey(today));
+    const type = String(input.type ?? 'all');
+    // ローカル日付の丸1日をカバーする範囲(終了日の翌日0時まで)
+    const [fy, fm, fd] = fromDate.split('-').map(Number);
+    const [ty, tm, td] = toDate.split('-').map(Number);
+    const fromIso = new Date(fy, fm - 1, fd).toISOString();
+    const toIso = new Date(ty, tm - 1, td + 1).toISOString();
+    const store = await import('@/lib/store');
+    const out: Record<string, unknown> = { from: fromDate, to: toDate };
+    if (type === 'meals' || type === 'all') {
+      out.meals = (await store.listMealLogs(fromIso, toIso)).map((m) => ({
+        id: m.id, datetime: m.timestamp, localDate: store.localDateKey(m.timestamp),
+        what: m.freeText ?? 'テンプレート食', kcal: Math.round(m.kcal),
+        protein: Math.round(m.protein), fat: Math.round(m.fat), carbs: Math.round(m.carbs),
+        isEstimate: m.isEstimate,
+      }));
+    }
+    if (type === 'workouts' || type === 'all') {
+      out.workouts = (await store.listWorkoutLogs(fromIso, toIso)).map((w) => ({
+        id: w.id, datetime: w.timestamp, localDate: store.localDateKey(w.timestamp),
+        exercises: w.exercises, durationMin: w.durationMin, note: w.note,
+      }));
+    }
+    if (type === 'stress' || type === 'all') {
+      out.stress = (await store.listStressLogs(fromIso, toIso)).map((s) => ({
+        datetime: s.timestamp, level: s.level, note: s.note,
+      }));
+    }
+    if (type === 'metrics' || type === 'all') {
+      const range = await getRange(fromDate, toDate);
+      out.metrics = [...range.entries()].map(([date, m]) => ({ date, ...m }));
+    }
+    return JSON.stringify(out);
   }
   if (name === 'save_memory') {
     const category = String(input.category ?? 'context') as MemoryCategory;
@@ -831,6 +926,30 @@ function summarize(name: string, input: Record<string, unknown>): string {
   return JSON.stringify(input);
 }
 
+/**
+ * 重複登録の防止: 記録しようとしている食事の前後1時間に既存の記録があれば、
+ * 確認カードに警告を出してユーザーに気づかせる(幻覚由来の再登録対策)。
+ */
+async function duplicateMealWarning(input: Record<string, unknown>): Promise<string> {
+  try {
+    const ts = normalizeIso(input.datetime, new Date().toISOString());
+    const center = new Date(ts).getTime();
+    const store = await import('@/lib/store');
+    const nearby = await store.listMealLogs(
+      new Date(center - 3600_000).toISOString(),
+      new Date(center + 3600_000).toISOString(),
+    );
+    if (nearby.length === 0) return '';
+    const lines = nearby.map((m) => {
+      const t = new Date(m.timestamp);
+      return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} ${m.freeText ?? 'テンプレート食'} ${Math.round(m.kcal)}kcal`;
+    }).join(' / ');
+    return `\n\n⚠️ 同じ時間帯(±1時間)に既に記録があります:\n${lines}\n重複でないことを確認してから「記録する」を押してください`;
+  } catch {
+    return '';
+  }
+}
+
 // ---- メインループ ----
 
 async function callApi(system: string, messages: ApiMessage[]): Promise<{ content: { type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }[]; stop_reason: string }> {
@@ -983,13 +1102,15 @@ async function runLoop(system: string, messages: ApiMessage[]): Promise<ChatTurn
       const input = (tu.input ?? {}) as Record<string, unknown>;
       if (MUTATION_TOOLS.has(name)) {
         // 記録系: 確認カードへ。複数同時の場合も1件ずつ確認する
+        let summary = summarize(name, input);
+        if (name === 'log_meal') summary += await duplicateMealWarning(input);
         return {
           text: collected,
           pending: {
             toolName: name,
             toolUseId: tu.id as string,
             input,
-            summary: summarize(name, input),
+            summary,
             messages,
           },
         };

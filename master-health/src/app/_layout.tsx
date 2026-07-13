@@ -61,7 +61,8 @@ export default function RootLayout() {
           tintColor={Colors.accent}
           labelStyle={{ color: Colors.textSecondary, selected: { color: Colors.accent } }}
         >
-          {/* 左から My Body / 実績報告 / Mr. Vyta / トレンド / More(チーム・設定) */}
+          {/* 左から My Body / 実績報告 / Mr. Vyta / トレンド / More(自前画面。
+              6個以上にするとiOSが素のMoreリストを自動生成して品質が落ちるため5個厳守) */}
           <NativeTabs.Trigger name="index">
             <NativeTabs.Trigger.Label>My Body</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf={{ default: 'heart.text.square', selected: 'heart.text.square.fill' }} />
@@ -78,13 +79,9 @@ export default function RootLayout() {
             <NativeTabs.Trigger.Label>トレンド</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf="chart.xyaxis.line" />
           </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="team">
-            <NativeTabs.Trigger.Label>チーム</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon sf={{ default: 'person.3', selected: 'person.3.fill' }} />
-          </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="settings">
-            <NativeTabs.Trigger.Label>設定</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon sf={{ default: 'gearshape', selected: 'gearshape.fill' }} />
+          <NativeTabs.Trigger name="more">
+            <NativeTabs.Trigger.Label>More</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon sf={{ default: 'ellipsis.circle', selected: 'ellipsis.circle.fill' }} />
           </NativeTabs.Trigger>
         </NativeTabs>
         <Onboarding visible={showOnboarding} onDone={finishOnboarding} />

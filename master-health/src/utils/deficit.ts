@@ -267,6 +267,20 @@ export interface GoalNumbers {
   pfcGrams: { p: number; f: number; c: number } | null;
 }
 
+/**
+ * 今日の目標摂取kcal。
+ * custom時は手入力値、autoは(今日の暫定TDEE − 必要赤字)をBMR下限でクランプ。
+ * 「今日あと食べられる」はこの値から摂取済みを引いて出す(TDEE差分だと収支ゼロ=痩せない)。
+ */
+export function targetIntakeToday(g: GoalNumbers, todayBurn: number | null): number | null {
+  if (g.plan.intakeMode === 'custom' && g.plan.customIntakeKcal != null) return Math.round(g.plan.customIntakeKcal);
+  const burn = todayBurn ?? g.avgBurn;
+  if (burn == null) return null;
+  const raw = burn - (g.requiredDailyDeficit ?? 0);
+  if (g.bmr != null && raw < g.bmr) return Math.round(g.bmr);
+  return Math.round(raw);
+}
+
 /** 目標設定カードに出す数値一式 */
 export async function goalNumbers(): Promise<GoalNumbers> {
   const plan = await getGoalPlan();

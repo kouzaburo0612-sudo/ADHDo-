@@ -1,16 +1,14 @@
 /**
  * チーム: スタッフ・役員同士で健康状態を相互に見る。
  * 「太ってきた・寝れてない・ストレス高い・運動不足」がひと目でわかるカードを並べる。
+ * Moreタブからモーダルとして開かれる(v3.9でタブ→モーダルに変更)。
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, Share,
   StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BrandHeader } from '@/components/BrandHeader';
 import { Card, SectionTitle } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import {
@@ -26,8 +24,7 @@ const SHARE_ITEMS: { key: keyof ShareSettings; label: string }[] = [
   { key: 'balance', label: 'カロリー収支' },
 ];
 
-export default function TeamScreen() {
-  const insets = useSafeAreaInsets();
+export function TeamBody() {
   const [state, setState] = useState<TeamState | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -51,7 +48,7 @@ export default function TeamScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useEffect(() => { load(); }, [load]);
 
   const submit = async () => {
     if (!myName.trim()) { Alert.alert('あなたの表示名を入れてください'); return; }
@@ -106,11 +103,10 @@ export default function TeamScreen() {
   return (
     <ScrollView
       style={styles.root}
-      contentContainerStyle={{ paddingTop: insets.top, padding: Spacing.md, paddingBottom: 120 }}
+      contentContainerStyle={{ padding: Spacing.md, paddingBottom: 60 }}
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={Colors.accent} />}
     >
-      <BrandHeader sub="チーム" />
 
       {state == null && (
         <View style={{ marginTop: Spacing.xl, alignItems: 'center' }}>

@@ -8,9 +8,8 @@ import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } 
 import { useFocusEffect } from 'expo-router';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-worklets';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BrandHeader } from '@/components/BrandHeader';
+import { AppHeader } from '@/components/AppHeader';
 import { Card, Chip, SectionTitle } from '@/components/ui';
 import { SettingsSheet } from '@/components/SettingsSheet';
 import { Colors, Fonts, Spacing, Type, scoreColor } from '@/constants/theme';
@@ -20,7 +19,10 @@ import { getCustomTags, addCustomTag, addTag, removeTag, getTags, getRange } fro
 import { addDays, formatKeyJa, fromKey, toKey, todayKey } from '@/lib/dates';
 import { BODY_DETAIL_ORDER, METRICS, formatValue, PRESET_TAGS, type MetricKey } from '@/lib/metrics';
 import { listMealLogs, listTemplates, listWorkoutLogs, localDateKey } from '@/lib/store';
-import { balanceSeries, calorieBank, KCAL_PER_KG_FAT, type BankSummary, type DayBalance } from '@/utils/deficit';
+import {
+  balanceSeries, calorieBank, goalNumbers, KCAL_PER_KG_FAT, targetIntakeToday,
+  type BankSummary, type DayBalance, type GoalNumbers,
+} from '@/utils/deficit';
 
 /** 左から: コンディション・睡眠・活動・体組成 (Ouraと同じ並び感) */
 const CATEGORIES = [
@@ -51,12 +53,12 @@ const hhmm = (iso: string): string => {
 };
 
 export default function MyBodyScreen() {
-  const insets = useSafeAreaInsets();
   const { status, request } = useHealthAuth();
   const d = useDashboard();
   const [dateKey, setDateKey] = useState(todayKey());
   const [day, setDay] = useState<DayData | null>(null);
   const [bank, setBank] = useState<BankSummary | null>(null);
+  const [goal, setGoal] = useState<GoalNumbers | null>(null);
   const [scores, setScores] = useState<Scores | null>(null);
   const [customTags, setCustomTags] = useState<{ name: string; emoji: string }[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -124,6 +126,7 @@ export default function MyBodyScreen() {
       setDay({ metrics, weight, bodyFat, balance, tags, meals, workouts });
       setScores(await scoresForDate(key)); // 過去日も同じフォーマットでスコアを出す
       setBank(await calorieBank(key)); // その日「時点まで」の累積
+      try { setGoal(await goalNumbers()); } catch { /* 目標未設定でも動く */ }
     } catch { /* 表示は次のフォーカスで再試行 */ }
   }, []);
 
@@ -171,33 +174,44 @@ export default function MyBodyScreen() {
   const deficit = bal != null && bal < 0;
   const fatGram = bal != null ? Math.abs(Math.round((bal / KCAL_PER_KG_FAT) * 1000)) : null;
 
+  // 「今日あと食べられる」は目標摂取基準(TDEE差分だと収支ゼロ=痩せない)
+  const todayIntakeVal = day?.balance?.intake ?? 0;
+  const todayBurn = day?.balance?.burn ?? null;
+  const targetIntake = goal != null ? targetIntakeToday(goal, todayBurn) : null;
+  const remainToGoal = targetIntake != null ? targetIntake - todayIntakeVal : null;
+  const remainToTdee = todayBurn != null ? todayBurn - todayIntakeVal : null;
+
   const statRows = BODY_DETAIL_ORDER
     .filter((key) => day?.metrics[key] != null)
     .map((key) => [key, METRICS[key].label, METRICS[key].asDuration ? '' : ` ${METRICS[key].unit}`] as const);
 
   return (
-    <GestureDetector gesture={swipe}>
-      <ScrollView
-        style={styles.screen}
-        contentContainerStyle={{ paddingTop: insets.top, paddingBottom: 120, paddingHorizontal: Spacing.md }}
-        refreshControl={<RefreshControl refreshing={d.refreshing} onRefresh={() => { d.refresh(); loadDay(dateKey); }} tintColor={Colors.accent} />}
-      >
-        {/* 日付ナビゲーション(スワイプでも移動可)+ 設定 */}
-        <View style={styles.dateNav}>
+    <View style={styles.screen}>
+      {/* ヘッダーは全タブ共通のAppHeaderをスクロール外に固定(ロゴ位置を統一) */}
+      <AppHeader
+        sub={isToday ? `My Body ・ 今日 ${formatKeyJa(dateKey)}` : `My Body ・ ${formatKeyJa(dateKey)}`}
+        left={
           <Pressable onPress={() => shiftDay(-1)} hitSlop={10} style={styles.dateBtn}>
             <Text style={styles.dateBtnText}>‹</Text>
           </Pressable>
-          <BrandHeader sub={isToday ? `My Body ・ 今日 ${formatKeyJa(dateKey)}` : `My Body ・ ${formatKeyJa(dateKey)}`} />
-          <View style={{ flexDirection: 'row', gap: 8 }}>
+        }
+        right={
+          <>
             <Pressable onPress={() => setSettingsOpen(true)} hitSlop={10} style={styles.dateBtn}>
               <Text style={styles.gearText}>⚙︎</Text>
             </Pressable>
             <Pressable onPress={() => shiftDay(1)} hitSlop={10} style={[styles.dateBtn, isToday && { opacity: 0.25 }]}>
               <Text style={styles.dateBtnText}>›</Text>
             </Pressable>
-          </View>
-        </View>
-
+          </>
+        }
+      />
+      <GestureDetector gesture={swipe}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingTop: Spacing.md, paddingBottom: 120, paddingHorizontal: Spacing.md }}
+        refreshControl={<RefreshControl refreshing={d.refreshing} onRefresh={() => { d.refresh(); loadDay(dateKey); }} tintColor={Colors.accent} />}
+      >
         {/* スコア(コンディション・睡眠・活動・体組成)。過去日も表示。タップで根拠 */}
         {scores != null && (
           <>
@@ -295,10 +309,39 @@ export default function MyBodyScreen() {
           {bal != null ? (
             <>
               {isToday ? (
-                <Text style={[styles.balanceValue, { color: -bal >= 0 ? Colors.accent : Colors.surplus }]}>
-                  {(-bal) >= 0 ? (-bal).toLocaleString() : `${Math.abs(-bal).toLocaleString()}オーバー`}
-                  {(-bal) >= 0 && <Text style={styles.heroUnit}> kcal</Text>}
-                </Text>
+                // 目標摂取(暫定TDEE−必要赤字、BMR下限)基準で「あと食べられる」を出す。
+                // 目標超過だがTDEE未満 → 2段階表示 / TDEEも超過 → 黒字表示+週次調整の導線
+                remainToGoal != null ? (
+                  remainToGoal >= 0 ? (
+                    <Text style={[styles.balanceValue, { color: Colors.accent }]}>
+                      {remainToGoal.toLocaleString()}
+                      <Text style={styles.heroUnit}> kcal</Text>
+                    </Text>
+                  ) : remainToTdee != null && remainToTdee > 0 ? (
+                    <>
+                      <Text style={[styles.balanceValue, { color: Colors.warn, fontSize: 26 }]}>
+                        目標オーバー(+{Math.abs(remainToGoal).toLocaleString()}kcal)
+                      </Text>
+                      <Text style={styles.balanceSub}>
+                        ただし維持ライン(TDEE)までは あと{remainToTdee.toLocaleString()}kcal。ここで止めれば太りません
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={[styles.balanceValue, { color: Colors.surplus, fontSize: 26 }]}>
+                        本日は黒字(+{Math.abs(remainToTdee ?? Math.abs(remainToGoal)).toLocaleString()}kcal)
+                      </Text>
+                      <Text style={styles.balanceSub}>
+                        週の残りで調整しましょう(トレンドタブの今週の収支で日割りを確認できます)
+                      </Text>
+                    </>
+                  )
+                ) : (
+                  <Text style={[styles.balanceValue, { color: -bal >= 0 ? Colors.accent : Colors.surplus }]}>
+                    {(-bal) >= 0 ? (-bal).toLocaleString() : `${Math.abs(-bal).toLocaleString()}オーバー`}
+                    {(-bal) >= 0 && <Text style={styles.heroUnit}> kcal</Text>}
+                  </Text>
+                )
               ) : (
                 <Text style={[styles.balanceValue, { color: deficit ? Colors.deficit : Colors.surplus }]}>
                   {bal > 0 ? '+' : '−'}{Math.abs(bal).toLocaleString()}
@@ -337,7 +380,19 @@ export default function MyBodyScreen() {
                       </View>
                       <Text style={styles.vsNum}>{burn.toLocaleString()}</Text>
                     </View>
-                    {isToday && (
+                    {isToday && targetIntake != null && (
+                      <Text style={styles.balanceSub}>
+                        目標摂取 {targetIntake.toLocaleString()} = {day?.balance?.provisional ? '暫定' : ''}TDEE {burn.toLocaleString()}
+                        {goal?.requiredDailyDeficit != null && goal.requiredDailyDeficit > 0 ? ` − 必要赤字 ${goal.requiredDailyDeficit.toLocaleString()}` : ''}
+                        {goal?.plan.intakeMode === 'custom' ? '(手入力)' : ''}
+                      </Text>
+                    )}
+                    {isToday && remainToGoal != null && remainToGoal >= 0 && remainToTdee != null && (
+                      <Text style={styles.balanceSub}>
+                        維持ライン(TDEE)までは あと{remainToTdee.toLocaleString()}kcal
+                      </Text>
+                    )}
+                    {isToday && targetIntake == null && (
                       <Text style={styles.balanceSub}>
                         {day?.balance?.provisional ? '暫定' : ''}TDEE {burn.toLocaleString()} − 摂取 {intake.toLocaleString()}
                         {' ・ '}ここまでの収支 {bal! > 0 ? '+' : '−'}{Math.abs(bal!).toLocaleString()}kcal
@@ -488,10 +543,12 @@ export default function MyBodyScreen() {
           <Chip label="+ 追加" onPress={onAddCustomTag} />
         </View>
 
-        {/* 設定(タブではなく⚙から開くモーダル) */}
-        <SettingsSheet visible={settingsOpen} onClose={() => { setSettingsOpen(false); loadDay(dateKey); }} />
       </ScrollView>
-    </GestureDetector>
+      </GestureDetector>
+
+      {/* 設定(タブではなく⚙から開くモーダル) */}
+      <SettingsSheet visible={settingsOpen} onClose={() => { setSettingsOpen(false); loadDay(dateKey); }} />
+    </View>
   );
 }
 

@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BrandHeader } from '@/components/BrandHeader';
+import { AppHeader } from '@/components/AppHeader';
 import { Card } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { adviceErrorMessage } from '@/lib/ai';
@@ -16,7 +16,7 @@ import { maybeAutoPost } from '@/lib/autopost';
 import { maybeCompactHistory, resumeChat, sendChat, stripMarkdown, type ChatImage, type PendingAction } from '@/lib/chat';
 import { appendChat, listChat } from '@/lib/store';
 import { syncHealthData } from '@/lib/sync';
-import { balanceSeries } from '@/utils/deficit';
+import { balanceSeries, goalNumbers, targetIntakeToday } from '@/utils/deficit';
 
 interface Bubble { key: string; role: 'user' | 'assistant'; content: string; imageUri?: string }
 
@@ -80,10 +80,15 @@ export default function ChatScreen() {
     try {
       const [bal] = (await balanceSeries(1)).slice(-1);
       if (bal) {
-        setSummary({
-          kcal: bal.intake ?? 0,
-          remaining: bal.burn != null ? bal.burn - (bal.intake ?? 0) : null,
-        });
+        // 残りは目標摂取基準(TDEE差分だと収支ゼロ=痩せないためミスリード)
+        let remaining: number | null = null;
+        try {
+          const g = await goalNumbers();
+          const target = targetIntakeToday(g, bal.burn);
+          if (target != null) remaining = target - (bal.intake ?? 0);
+        } catch { /* 目標未設定 */ }
+        if (remaining == null && bal.burn != null) remaining = bal.burn - (bal.intake ?? 0);
+        setSummary({ kcal: bal.intake ?? 0, remaining });
       }
     } catch { /* サマリーは補助情報なので失敗しても無視 */ }
   }, []);
@@ -194,13 +199,11 @@ export default function ChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
-      <View style={[styles.header, { paddingTop: insets.top + Spacing.sm }]}>
-        <BrandHeader
-          sub={summary
-            ? `Mr. Vyta ・ 今日 ${summary.kcal}kcal${summary.remaining != null ? ` / あと ${summary.remaining.toLocaleString()}kcal` : ''}`
-            : 'Health Manager AI ・ Mr. Vyta'}
-        />
-      </View>
+      <AppHeader
+        sub={summary
+          ? `Mr. Vyta ・ 今日 ${summary.kcal}kcal${summary.remaining != null ? ` / 目標まであと ${summary.remaining.toLocaleString()}kcal` : ''}`
+          : 'Health Manager AI ・ Mr. Vyta'}
+      />
 
       <FlatList
         ref={listRef}

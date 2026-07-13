@@ -8,9 +8,8 @@ import {
   ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BrandHeader } from '@/components/BrandHeader';
+import { AppHeader } from '@/components/AppHeader';
 import { Card, Chip, SectionTitle } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { adviceErrorMessage } from '@/lib/ai';
@@ -42,16 +41,16 @@ const STRESS_LEVELS = [
 const CARDIO_PRESETS = ['ウォーキング', 'ランニング', 'サイクリング', '水泳', 'ヨガ', 'サウナ'];
 
 export default function ReportScreen() {
-  const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('meal');
 
   return (
+    <View style={styles.root}>
+    <AppHeader sub="実績報告" />
     <ScrollView
-      style={styles.root}
-      contentContainerStyle={{ paddingTop: insets.top, padding: Spacing.md, paddingBottom: 120 }}
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: Spacing.md, paddingBottom: 120 }}
       keyboardShouldPersistTaps="handled"
     >
-      <BrandHeader sub="実績報告" />
       {/* 大きく目立つ切り替えタブ(食事/運動/ストレス) */}
       <View style={styles.bigTabs}>
         {([
@@ -73,6 +72,7 @@ export default function ReportScreen() {
       {tab === 'workout' && <WorkoutSection />}
       {tab === 'stress' && <StressSection />}
     </ScrollView>
+    </View>
   );
 }
 
