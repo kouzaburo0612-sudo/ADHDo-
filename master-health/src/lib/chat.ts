@@ -218,6 +218,31 @@ const TOOLS = [
     },
   },
   {
+    name: 'confirm_day',
+    description: '指定日の食事記録を「これで全部」として確定する。確定した日の収支は累積赤字に反映される(食事2件以上かつ1,000kcal以上の日は自動確定されるため不要)。ユーザーが「今日はもう食べない」「その日はそれで全部」と言ったときに使う。実行前にユーザー確認カードが表示される。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        date: { type: 'string', description: 'YYYY-MM-DD。省略時は今日' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'log_rough_day',
+    description: `詳細を覚えていない過去日の摂取を「ざっくり5段階」で概算記録する。基準は直近14日の確定日の平均摂取kcal。記録後、その日は自動的に確定される。実行前にユーザー確認カードが表示される。
+レベル対応: 1=全然食べてない(基準の40%) 2=あまり食べていない(70%) 3=同じくらい食べた(100%) 4=多めに食べた(130%) 5=かなり食べた(170%)
+曖昧表現のマッピング例: 「ほぼ食べてない」→1 / 「軽めだった」→2 / 「まあまあ」「普通」→3 / 「ちょっと食べすぎた」→4 / 「爆食した」「飲み会でたらふく」→5`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        date: { type: 'string', description: '対象日 YYYY-MM-DD(過去日)' },
+        level: { type: 'number', description: '1〜5' },
+      },
+      required: ['date', 'level'],
+    },
+  },
+  {
     name: 'query_logs',
     description: 'DB内の記録(食事・トレーニング・ストレス・体組成などの計測値)を任意の期間で照会する。記録の有無や内容について発言する前に、必ずこのツールかquery_recentで実データを確認すること。システムプロンプトに見えていない記録も、このツールで確認できる。',
     input_schema: {
@@ -289,7 +314,7 @@ const TOOLS = [
 
 const MUTATION_TOOLS = new Set([
   'log_meal', 'log_workout', 'log_stress', 'set_day_type', 'add_template', 'add_workout_template',
-  'delete_meal_log', 'delete_template', 'set_goal', 'update_settings',
+  'delete_meal_log', 'delete_template', 'set_goal', 'update_settings', 'confirm_day', 'log_rough_day',
 ]);
 
 // ---- 型 ----
@@ -385,7 +410,27 @@ async function buildSystemPrompt(): Promise<string> {
         balanceLine += ` / 維持ラインまで: ${remainTdee}kcal`;
       }
     }
-    balanceLine += `\n- カロリー赤字の累積: ${bank.bankedKcal}kcal(脂肪${bank.fatKgEquivalent}kg相当)、連続脂肪燃焼${bank.streakDays}日`;
+    balanceLine += `\n- カロリー赤字の累積(確定日のみ): ${bank.bankedKcal}kcal(脂肪${bank.fatKgEquivalent}kg相当)、連続脂肪燃焼${bank.streakDays}日`;
+    if (bank.unconfirmedDates.length > 0) {
+      balanceLine += `\n- 未確定の日: ${bank.unconfirmedDates.join('、')}(${bank.unconfirmedDates.length}日分。確定するまで累積に入らない)`;
+      if (bank.unconfirmedDates.length >= 3) {
+        balanceLine += `\n- 未確定日が3日以上ある。会話の冒頭で一度だけ「未確定の日が${bank.unconfirmedDates.length}日あります。まとめて確認しますか?」と促し、日付ごとに confirm_day(記録が全部ならそのまま確定)か log_rough_day(ざっくり入力)を提案する`;
+      }
+    }
+  } catch { /* 補助情報 */ }
+
+  // 復帰歓迎: 最後の食事記録から2日以上空いていたら、責めずにざっくり入力へ誘導
+  let comebackLine = '';
+  try {
+    const store = await import('@/lib/store');
+    const recent = await store.listMealLogs(addDays(today, -30).toISOString(), dayEnd.toISOString());
+    if (recent.length > 0) {
+      const lastDay = localDateKey(recent[0].timestamp); // DESC先頭が最新
+      const gapDays = Math.round((today.getTime() - new Date(lastDay).getTime()) / 86400000);
+      if (gapDays >= 2) {
+        comebackLine = `\n- 最後の食事記録は${lastDay}(${gapDays}日前)。ユーザーが記録を再開したら「${gapDays}日ぶりの記録ですね」と歓迎し、空白期間をlog_rough_day(ざっくり入力)で埋めることを一度だけ提案する。責めるトーンは厳禁(「もう台無しだ」と感じさせて記録をやめさせるのが最悪の結果)`;
+      }
+    }
   } catch { /* 補助情報 */ }
 
   // 今日のストレス報告
@@ -508,7 +553,7 @@ ${dailyLines}
 ## 本日の状態
 - 今日の摂取: ${Math.round(todayIntake.kcal)}kcal (P${Math.round(todayIntake.protein)}g F${Math.round(todayIntake.fat)}g C${Math.round(todayIntake.carbs)}g)
 - 体重7日平均: ${weightMa != null ? weightMa.toFixed(1) + 'kg' : 'データなし'}
-- 実績TDEE: 活動ベース${tdee.activity ?? '算出中'} / 逆算ベース${tdee.reverse ?? `不可(食事記録${tdee.loggedDays}/14日)`}${balanceLine}${stressLine}
+- 実績TDEE: 活動ベース${tdee.activity ?? '算出中'} / 逆算ベース${tdee.reverse ?? `不可(食事記録${tdee.loggedDays}/14日)`}${balanceLine}${stressLine}${comebackLine}
 ${budget ? `- 今週の収支: 予算${budget.budget} / 消費${budget.consumed} / 残り${budget.remaining}kcal (残り${budget.daysLeft}日、日割り${budget.perDayRecommended}kcal)` : ''}
 
 ## 今日アプリに記録済みの食事(これが正)
@@ -546,6 +591,8 @@ ${workoutTemplates.map((t) => `- ${t.name}`).join('\n') || '- (なし)'}
 - 会話の中で今後も重要な事実(嗜好・決定事項・期間限定の状況・未解決の課題)が出たらsave_memoryで保存する。重複は保存しない。解決・失効したメモリはdelete_memoryで消す
 - カロリー赤字はユーザーの楽しみ。赤字が出た日は具体的な数字(貯金額・脂肪換算)で褒める
 - 記録済みかどうかはquery_recentで確認してから答える(推測で「記録されていません」と言わない)
+- 過去日の量の曖昧な表現(「昨日はまあまあ食べた」「一昨日はほぼ食べてない」等)は、log_rough_dayの5段階にマッピングして記録を提案する
+- 「今日はもう食べない」「これで全部」と言われたらconfirm_dayでその日を確定する
 - 回避食材が食事に含まれる場合は必ず指摘する
 - 医学的診断はしない`;
 }
@@ -777,6 +824,35 @@ export async function executeMutation(name: string, input: Record<string, unknow
     }
     return JSON.stringify({ ok: true, deleted: input.name });
   }
+  if (name === 'confirm_day') {
+    const date = String(input.date ?? toKey(new Date()));
+    await (await import('@/lib/store')).confirmDay(date, 'chat');
+    return JSON.stringify({ ok: true, confirmed: date });
+  }
+  if (name === 'log_rough_day') {
+    const date = String(input.date ?? '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return JSON.stringify({ error: 'dateはYYYY-MM-DD形式で指定してください' });
+    const level = Math.max(1, Math.min(5, Math.round(Number(input.level))));
+    const { roughBaselineKcal, ROUGH_LEVELS } = await import('@/utils/deficit');
+    const base = await roughBaselineKcal();
+    const def = ROUGH_LEVELS.find((l) => l.level === level)!;
+    const kcal = Math.round(base * def.pct);
+    const plan = await getGoalPlan();
+    const [y, mo, d2] = date.split('-').map(Number);
+    await addMealLog({
+      id: newId(),
+      timestamp: new Date(y, mo - 1, d2, 12, 0, 0).toISOString(),
+      templateId: null,
+      freeText: `ざっくり入力(${def.label})`,
+      kcal,
+      protein: Math.round((kcal * plan.pfc.p) / 100 / 4),
+      fat: Math.round((kcal * plan.pfc.f) / 100 / 9),
+      carbs: Math.round((kcal * plan.pfc.c) / 100 / 4),
+      isEstimate: true,
+    });
+    await (await import('@/lib/store')).confirmDay(date, 'chat');
+    return JSON.stringify({ ok: true, date, level, estimatedKcal: kcal, note: '精度低の概算。日次は確定済み' });
+  }
   if (name === 'set_day_type') {
     const date = String(input.date ?? toKey(new Date()));
     const name_ = String(input.day_type_name);
@@ -895,6 +971,11 @@ function summarize(name: string, input: Record<string, unknown>): string {
     return `${head}\n${ex.map((e) => `${e.exerciseName} ${e.weight ?? ''}${e.weightUnit ?? ''} ${e.reps}回×${e.sets}セット`).join('\n')}`;
   }
   if (name === 'set_day_type') return `${input.date ?? '今日'} を「${input.day_type_name}」に設定`;
+  if (name === 'confirm_day') return `${input.date ?? '今日'} の記録を「これで全部」として確定します(収支が累積赤字に反映されます)`;
+  if (name === 'log_rough_day') {
+    const labels = ['', '全然食べてない(約40%)', 'あまり食べていない(約70%)', '同じくらい食べた(100%)', '多めに食べた(約130%)', 'かなり食べた(約170%)'];
+    return `${input.date} をざっくり入力で記録: ${labels[Number(input.level)] ?? input.level}\n(直近の平均摂取を基準にした概算。記録後にその日は確定されます)`;
+  }
   if (name === 'update_settings') {
     const labels: Record<string, string> = {
       height_cm: '身長', birth_date: '生年月日', sex: '性別',
@@ -926,31 +1007,10 @@ function summarize(name: string, input: Record<string, unknown>): string {
   return JSON.stringify(input);
 }
 
-/**
- * 重複登録の防止: 記録しようとしている食事の前後1時間に既存の記録があれば、
- * 確認カードに警告を出してユーザーに気づかせる(幻覚由来の再登録対策)。
- */
-async function duplicateMealWarning(input: Record<string, unknown>): Promise<string> {
-  try {
-    const ts = normalizeIso(input.datetime, new Date().toISOString());
-    const center = new Date(ts).getTime();
-    const store = await import('@/lib/store');
-    const nearby = await store.listMealLogs(
-      new Date(center - 3600_000).toISOString(),
-      new Date(center + 3600_000).toISOString(),
-    );
-    if (nearby.length === 0) return '';
-    const lines = nearby.map((m) => {
-      const t = new Date(m.timestamp);
-      return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} ${m.freeText ?? 'テンプレート食'} ${Math.round(m.kcal)}kcal`;
-    }).join(' / ');
-    return `\n\n⚠️ 同じ時間帯(±1時間)に既に記録があります:\n${lines}\n重複でないことを確認してから「記録する」を押してください`;
-  } catch {
-    return '';
-  }
-}
-
 // ---- メインループ ----
+// 注意: 同時刻±1時間の「重複警告」はv4.0で完全撤廃した(3回の指摘)。
+// 外食のコース料理など同時刻に複数品目を記録するのは正常な使い方であり、
+// 警告の価値がないため、チェックロジックごと削除してある。再実装しないこと。
 
 async function callApi(system: string, messages: ApiMessage[]): Promise<{ content: { type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }[]; stop_reason: string }> {
   const apiKey = await getApiKey();
@@ -1102,15 +1162,13 @@ async function runLoop(system: string, messages: ApiMessage[]): Promise<ChatTurn
       const input = (tu.input ?? {}) as Record<string, unknown>;
       if (MUTATION_TOOLS.has(name)) {
         // 記録系: 確認カードへ。複数同時の場合も1件ずつ確認する
-        let summary = summarize(name, input);
-        if (name === 'log_meal') summary += await duplicateMealWarning(input);
         return {
           text: collected,
           pending: {
             toolName: name,
             toolUseId: tu.id as string,
             input,
-            summary,
+            summary: summarize(name, input),
             messages,
           },
         };

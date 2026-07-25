@@ -79,6 +79,16 @@ db.execAsync(`
     content TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS day_confirmations (
+    date TEXT PRIMARY KEY,
+    method TEXT NOT NULL DEFAULT 'manual',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS pending_photos (
+    id TEXT PRIMARY KEY,
+    uri TEXT NOT NULL,
+    timestamp TEXT NOT NULL
+  );
 `)
   .then(() => normalizeLogTimestamps())
   .catch((e) => console.warn('store init failed', e));
@@ -552,6 +562,44 @@ export async function oldestChat(limit: number): Promise<ChatMessage[]> {
 
 export async function deleteChatUpTo(maxId: number): Promise<void> {
   await db.runAsync('DELETE FROM chat_messages WHERE id <= ?', maxId);
+}
+
+// ---- 日次確定(サボり対策の基盤) ----
+// 食事2件以上かつ1,000kcal以上の日は自動確定扱い(deficit.ts側で判定)。
+// ここは「ユーザーが手動で確定した日」の記録。
+
+export async function confirmDay(date: string, method: 'manual' | 'declare' | 'chat' = 'manual'): Promise<void> {
+  await db.runAsync('INSERT OR REPLACE INTO day_confirmations (date, method) VALUES (?, ?)', date, method);
+}
+
+export async function unconfirmDay(date: string): Promise<void> {
+  await db.runAsync('DELETE FROM day_confirmations WHERE date = ?', date);
+}
+
+export async function listConfirmedDays(fromDate: string, toDate: string): Promise<Set<string>> {
+  const rows = await db.getAllAsync<{ date: string }>(
+    'SELECT date FROM day_confirmations WHERE date BETWEEN ? AND ?', fromDate, toDate,
+  );
+  return new Set(rows.map((r) => r.date));
+}
+
+// ---- 後で記録ボックス(写真だけ先に撮っておく) ----
+
+export interface PendingPhoto { id: string; uri: string; timestamp: string }
+
+export async function addPendingPhoto(uri: string): Promise<void> {
+  await db.runAsync(
+    'INSERT INTO pending_photos (id, uri, timestamp) VALUES (?, ?, ?)',
+    newId(), uri, new Date().toISOString(),
+  );
+}
+
+export async function listPendingPhotos(): Promise<PendingPhoto[]> {
+  return db.getAllAsync<PendingPhoto>('SELECT * FROM pending_photos ORDER BY timestamp ASC');
+}
+
+export async function deletePendingPhoto(id: string): Promise<void> {
+  await db.runAsync('DELETE FROM pending_photos WHERE id = ?', id);
 }
 
 // ---- 会話メモリ(長期記憶) ----

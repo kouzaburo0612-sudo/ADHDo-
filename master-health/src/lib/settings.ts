@@ -10,6 +10,12 @@ export interface ScoreWeights {
   activity: number;
 }
 
+export interface MealReminder {
+  enabled: boolean;
+  /** 'HH:mm' */
+  time: string;
+}
+
 export interface Settings {
   /** 体脂肪率の目標(%) */
   bodyFatGoal: number;
@@ -21,6 +27,10 @@ export interface Settings {
   stepsGoal: number;
   /** 総合スコアの重み(合計は自動で正規化) */
   weights: ScoreWeights;
+  /** 食事リマインダー(朝・昼・夜) */
+  mealReminders: { morning: MealReminder; lunch: MealReminder; dinner: MealReminder };
+  /** 夜の「本日確定」通知 */
+  confirmReminder: MealReminder;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -29,6 +39,12 @@ export const DEFAULT_SETTINGS: Settings = {
   sleepGoalMin: 450, // 7.5時間
   stepsGoal: 8000,
   weights: { sleep: 0.3, recovery: 0.3, body: 0.2, activity: 0.2 },
+  mealReminders: {
+    morning: { enabled: false, time: '09:00' },
+    lunch: { enabled: true, time: '13:00' },
+    dinner: { enabled: true, time: '21:00' },
+  },
+  confirmReminder: { enabled: true, time: '22:00' },
 };
 
 const KEY = 'settings_v1';
@@ -37,7 +53,13 @@ export async function loadSettings(): Promise<Settings> {
   try {
     const raw = await kvGet(KEY);
     if (!raw) return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) };
+    const parsed = JSON.parse(raw) as Partial<Settings>;
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      mealReminders: { ...DEFAULT_SETTINGS.mealReminders, ...(parsed.mealReminders ?? {}) },
+      confirmReminder: { ...DEFAULT_SETTINGS.confirmReminder, ...(parsed.confirmReminder ?? {}) },
+    };
   } catch {
     return DEFAULT_SETTINGS;
   }

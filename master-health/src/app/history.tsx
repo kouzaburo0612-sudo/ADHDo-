@@ -11,6 +11,7 @@ import { TrendChart } from '@/components/TrendChart';
 import { Card, Chip, SectionTitle, Segmented } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { RANGE_DAYS, useComparison, useSeries, useTagEffects, type RangeMode } from '@/hooks/useHealthData';
+import { getSeries } from '@/lib/db';
 import { useFocusEffect } from 'expo-router';
 import { addDays, formatKeyJa, fromKey, toKey, todayKey } from '@/lib/dates';
 import { currentTdee } from '@/lib/chat';
@@ -40,12 +41,38 @@ export default function HistoryScreen() {
   const [goal, setGoal] = useState<GoalNumbers | null>(null);
   const [balances, setBalances] = useState<DayBalance[]>([]);
   const [editOpen, setEditOpen] = useState(false);
+  const [honesty, setHonesty] = useState<{ predictedKg: number; actualKg: number; loggedDays: number } | null>(null);
 
   const loadInsights = useCallback(async () => {
     try {
       const today = new Date();
       setGoal(await goalNumbers());
-      setBalances(await balanceSeries(14));
+      const bals = await balanceSeries(14);
+      setBalances(bals);
+
+      // 週次の正直度: 直近7日(今日を除く)の記録収支から予測される体重変化と、
+      // 実測の体重MA7の変化を比較する。乖離が大きい=記録漏れの可能性
+      try {
+        const week = bals.slice(-8, -1); // 昨日までの7日
+        const logged = week.filter((d) => d.balance != null);
+        if (logged.length >= 4) {
+          const predictedKg = logged.reduce((a, d) => a + d.balance!, 0) / 7200;
+          const weights = await getSeries('weight', toKey(addDays(today, -21)), toKey(today));
+          if (weights.length >= 8) {
+            const ma = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+            const vals = weights.map((w) => w.value);
+            const nowMa = ma(vals.slice(-7));
+            const prevMa = ma(vals.slice(-14, -7).length >= 3 ? vals.slice(-14, -7) : vals.slice(0, -7));
+            setHonesty({
+              predictedKg: Math.round(predictedKg * 100) / 100,
+              actualKg: Math.round((nowMa - prevMa) * 100) / 100,
+              loggedDays: logged.length,
+            });
+          }
+        } else {
+          setHonesty(null);
+        }
+      } catch { setHonesty(null); }
       setPf(await planForecast());
       const t = await currentTdee();
       setTdee(t);
@@ -366,6 +393,31 @@ export default function HistoryScreen() {
           </Card>
         </>
       )}
+
+      {/* 週次の正直度: 記録から予測される体重変化と実測の乖離(記録の質のフィードバック) */}
+      {honesty != null && (() => {
+        const diff = Math.abs(honesty.actualKg - honesty.predictedKg);
+        const consistent = diff <= 0.35; // 誤差±0.35kg(水分変動を考慮)なら一致とみなす
+        return (
+          <>
+            <SectionTitle>先週の記録の正直度</SectionTitle>
+            <Card style={consistent ? undefined : { borderColor: Colors.warn, borderWidth: 1 }}>
+              <Text style={{ color: consistent ? Colors.good : Colors.warn, fontSize: Type.body, fontWeight: '700' }}>
+                {consistent ? '✅ 記録は実測とほぼ一致(信頼度高)' : '⚠️ 記録と実測に乖離あり(記録漏れの可能性)'}
+              </Text>
+              <Text style={[styles.goalSub, { marginTop: 6 }]}>
+                記録された収支からの予測: {honesty.predictedKg >= 0 ? '+' : ''}{honesty.predictedKg}kg / 実測(体重MA7の変化): {honesty.actualKg >= 0 ? '+' : ''}{honesty.actualKg}kg
+                (記録{honesty.loggedDays}/7日)
+              </Text>
+              {!consistent && (
+                <Text style={[styles.goalSub, { marginTop: 4 }]}>
+                  食事の記録漏れ・未確定の日がないか確認すると、予測と目標逆算の精度が上がります
+                </Text>
+              )}
+            </Card>
+          </>
+        );
+      })()}
 
       {/* 目標編集モーダル */}
       <GoalEditModal

@@ -11,7 +11,8 @@
 import { getRange } from '@/lib/db';
 import { addDays, toKey } from '@/lib/dates';
 import {
-  dailyIntake, getGoalPlan, getProfile, listWorkoutLogs, localDateKey,
+  dailyIntake, getGoalPlan, getProfile, listConfirmedDays, listMealLogs,
+  listWorkoutLogs, localDateKey,
   type GoalPlan, type UserProfile,
 } from '@/lib/store';
 import { ageFrom, mifflinStJeor } from '@/utils/tdee';
@@ -33,6 +34,8 @@ export interface DayBalance {
   date: string;
   /** その日の摂取kcal(食事記録なしはnull) */
   intake: number | null;
+  /** その日の食事記録の件数 */
+  mealCount: number;
   /** その日の推定消費kcal = TDEE(プロファイル不足はnull) */
   burn: number | null;
   /** TDEEの内訳(burnがnullならnull) */
@@ -44,6 +47,12 @@ export interface DayBalance {
    * 7日平均で補完した暫定TDEEになる(1日が終われば実測で確定)
    */
   provisional: boolean;
+  /**
+   * 日次確定。自動確定(食事2件以上かつ合計1,000kcal以上)または
+   * ユーザーの手動確定(「これで確定」「今日はこれ以上食べない」)。
+   * 未確定の日は累積赤字に加算しない(記録漏れの日を赤字扱いしない)
+   */
+  confirmed: boolean;
 }
 
 /**
@@ -73,6 +82,19 @@ export async function balanceSeries(days: number): Promise<DayBalance[]> {
   const dayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
   const metricMap = await getRange(toKey(from), toKey(today));
   const intakeMap = await dailyIntake(from.toISOString(), dayEnd.toISOString());
+
+  // 食事記録の件数(日次確定の自動判定に使う)と手動確定日
+  const mealCountByDay = new Map<string, number>();
+  try {
+    for (const m of await listMealLogs(from.toISOString(), dayEnd.toISOString())) {
+      const k = localDateKey(m.timestamp);
+      mealCountByDay.set(k, (mealCountByDay.get(k) ?? 0) + 1);
+    }
+  } catch { /* 件数が取れなくても収支は出す */ }
+  let confirmedDays = new Set<string>();
+  try {
+    confirmedDays = await listConfirmedDays(toKey(from), toKey(today));
+  } catch { /* 手動確定なし扱い */ }
 
   // 手動トレ記録(HealthKitワークアウトが無い日のEATに使う)
   // cardio: 有酸素プリセット(reps=1,sets=1の単一種目)として記録される
@@ -162,23 +184,32 @@ export async function balanceSeries(days: number): Promise<DayBalance[]> {
       burn = Math.round(bmr + neat + eat + dit);
     }
 
+    const mealCount = mealCountByDay.get(key) ?? 0;
+    // 自動確定: 食事2件以上かつ合計1,000kcal以上。手動確定はそれを上書き
+    const confirmed = confirmedDays.has(key)
+      || (mealCount >= 2 && intake != null && intake >= 1000);
+
     out.push({
       date: key,
       intake,
+      mealCount,
       burn,
       parts,
       balance: intake != null && burn != null ? intake - burn : null,
       provisional,
+      confirmed,
     });
   }
   return out;
 }
 
 export interface BankSummary {
-  /** 累積赤字kcal(正=貯金あり)。黒字日は差し引く */
+  /** 累積赤字kcal(正=貯金あり)。黒字日は差し引く。確定日のみが対象 */
   bankedKcal: number;
-  /** 集計対象になった日数(食事記録がある日のみ) */
+  /** 集計対象になった日数(確定済みの日のみ) */
   countedDays: number;
+  /** 記録はあるが未確定の日(今日を除く)。確定すれば累積に反映される */
+  unconfirmedDates: string[];
   /** 脂肪換算(kg) */
   fatKgEquivalent: number;
   /** 連続赤字日数(今日または昨日から遡る) */
@@ -203,20 +234,28 @@ export async function calorieBank(untilKey?: string): Promise<BankSummary> {
   const endKey = untilKey ?? toKey(today);
   const upto = (await balanceSeries(400)).filter((d) => d.date <= endKey);
 
+  const todayK = toKey(today);
   let banked = 0;
   let counted = 0;
+  const unconfirmedDates: string[] = [];
   for (const d of upto) {
     if (d.balance == null) continue;
+    if (!d.confirmed) {
+      // 未確定日は累積に入れない(記録漏れの日を赤字扱いしない)。今日は進行中なので除く
+      if (d.date !== todayK) unconfirmedDates.push(d.date);
+      continue;
+    }
     banked += -d.balance; // 赤字(負のbalance)を正の累積として積む
     counted++;
   }
 
-  // ストリーク: 末尾(対象日)から遡って赤字が続く日数。対象日が未記録ならスキップして前日から
+  // ストリーク: 末尾(対象日)から遡って確定済みの赤字が続く日数。
+  // 対象日が未記録・未確定ならスキップして前日から
   let streak = 0;
   for (let i = upto.length - 1; i >= 0; i--) {
     const d = upto[i];
-    if (i === upto.length - 1 && d.balance == null) continue;
-    if (d.balance != null && d.balance < 0) streak++;
+    if (i === upto.length - 1 && (d.balance == null || !d.confirmed)) continue;
+    if (d.balance != null && d.confirmed && d.balance < 0) streak++;
     else break;
   }
 
@@ -232,12 +271,39 @@ export async function calorieBank(untilKey?: string): Promise<BankSummary> {
   return {
     bankedKcal: Math.round(banked),
     countedDays: counted,
+    unconfirmedDates,
     fatKgEquivalent: Math.round((banked / KCAL_PER_KG_FAT) * 100) / 100,
     streakDays: streak,
     neededKcal: needed,
     progress: needed != null && needed > 0 ? Math.max(0, Math.min(1, banked / needed)) : null,
   };
 }
+
+/**
+ * ざっくり5段階入力の基準kcal。
+ * 直近14日の「確定日」の平均摂取を使う(確定日がなければ記録日平均→目標摂取→1,800)。
+ */
+export async function roughBaselineKcal(): Promise<number> {
+  const series = await balanceSeries(14);
+  const confirmed = series.filter((d) => d.confirmed && d.intake != null).map((d) => d.intake!);
+  if (confirmed.length > 0) return Math.round(confirmed.reduce((a, b) => a + b, 0) / confirmed.length);
+  const logged = series.filter((d) => d.intake != null && d.intake > 0).map((d) => d.intake!);
+  if (logged.length > 0) return Math.round(logged.reduce((a, b) => a + b, 0) / logged.length);
+  try {
+    const g = await goalNumbers();
+    if (g.targetIntakeKcal != null) return g.targetIntakeKcal;
+  } catch { /* fall through */ }
+  return 1800;
+}
+
+/** ざっくり5段階のレベル定義(基準日の摂取に対する割合) */
+export const ROUGH_LEVELS = [
+  { level: 1, label: '全然食べてない', pct: 0.4 },
+  { level: 2, label: 'あまり食べていない', pct: 0.7 },
+  { level: 3, label: '同じくらい食べた', pct: 1.0 },
+  { level: 4, label: '多めに食べた', pct: 1.3 },
+  { level: 5, label: 'かなり食べた', pct: 1.7 },
+] as const;
 
 export interface GoalNumbers {
   plan: GoalPlan;

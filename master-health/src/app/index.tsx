@@ -4,8 +4,8 @@
  */
 import * as Haptics from 'expo-haptics';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-worklets';
 
@@ -18,9 +18,14 @@ import type { Scores } from '@/utils/score';
 import { getCustomTags, addCustomTag, addTag, removeTag, getTags, getRange } from '@/lib/db';
 import { addDays, formatKeyJa, fromKey, toKey, todayKey } from '@/lib/dates';
 import { BODY_DETAIL_ORDER, METRICS, formatValue, PRESET_TAGS, type MetricKey } from '@/lib/metrics';
-import { listMealLogs, listTemplates, listWorkoutLogs, localDateKey } from '@/lib/store';
 import {
-  balanceSeries, calorieBank, goalNumbers, KCAL_PER_KG_FAT, targetIntakeToday,
+  addMealLog, confirmDay, deletePendingPhoto, getGoalPlan, listMealLogs, listPendingPhotos,
+  listTemplates, listWorkoutLogs, localDateKey, newId, type PendingPhoto,
+} from '@/lib/store';
+import { estimateFoodFromPhoto } from '@/lib/vision';
+import {
+  balanceSeries, calorieBank, goalNumbers, KCAL_PER_KG_FAT, ROUGH_LEVELS,
+  roughBaselineKcal, targetIntakeToday,
   type BankSummary, type DayBalance, type GoalNumbers,
 } from '@/utils/deficit';
 
@@ -55,7 +60,11 @@ const hhmm = (iso: string): string => {
 export default function MyBodyScreen() {
   const { status, request } = useHealthAuth();
   const d = useDashboard();
+  const router = useRouter();
+  // 夜の「本日確定」通知タップで /?confirm=1 が渡ってくる
+  const params = useLocalSearchParams<{ confirm?: string }>();
   const [dateKey, setDateKey] = useState(todayKey());
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [day, setDay] = useState<DayData | null>(null);
   const [bank, setBank] = useState<BankSummary | null>(null);
   const [goal, setGoal] = useState<GoalNumbers | null>(null);
@@ -131,6 +140,49 @@ export default function MyBodyScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { loadDay(dateKey); }, [loadDay, dateKey]));
+
+  // 夜の確定通知タップ → 本日確定モーダルを開く
+  useEffect(() => {
+    if (params.confirm === '1') {
+      setDateKey(todayKey());
+      setConfirmOpen(true);
+    }
+  }, [params.confirm]);
+
+  /** 手動確定(過去日の「この日の記録を確定する」/ 今日の「これで確定」「これ以上食べない」) */
+  const onConfirmDay = useCallback(async (key: string, method: 'manual' | 'declare') => {
+    await confirmDay(key, method);
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    setConfirmOpen(false);
+    loadDay(key);
+  }, [loadDay]);
+
+  /** ざっくり5段階入力(過去日の詳細を覚えていないとき) */
+  const onRoughLog = useCallback(async (key: string, level: number) => {
+    try {
+      const base = await roughBaselineKcal();
+      const def = ROUGH_LEVELS.find((l) => l.level === level)!;
+      const kcal = Math.round(base * def.pct);
+      const plan = await getGoalPlan();
+      const [y, mo, dd] = key.split('-').map(Number);
+      await addMealLog({
+        id: newId(),
+        timestamp: new Date(y, mo - 1, dd, 12, 0, 0).toISOString(),
+        templateId: null,
+        freeText: `ざっくり入力(${def.label})`,
+        kcal,
+        protein: Math.round((kcal * plan.pfc.p) / 100 / 4),
+        fat: Math.round((kcal * plan.pfc.f) / 100 / 9),
+        carbs: Math.round((kcal * plan.pfc.c) / 100 / 4),
+        isEstimate: true,
+      });
+      await confirmDay(key, 'manual');
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      loadDay(key);
+    } catch {
+      Alert.alert('記録に失敗しました');
+    }
+  }, [loadDay]);
 
   const shiftDay = useCallback((dir: 1 | -1) => {
     setDateKey((prev) => {
@@ -417,6 +469,46 @@ export default function MyBodyScreen() {
                 : '設定タブで身長・生年月日を入れると消費カロリーを計算できます'}
             </Text>
           )}
+
+          {/* 今日: 「これ以上食べない」宣言=即確定(夜食の抑止力) */}
+          {isToday && day?.balance != null && !day.balance.confirmed && day.balance.intake != null && (
+            <Pressable
+              style={styles.declareBtn}
+              onPress={() => Alert.alert(
+                '今日はこれ以上食べない',
+                'この時点で本日の記録を確定します。確定後の収支は累積赤字に反映されます。',
+                [
+                  { text: 'キャンセル', style: 'cancel' },
+                  { text: '確定する', onPress: () => onConfirmDay(dateKey, 'declare') },
+                ],
+              )}
+            >
+              <Text style={styles.declareBtnText}>🔒 今日はこれ以上食べない(本日を確定)</Text>
+            </Pressable>
+          )}
+          {isToday && day?.balance?.confirmed && (
+            <Text style={styles.confirmedNote}>✅ 本日は確定済み。収支は累積赤字に反映されます</Text>
+          )}
+
+          {/* 過去日: 未確定なら手動確定ボタン(記録が本当に全部なら確定→赤字計上) */}
+          {!isToday && day?.balance != null && (
+            day.balance.confirmed ? (
+              <Text style={styles.confirmedNote}>✅ 確定済み(累積赤字に反映)</Text>
+            ) : (
+              <>
+                <Text style={styles.unconfirmedNote}>
+                  ⏳ 未確定: 食事{day.balance.mealCount}件
+                  {day.balance.intake != null ? ` / ${day.balance.intake.toLocaleString()}kcal` : ''}
+                  (2件以上かつ1,000kcal以上で自動確定)。未確定の日は累積赤字に入りません
+                </Text>
+                {day.balance.intake != null && (
+                  <Pressable style={styles.confirmBtn} onPress={() => onConfirmDay(dateKey, 'manual')}>
+                    <Text style={styles.confirmBtnText}>この日の記録を確定する(これで全部)</Text>
+                  </Pressable>
+                )}
+              </>
+            )
+          )}
         </Card>
 
         {/* カロリー赤字の累積(ゲーム化) */}
@@ -446,6 +538,11 @@ export default function MyBodyScreen() {
             ) : (
               <Text style={styles.balanceSub}>トレンドタブで目標体重を設定すると進捗バーが出ます</Text>
             )}
+            {bank.unconfirmedDates.length > 0 && (
+              <Text style={styles.unconfirmedNote}>
+                ⏳ 未確定の日が{bank.unconfirmedDates.length}日あります(左スワイプで各日を開いて確定できます)
+              </Text>
+            )}
           </Card>
         )}
 
@@ -472,6 +569,32 @@ export default function MyBodyScreen() {
             </>
           ) : (
             <Text style={styles.balanceEmpty}>{isToday ? 'まだ記録がありません(実績報告タブ or Mr. Vyta)' : 'この日の食事記録はありません'}</Text>
+          )}
+
+          {/* 過去日で記録が無い/少ない: 詳細を覚えていなくても「ざっくり5段階」で埋められる */}
+          {!isToday && !(day?.balance?.confirmed) && (
+            <View style={{ marginTop: Spacing.sm }}>
+              <Text style={styles.roughTitle}>詳細を覚えていない場合は、ざっくり入力(この日の摂取を概算記録):</Text>
+              <View style={styles.roughRow}>
+                {ROUGH_LEVELS.map((l) => (
+                  <Pressable
+                    key={l.level}
+                    style={styles.roughBtn}
+                    onPress={() => Alert.alert(
+                      'ざっくり入力',
+                      `「${l.label}」として、直近の平均摂取×${Math.round(l.pct * 100)}%を概算記録し、この日を確定します。`,
+                      [
+                        { text: 'キャンセル', style: 'cancel' },
+                        { text: '記録する', onPress: () => onRoughLog(dateKey, l.level) },
+                      ],
+                    )}
+                  >
+                    <Text style={styles.roughBtnText}>{l.level}</Text>
+                    <Text style={styles.roughBtnLabel} numberOfLines={2}>{l.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
           )}
         </Card>
 
@@ -548,7 +671,113 @@ export default function MyBodyScreen() {
 
       {/* 設定(タブではなく⚙から開くモーダル) */}
       <SettingsSheet visible={settingsOpen} onClose={() => { setSettingsOpen(false); loadDay(dateKey); }} />
+
+      {/* 夜の「本日確定」フロー(22:00通知タップ or 手動) */}
+      <DayConfirmModal
+        visible={confirmOpen}
+        meals={day?.meals ?? []}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => onConfirmDay(todayKey(), 'manual')}
+        onAdd={() => { setConfirmOpen(false); router.push('/report'); }}
+        onProcessed={() => loadDay(dateKey)}
+      />
     </View>
+  );
+}
+
+/** 本日の記録一覧+合計を見せて「これで確定」or「追加する」。未処理写真もここでまとめて解析 */
+function DayConfirmModal({ visible, meals, onClose, onConfirm, onAdd, onProcessed }: {
+  visible: boolean;
+  meals: MealRow[];
+  onClose: () => void;
+  onConfirm: () => void;
+  onAdd: () => void;
+  onProcessed: () => void;
+}) {
+  const [photos, setPhotos] = useState<PendingPhoto[]>([]);
+  const [processing, setProcessing] = useState(false);
+
+  useEffect(() => {
+    if (visible) listPendingPhotos().then(setPhotos).catch(() => setPhotos([]));
+  }, [visible]);
+
+  const total = meals.reduce((a, m) => a + m.kcal, 0);
+
+  /** 「後で記録」ボックスの写真をまとめてAI解析して記録 */
+  const processPhotos = async () => {
+    if (processing || photos.length === 0) return;
+    setProcessing(true);
+    let ok = 0;
+    for (const p of photos) {
+      try {
+        const base64 = p.uri.startsWith('data:') ? p.uri.split(',')[1] : p.uri;
+        const est = await estimateFoodFromPhoto(base64, 'image/jpeg');
+        await addMealLog({
+          id: newId(), timestamp: p.timestamp, templateId: null,
+          freeText: est.name, kcal: est.kcal, protein: est.protein, fat: est.fat, carbs: est.carbs,
+          isEstimate: true,
+        });
+        await deletePendingPhoto(p.id);
+        ok++;
+      } catch { /* 失敗した写真はボックスに残す(後で再試行できる) */ }
+    }
+    setPhotos(await listPendingPhotos().catch(() => []));
+    setProcessing(false);
+    onProcessed();
+    Alert.alert('解析完了', `${ok}枚を記録しました。${photos.length - ok > 0 ? `${photos.length - ok}枚は失敗したため残っています。` : ''}`);
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={styles.confirmModalRoot}>
+        <View style={styles.confirmModalHead}>
+          <Text style={styles.confirmModalTitle}>今日の食事はこれで全部ですか?</Text>
+          <Pressable onPress={onClose} hitSlop={12}><Text style={styles.confirmModalClose}>閉じる</Text></Pressable>
+        </View>
+        <ScrollView contentContainerStyle={{ padding: Spacing.md, paddingBottom: 40 }}>
+          <Card>
+            {meals.length === 0 ? (
+              <Text style={styles.balanceEmpty}>今日の食事記録はまだありません</Text>
+            ) : (
+              <>
+                {meals.map((m, i) => (
+                  <View key={m.id} style={[styles.statRow, i > 0 && styles.statRowBorder]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
+                      <Text style={styles.logTime}>{m.time}</Text>
+                      <Text style={styles.statLabel} numberOfLines={1}>{m.label}</Text>
+                    </View>
+                    <Text style={styles.statValue}>{m.kcal.toLocaleString()}<Text style={styles.statUnit}> kcal</Text></Text>
+                  </View>
+                ))}
+                <View style={[styles.statRow, styles.statRowBorder]}>
+                  <Text style={[styles.statLabel, { fontWeight: '700', color: Colors.text }]}>合計</Text>
+                  <Text style={[styles.statValue, { color: Colors.accent }]}>
+                    {total.toLocaleString()}<Text style={styles.statUnit}> kcal</Text>
+                  </Text>
+                </View>
+              </>
+            )}
+          </Card>
+
+          {photos.length > 0 && (
+            <Pressable style={[styles.confirmBtn, processing && { opacity: 0.5 }]} onPress={processPhotos} disabled={processing}>
+              <Text style={styles.confirmBtnText}>
+                {processing ? 'AIが解析中…' : `📷 未処理の写真${photos.length}枚をまとめて解析して記録`}
+              </Text>
+            </Pressable>
+          )}
+
+          <Pressable style={styles.confirmBigBtn} onPress={onConfirm}>
+            <Text style={styles.confirmBigBtnText}>これで確定</Text>
+            <Text style={styles.confirmBigBtnSub}>本日の収支を確定し、累積赤字に反映します</Text>
+          </Pressable>
+          <Pressable style={styles.addBigBtn} onPress={onAdd}>
+            <Text style={styles.addBigBtnText}>追加する</Text>
+            <Text style={styles.addBigBtnSub}>まだ記録していない食事があれば実績報告へ</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
+    </Modal>
   );
 }
 
@@ -625,4 +854,47 @@ const styles = StyleSheet.create({
   statValue: { color: Colors.text, fontSize: Type.body, fontWeight: '600', fontVariant: ['tabular-nums'] },
   statUnit: { color: Colors.textFaint, fontSize: Type.caption, fontWeight: '400' },
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  // 日次確定まわり
+  declareBtn: {
+    marginTop: Spacing.sm, borderRadius: 10, borderWidth: 1, borderColor: Colors.accentDim,
+    backgroundColor: Colors.surfaceRaised, paddingVertical: 10, alignItems: 'center',
+  },
+  declareBtnText: { color: Colors.accent, fontSize: Type.caption, fontWeight: '700' },
+  confirmedNote: { color: Colors.good, fontSize: Type.caption, marginTop: Spacing.sm },
+  unconfirmedNote: { color: Colors.warn, fontSize: Type.caption, marginTop: Spacing.sm, lineHeight: 17 },
+  confirmBtn: {
+    marginTop: Spacing.sm, borderRadius: 10, backgroundColor: Colors.accentDim,
+    paddingVertical: 11, alignItems: 'center',
+  },
+  confirmBtnText: { color: Colors.accent, fontSize: Type.body, fontWeight: '700' },
+  roughTitle: { color: Colors.textFaint, fontSize: Type.caption, marginBottom: 6, lineHeight: 16 },
+  roughRow: { flexDirection: 'row', gap: 6 },
+  roughBtn: {
+    flex: 1, alignItems: 'center', paddingVertical: 8, paddingHorizontal: 2,
+    borderRadius: 10, backgroundColor: Colors.surfaceRaised,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  roughBtnText: { color: Colors.accent, fontSize: Type.body, fontWeight: '700' },
+  roughBtnLabel: { color: Colors.textSecondary, fontSize: 9, marginTop: 2, textAlign: 'center' },
+  // 本日確定モーダル
+  confirmModalRoot: { flex: 1, backgroundColor: Colors.bg },
+  confirmModalHead: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border,
+  },
+  confirmModalTitle: { color: Colors.text, fontSize: Type.body, fontWeight: '700', flexShrink: 1 },
+  confirmModalClose: { color: Colors.textSecondary, fontSize: Type.body },
+  confirmBigBtn: {
+    marginTop: Spacing.lg, backgroundColor: Colors.accent, borderRadius: 14,
+    paddingVertical: 16, alignItems: 'center',
+  },
+  confirmBigBtnText: { color: Colors.bg, fontSize: 18, fontWeight: '800' },
+  confirmBigBtnSub: { color: Colors.bg, fontSize: Type.label, marginTop: 3, opacity: 0.75 },
+  addBigBtn: {
+    marginTop: Spacing.sm, backgroundColor: Colors.surfaceRaised, borderRadius: 14,
+    borderWidth: 1, borderColor: Colors.border, paddingVertical: 16, alignItems: 'center',
+  },
+  addBigBtnText: { color: Colors.text, fontSize: 18, fontWeight: '700' },
+  addBigBtnSub: { color: Colors.textFaint, fontSize: Type.label, marginTop: 3 },
 });

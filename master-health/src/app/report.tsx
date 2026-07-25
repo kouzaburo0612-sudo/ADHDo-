@@ -19,8 +19,9 @@ import { todayKey } from '@/lib/dates';
 import { formatValue } from '@/lib/metrics';
 import { rescheduleReminders } from '@/lib/notifications';
 import {
-  addMealLog, addStressLog, addWorkoutLog, dailyIntake, deleteMealLog, deleteStressLog,
-  deleteTemplate, deleteWorkoutLog, deleteWorkoutTemplate, listMealLogs, listStressLogs,
+  addMealLog, addPendingPhoto, addStressLog, addWorkoutLog, dailyIntake, deleteMealLog,
+  deleteStressLog, deleteTemplate, deleteWorkoutLog, deleteWorkoutTemplate, listMealLogs,
+  listPendingPhotos, listStressLogs,
   listTemplates, listWorkoutLogs, listWorkoutTemplates, localDateKey, newId,
   templateNutrition, upsertIngredient, upsertTemplate, upsertWorkoutTemplate,
   type ExerciseSet, type FoodTemplate, type MealLog, type StressLog, type WorkoutLog,
@@ -97,6 +98,7 @@ function MealSection() {
   const scannedRef = useRef(false);
 
   const [templates, setTemplates] = useState<{ t: FoodTemplate; kcal: number }[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const load = useCallback(async () => {
     const now = new Date();
@@ -112,7 +114,22 @@ function MealSection() {
     });
     const tpls = await listTemplates();
     setTemplates(await Promise.all(tpls.map(async (tp) => ({ t: tp, kcal: (await templateNutrition(tp)).kcal }))));
+    setPendingCount((await listPendingPhotos().catch(() => [])).length);
   }, []);
+
+  /** 「後で記録」: 写真だけ撮って未処理ボックスへ。夜の確定フローでまとめてAI解析する */
+  const laterPhoto = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) { Alert.alert('カメラの許可が必要です'); return; }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'], quality: 0.4, base64: true, allowsEditing: false,
+    });
+    if (result.canceled || !result.assets[0]?.base64) return;
+    await addPendingPhoto(`data:image/jpeg;base64,${result.assets[0].base64}`);
+    const n = (await listPendingPhotos().catch(() => [])).length;
+    setPendingCount(n);
+    Alert.alert('保存しました 📥', `未処理ボックスに${n}枚。夜の「本日確定」通知からまとめてAI解析して記録できます。`);
+  };
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -324,6 +341,13 @@ function MealSection() {
           <Text style={styles.photoBtnText}>バーコード</Text>
         </Pressable>
       </View>
+
+      {/* 忙しいときは写真1枚だけ→夜にまとめて解析(記録の手間を夜の1回に集約) */}
+      <Pressable style={styles.laterBtn} onPress={laterPhoto}>
+        <Text style={styles.laterBtnText}>
+          📥 後で記録(写真だけ保存){pendingCount > 0 ? ` ・ 未処理 ${pendingCount}枚` : ''}
+        </Text>
+      </Pressable>
 
       {analyzing && !photoUri && (
         <View style={styles.analyzing}>
@@ -838,6 +862,11 @@ const styles = StyleSheet.create({
   },
   photoBtnIcon: { fontSize: 28 },
   photoBtnText: { color: Colors.text, fontSize: Type.body, marginTop: 6, fontWeight: '600' },
+  laterBtn: {
+    marginTop: Spacing.sm, borderRadius: 10, borderWidth: 1, borderColor: Colors.accentDim,
+    backgroundColor: Colors.surfaceRaised, paddingVertical: 11, alignItems: 'center',
+  },
+  laterBtnText: { color: Colors.accent, fontSize: Type.caption, fontWeight: '700' },
   preview: { width: '100%', height: 180, borderRadius: Radius.sm, backgroundColor: Colors.bg },
   analyzing: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: Spacing.md },
   analyzingText: { color: Colors.textSecondary, fontSize: Type.body },

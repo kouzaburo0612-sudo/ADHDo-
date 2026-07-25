@@ -1,7 +1,8 @@
 import {
   Montserrat_500Medium, Montserrat_600SemiBold, Montserrat_700Bold, useFonts,
 } from '@expo-google-fonts/montserrat';
-import { DarkTheme, ThemeProvider } from 'expo-router';
+import * as Notifications from 'expo-notifications';
+import { DarkTheme, ThemeProvider, useRouter } from 'expo-router';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
@@ -26,6 +27,7 @@ const theme = {
 };
 
 export default function RootLayout() {
+  const router = useRouter();
   const [showOnboarding, setShowOnboarding] = useState(false);
   // ブランドフォント(ロゴと同系の幾何学サンセリフ)。ロード完了までスプラッシュ表示のまま待つ
   const [fontsLoaded, fontsError] = useFonts({
@@ -40,7 +42,15 @@ export default function RootLayout() {
     });
     // 初回起動のみチュートリアルを出す
     kvGet('onboarded_v1').then((v) => { if (!v) setShowOnboarding(true); }).catch(() => {});
-    return () => sub.remove();
+    // 通知タップ → data.urlの画面へ(食事リマインダー=/report、本日確定=/?confirm=1)
+    const notifSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const url = response.notification.request.content.data?.url;
+      if (typeof url === 'string' && url.startsWith('/')) {
+        setTimeout(() => router.push(url as never), 300); // ナビゲーション初期化待ち
+      }
+    });
+    return () => { sub.remove(); notifSub.remove(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const finishOnboarding = () => {

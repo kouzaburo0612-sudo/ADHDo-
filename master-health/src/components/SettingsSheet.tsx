@@ -3,18 +3,21 @@
  * タブから外した理由: iOSのタブは5個までで、6個目以降は味気ない「その他」リストに
  * 押し込まれるため。設定は毎日開く画面ではないのでモーダルに退避した。
  */
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from 'react-native';
 
 import { Card, Segmented } from '@/components/ui';
 import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { useHealthAuth } from '@/hooks/useHealthData';
 import { kvSet } from '@/lib/db';
+import { rescheduleReminders } from '@/lib/notifications';
 import { lastSyncDate, syncHealthData } from '@/lib/sync';
 import {
-  DEFAULT_SETTINGS, getApiKey, loadSettings, saveSettings, setApiKey, type Settings,
+  DEFAULT_SETTINGS, getApiKey, loadSettings, saveSettings, setApiKey,
+  type MealReminder, type Settings,
 } from '@/lib/settings';
 import { currentTdee } from '@/lib/chat';
 import { getProfile, saveProfile, DEFAULT_PROFILE, type UserProfile } from '@/lib/store';
@@ -163,6 +166,30 @@ export function SettingsBody() {
             <Text style={styles.hint}>減量の目標(目標体重・期日)はトレンドタブの「目標設定」から</Text>
           </Card>
 
+          <SectionHead emoji="⏰" title="食事リマインダー" />
+          <Card>
+            <ReminderRow
+              label="朝食" value={settings.mealReminders.morning}
+              onChange={(r) => { update({ mealReminders: { ...settings.mealReminders, morning: r } }); rescheduleReminders().catch(() => {}); }}
+            />
+            <ReminderRow
+              label="昼食" value={settings.mealReminders.lunch} border
+              onChange={(r) => { update({ mealReminders: { ...settings.mealReminders, lunch: r } }); rescheduleReminders().catch(() => {}); }}
+            />
+            <ReminderRow
+              label="夕食" value={settings.mealReminders.dinner} border
+              onChange={(r) => { update({ mealReminders: { ...settings.mealReminders, dinner: r } }); rescheduleReminders().catch(() => {}); }}
+            />
+            <ReminderRow
+              label="夜の本日確定" value={settings.confirmReminder} border
+              onChange={(r) => { update({ confirmReminder: r }); rescheduleReminders().catch(() => {}); }}
+            />
+            <Text style={styles.hint}>
+              通知をタップすると記録画面(本日確定は確認画面)に直接移動します。
+              その日すでに記録がある場合、朝・昼のリマインダーは自動でスキップされます
+            </Text>
+          </Card>
+
           <SectionHead emoji="❤️" title="ヘルスケア連携" />
           <Card>
             <View style={styles.row}>
@@ -232,6 +259,50 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
     </Modal>
   );
 }
+
+/** リマインダー1行: ON/OFFスイッチ + 時刻ピッカー('HH:mm'文字列で保存) */
+function ReminderRow({ label, value, onChange, border }: {
+  label: string;
+  value: MealReminder;
+  onChange: (r: MealReminder) => void;
+  border?: boolean;
+}) {
+  const [h, m] = value.time.split(':').map(Number);
+  const asDate = new Date();
+  asDate.setHours(Number.isFinite(h) ? h : 12, Number.isFinite(m) ? m : 0, 0, 0);
+  return (
+    <View style={[reminderStyles.row, border && reminderStyles.rowBorder]}>
+      <Text style={reminderStyles.label}>{label}</Text>
+      {value.enabled && (
+        <DateTimePicker
+          value={asDate}
+          mode="time"
+          display="compact"
+          themeVariant="dark"
+          accentColor={Colors.accent}
+          onChange={(event, dt) => {
+            if (dt) {
+              const t = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+              onChange({ ...value, time: t });
+            }
+          }}
+        />
+      )}
+      <Switch
+        value={value.enabled}
+        onValueChange={(v) => onChange({ ...value, enabled: v })}
+        trackColor={{ true: Colors.accentDim }}
+        thumbColor={value.enabled ? Colors.accent : undefined}
+      />
+    </View>
+  );
+}
+
+const reminderStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  rowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
+  label: { color: Colors.text, fontSize: Type.body, flex: 1 },
+});
 
 function SectionHead({ emoji, title }: { emoji: string; title: string }) {
   return (
