@@ -299,6 +299,47 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .ed-error{display:none;color:var(--c-workout);font-size:12px;margin-top:10px}
 .ed-error.show{display:block}
 
+/* ============ Inbox(唯一の受信箱) ============ */
+#scr-inbox{padding:0 0 calc(var(--footer-h) + 70px)}
+.ib-filters{
+  position:sticky;top:0;z-index:20;display:flex;gap:6px;overflow-x:auto;
+  padding:12px 14px 10px;background:linear-gradient(var(--bg) 78%,transparent);
+  -webkit-overflow-scrolling:touch;scrollbar-width:none;
+}
+.ib-filters::-webkit-scrollbar{display:none}
+.ib-chip{flex:none;background:var(--surface);border:1px solid var(--line);color:var(--ink-2);border-radius:99px;padding:6px 13px;font-size:12px;font-weight:700}
+.ib-chip.sel{background:var(--brand);border-color:var(--brand);color:#0d1017}
+.ib-list{display:flex;flex-direction:column;gap:8px;padding:2px 14px 8px}
+.ib-empty{text-align:center;color:var(--ink-3);font-size:12.5px;line-height:1.9;padding:60px 20px}
+.ib-day{align-self:center;font-size:10px;color:var(--ink-3);background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:3px 12px;margin:8px 0 2px}
+.ib-item{
+  max-width:86%;align-self:flex-end;
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:16px 16px 5px 16px;padding:10px 12px;
+}
+.ib-item.done{opacity:.5}
+.ib-item.done .ib-text,.ib-item.done .ib-link-title{text-decoration:line-through}
+.ib-text{font-size:14px;line-height:1.65;white-space:pre-wrap;word-break:break-word}
+.ib-item img{max-width:100%;max-height:260px;border-radius:10px;display:block}
+.ib-link-title{font-size:13.5px;font-weight:700;line-height:1.5;word-break:break-word}
+.ib-url{font-size:10.5px;color:var(--c-study);word-break:break-all;margin-top:3px}
+.ib-meta{display:flex;align-items:center;gap:7px;margin-top:6px;font-size:10px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.ib-tag{font-size:9px;font-weight:800;border-radius:5px;padding:1.5px 7px;color:#fff}
+.ib-inputbar{
+  position:fixed;bottom:var(--footer-h);left:50%;transform:translateX(-50%);
+  width:100%;max-width:480px;z-index:45;
+  display:flex;gap:8px;align-items:flex-end;padding:8px 12px calc(8px);
+  background:color-mix(in srgb,var(--bg) 92%,transparent);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border-top:1px solid var(--line);
+}
+.ib-inputbar textarea{flex:1;resize:none;max-height:110px;border-radius:19px;padding:10px 14px;font-size:14px;line-height:1.5}
+.ib-iconbtn{width:40px;height:40px;flex:none;border-radius:50%;background:var(--surface);border:1px solid var(--line);color:var(--ink-2);font-size:17px;padding:0}
+.ib-send{width:40px;height:40px;flex:none;border-radius:50%;background:var(--brand);border:none;color:#0d1017;font-size:18px;font-weight:800;padding:0}
+.ib-sheet-item{width:100%;text-align:left;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);border-radius:12px;padding:13px 14px;font-size:14px;font-weight:600;margin-bottom:8px}
+.ib-sheet-item.danger{color:var(--c-workout)}
+.ib-cls-row{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px}
+
 /* ============ フッター ============ */
 nav.footer{
   position:fixed;bottom:0;left:50%;transform:translateX(-50%);
@@ -306,7 +347,7 @@ nav.footer{
   background:color-mix(in srgb,var(--surface) 92%,transparent);
   backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
   border-top:1px solid var(--line);
-  display:grid;grid-template-columns:repeat(4,1fr);
+  display:grid;grid-template-columns:repeat(5,1fr);
   padding-bottom:env(safe-area-inset-bottom);
 }
 nav.footer button{
@@ -504,6 +545,23 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   <div id="now-body"></div>
 </section>
 
+<!-- ============ Inbox ============ -->
+<section class="screen" id="scr-inbox">
+  <div class="ib-filters" id="ib-filters"></div>
+  <div class="ib-list" id="ib-list"></div>
+  <div class="ib-inputbar">
+    <button class="ib-iconbtn" id="ib-photo" aria-label="画像を添付">📷</button>
+    <input type="file" id="ib-file" accept="image/*" style="display:none">
+    <textarea id="ib-input" rows="1" placeholder="メモ・URL・なんでも放り込む" enterkeyhint="send"></textarea>
+    <button class="ib-send" id="ib-send" aria-label="送信">↑</button>
+  </div>
+</section>
+
+<!-- Inbox項目のアクションシート -->
+<div class="modal" id="ibsheet">
+  <div class="sheet" id="ibsheet-body"></div>
+</div>
+
 <!-- ============ マンスリー達成率カレンダー ============ -->
 <section class="screen" id="scr-calendar">
   <header class="app"><h1>マンスリー達成率</h1><div class="date">色が濃い日ほど達成率が高い日</div></header>
@@ -603,7 +661,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <p style="font-size:11px;color:var(--ink-3);margin-top:6px">就寝〜起床の時間は、タイムラインと24Hグラフに「睡眠」として自動で組み込まれます。</p>
   </div>
   <p class="tagline">By ADHD. <b>For ADHD.</b></p>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v1.9</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v2.0</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -705,6 +763,10 @@ textarea:focus,input:focus{border-color:var(--c-work)}
   <button data-scr="now">
     <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10.2 8.6l5.6 3.4-5.6 3.4z"/></svg>
     Now
+  </button>
+  <button data-scr="inbox">
+    <svg viewBox="0 0 24 24"><path d="M3.5 13.5 6 5.5h12l2.5 8"/><path d="M3.5 13.5V19a1.5 1.5 0 0 0 1.5 1.5h14a1.5 1.5 0 0 0 1.5-1.5v-5.5"/><path d="M3.5 13.5H9a3 3 0 0 0 6 0h5.5"/></svg>
+    Inbox
   </button>
   <button data-scr="calendar">
     <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 10h17M8 2.5V6M16 2.5V6"/><path d="M7.5 14h2M11 14h2M14.5 14h2M7.5 17.5h2M11 17.5h2"/></svg>
@@ -1026,6 +1088,7 @@ $('#skip-wrap').addEventListener('click', e => {
 
 function scrollToNow(smooth=true){
   if(!store.get('set.autoscroll', true)) return;
+  if(!$('#scr-home').classList.contains('active')) return;
   const el = document.querySelector('.tl-item.now');
   if(el) el.scrollIntoView({behavior: smooth ? 'smooth' : 'auto', block:'center'});
 }
@@ -1161,6 +1224,199 @@ function renderLegend(){
   ).join('');
 }
 
+/* ================= Inbox(なんでも放り込む唯一の受信箱) ================= */
+// 絶対原則: 保存先はこの adhdo.inbox ただ1つ。分類・状態はすべてフィルタ表示で表現する
+const IB_CLS = {
+  task:    {label:'タスク', hex:'#4a8df8'},
+  memo:    {label:'メモ',   hex:'#8a94a5'},
+  link:    {label:'リンク', hex:'#1a9fbd'},
+  vision:  {label:'構想',   hex:'#9d7bf5'},
+  schedule:{label:'予定',   hex:'#0da06f'},
+};
+let INBOX = store.get('inbox', []);
+let ibFilter = 'all';
+const URL_RE = /https?:\/\/[^\s]+/;
+
+function ibPersist(){ store.set('inbox', INBOX); }
+// Phase 1はルール分類(URL→リンク/それ以外→メモ)。Phase 2でAI5分類に置き換える
+function ibClassify(item){
+  if(item.url) return 'link';
+  return 'memo';
+}
+function ibAdd(raw){
+  const text = (raw.text || '').trim();
+  const item = {
+    id: 'in' + (raw.ts || Date.now()) + Math.floor(Math.random() * 1000),
+    ts: raw.ts || Date.now(),
+    src: raw.src || 'app',
+    text,
+    url: raw.url || (text.match(URL_RE) || [null])[0],
+    image: raw.image || null,
+    cls: null, clsBy: 'rule',
+    meta: {}, status: 'new', openedAt: null, scheduledId: null,
+  };
+  item.cls = ibClassify(item);
+  INBOX.push(item);
+  ibPersist();
+  if(item.url) ibRequestMeta(item);
+  return item;
+}
+function ibRequestMeta(item){
+  try{ window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({type:'fetchmeta', id:item.id, url:item.url})); }catch{}
+}
+// ネイティブ側から: リンクのタイトルが取れたら反映
+window.__inboxMeta = (id, title) => {
+  const it = INBOX.find(x => x.id === id);
+  if(it && title){ it.meta.title = title; ibPersist(); if($('#scr-inbox').classList.contains('active')) renderInbox(false); }
+};
+// ネイティブ側から: 共有シート経由の投稿を取り込み
+window.__inboxIngest = (json) => {
+  try{
+    const arr = JSON.parse(json);
+    if(!Array.isArray(arr) || !arr.length) return;
+    arr.forEach(q => ibAdd({ts:q.ts, text:q.text, url:q.url, image:q.image, src:'share'}));
+    if($('#scr-inbox').classList.contains('active')) renderInbox();
+  }catch{}
+};
+
+const IB_FILTERS = [
+  ['all','すべて'], ['unproc','未処理'], ['task','タスク'], ['memo','メモ'],
+  ['link','リンク'], ['vision','構想'], ['schedule','予定'],
+];
+function ibVisible(){
+  return INBOX.filter(it => {
+    if(it.status === 'archived') return false;
+    if(ibFilter === 'all') return true;
+    if(ibFilter === 'unproc') return it.status === 'new';
+    return it.cls === ibFilter;
+  }).sort((a, b) => a.ts - b.ts);
+}
+function ibDayLabel(ts){
+  const d = new Date(ts);
+  const today = new Date();
+  const y = new Date(Date.now() - 86400000);
+  if(d.toDateString() === today.toDateString()) return '今日';
+  if(d.toDateString() === y.toDateString()) return '昨日';
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+function renderInbox(scroll = true){
+  // フィルタチップ
+  $('#ib-filters').innerHTML = IB_FILTERS.map(([k, label]) => {
+    const cnt = k === 'unproc' ? INBOX.filter(i => i.status === 'new').length : 0;
+    return `<button class="ib-chip${ibFilter === k ? ' sel' : ''}" data-ibf="${k}">${label}${k === 'unproc' && cnt ? ' ' + cnt : ''}</button>`;
+  }).join('');
+  // 本文(LINEトーク風・古→新)
+  const list = ibVisible();
+  if(!list.length){
+    $('#ib-list').innerHTML = '<div class="ib-empty">まだ空っぽ。<br>思いついたこと・あとで見るURL・スクショ、<br>ぜんぶここに放り込もう📥</div>';
+    return;
+  }
+  let lastDay = '';
+  $('#ib-list').innerHTML = list.map(it => {
+    const day = ibDayLabel(it.ts);
+    const sep = day !== lastDay ? `<div class="ib-day">${day}</div>` : '';
+    lastDay = day;
+    const c = IB_CLS[it.cls] || IB_CLS.memo;
+    const t = new Date(it.ts);
+    const time = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
+    let body = '';
+    if(it.image) body = `<img src="${it.image}" alt="">` + (it.text ? `<div class="ib-text" style="margin-top:6px">${esc(it.text)}</div>` : '');
+    else if(it.url) body = `<div class="ib-link-title">🔗 ${esc(it.meta.title || it.text || it.url)}</div><div class="ib-url">${esc(it.url)}</div>`;
+    else body = `<div class="ib-text">${esc(it.text)}</div>`;
+    return `${sep}<div class="ib-item${it.status === 'done' ? ' done' : ''}" data-ib="${it.id}">
+      ${body}
+      <div class="ib-meta"><span class="ib-tag" style="background:${c.hex}">${c.label}</span><span>${time}</span>${it.src === 'share' ? '<span>共有シート</span>' : ''}${it.status === 'done' ? '<span>✓ 済み</span>' : ''}</div>
+    </div>`;
+  }).join('');
+  if(scroll) requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight));
+}
+// 入力まわり
+function ibAutoGrow(){
+  const t = $('#ib-input');
+  t.style.height = 'auto';
+  t.style.height = Math.min(110, t.scrollHeight) + 'px';
+}
+function ibSend(){
+  const v = $('#ib-input').value.trim();
+  if(!v) return;
+  ibAdd({text: v});
+  $('#ib-input').value = '';
+  ibAutoGrow();
+  renderInbox();
+  $('#ib-input').focus();
+}
+$('#ib-send').addEventListener('click', ibSend);
+$('#ib-input').addEventListener('input', ibAutoGrow);
+$('#ib-input').addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); ibSend(); }
+});
+$('#ib-photo').addEventListener('click', () => $('#ib-file').click());
+$('#ib-file').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      // 長辺1000px・JPEG圧縮で保存(容量対策)
+      const M = 1000;
+      const sc = Math.min(1, M / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.width * sc);
+      cv.height = Math.round(img.height * sc);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      ibAdd({image: cv.toDataURL('image/jpeg', .72), text: $('#ib-input').value.trim()});
+      $('#ib-input').value = '';
+      renderInbox();
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(f);
+  e.target.value = '';
+});
+// フィルタ切替 / 項目タップでアクションシート
+$('#ib-filters').addEventListener('click', e => {
+  const b = e.target.closest('[data-ibf]');
+  if(b){ ibFilter = b.dataset.ibf; renderInbox(false); window.scrollTo(0, 0); }
+});
+$('#ib-list').addEventListener('click', e => {
+  const el = e.target.closest('[data-ib]');
+  if(el) openIbSheet(el.dataset.ib);
+});
+function openIbSheet(id){
+  const it = INBOX.find(x => x.id === id);
+  if(!it) return;
+  const c = IB_CLS[it.cls] || IB_CLS.memo;
+  $('#ibsheet-body').innerHTML = `
+    <h3 style="margin-bottom:12px;word-break:break-word">${esc(it.meta.title || it.text || 'この項目')}</h3>
+    ${it.url ? `<button class="ib-sheet-item" data-ibact="open">🔗 リンクを開く</button>` : ''}
+    <button class="ib-sheet-item" data-ibact="toggle">${it.status === 'done' ? '↩︎ 未処理に戻す' : '✓ 済みにする'}</button>
+    <div class="f-label">分類を変更(あなたが直すとAIは上書きしません)</div>
+    <div class="ib-cls-row">${Object.entries(IB_CLS).map(([k, v]) =>
+      `<button class="cat-chip${it.cls === k ? ' sel' : ''}" data-ibcls="${k}" ${it.cls === k ? `style="background:${v.hex}"` : ''}>${v.label}</button>`).join('')}</div>
+    <button class="ib-sheet-item danger" data-ibact="trash">🗑 捨てる</button>
+    <button class="ib-sheet-item" data-ibact="close">閉じる</button>`;
+  $('#ibsheet').classList.add('show');
+  $('#ibsheet-body').onclick = ev => {
+    const cls = ev.target.closest('[data-ibcls]');
+    if(cls){ it.cls = cls.dataset.ibcls; it.clsBy = 'user'; ibPersist(); $('#ibsheet').classList.remove('show'); renderInbox(false); return; }
+    const act = ev.target.closest('[data-ibact]');
+    if(!act) return;
+    const a = act.dataset.ibact;
+    if(a === 'open'){
+      it.openedAt = Date.now(); ibPersist();
+      try{
+        if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({type:'openUrl', url: it.url}));
+        else window.open(it.url, '_blank');
+      }catch{}
+    }
+    else if(a === 'toggle'){ it.status = it.status === 'done' ? 'new' : 'done'; ibPersist(); renderInbox(false); }
+    else if(a === 'trash'){ it.status = 'archived'; ibPersist(); renderInbox(false); }
+    $('#ibsheet').classList.remove('show');
+  };
+}
+$('#ibsheet').addEventListener('click', e => { if(e.target === $('#ibsheet')) $('#ibsheet').classList.remove('show'); });
+
 /* ================= ナビゲーション ================= */
 document.querySelectorAll('nav.footer button').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -1168,6 +1424,7 @@ document.querySelectorAll('nav.footer button').forEach(btn => {
     document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'scr-' + btn.dataset.scr));
     if(btn.dataset.scr === 'home'){ refreshHome(); setTimeout(() => scrollToNow(), 60); }
     else if(btn.dataset.scr === 'now'){ nowScrOffset = 0; renderNowScreen(); window.scrollTo(0,0); }
+    else if(btn.dataset.scr === 'inbox'){ renderInbox(); }
     else if(btn.dataset.scr === 'calendar'){ renderCalendar(); window.scrollTo(0,0); }
     else window.scrollTo(0,0);
   });
@@ -2158,6 +2415,9 @@ renderLevel();
 tickClock();
 setInterval(tickClock, 1000);
 setTimeout(() => scrollToNow(false), 120);
+// 起動は常にInbox: 開いた瞬間に入力できる状態にする(LINE代替の要)
+document.querySelector('nav.footer button[data-scr="inbox"]').click();
+setTimeout(() => { try{ $('#ib-input').focus(); }catch{} }, 100);
 setInterval(() => { if($('#scr-home').classList.contains('active')) refreshHome(); }, 30000);
 syncNative();
 </script>

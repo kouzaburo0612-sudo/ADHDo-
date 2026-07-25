@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Platform, SafeAreaView } from 'react-native';
+import { AppState, Linking, Platform, SafeAreaView } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 import { ExtensionStorage } from '@bacons/apple-targets';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { WebView } from 'react-native-webview';
@@ -46,6 +47,40 @@ export default function App() {
     if (webviewRef.current) webviewRef.current.injectJavaScript(js + ';true;');
   };
 
+  // 共有シート(Share Extension)が App Group に置いたキューをInboxへ取り込む
+  const drainShareQueue = async () => {
+    if (!widgetStorage) return;
+    try {
+      const raw = widgetStorage.get('inboxQueue');
+      if (!raw) return;
+      widgetStorage.remove('inboxQueue');
+      const queue = JSON.parse(raw);
+      if (!Array.isArray(queue) || !queue.length) return;
+      const items = [];
+      for (const q of queue) {
+        if (q.imagePath) {
+          try {
+            const b64 = await FileSystem.readAsStringAsync('file://' + q.imagePath, { encoding: 'base64' });
+            items.push({ ts: q.ts, image: 'data:image/jpeg;base64,' + b64 });
+            FileSystem.deleteAsync('file://' + q.imagePath, { idempotent: true }).catch(() => {});
+          } catch {}
+        } else {
+          items.push({ ts: q.ts, text: q.text, url: q.url });
+        }
+      }
+      if (items.length) {
+        tellWebView(`window.__inboxIngest && window.__inboxIngest(${JSON.stringify(JSON.stringify(items))})`);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') drainShareQueue();
+    });
+    return () => sub.remove();
+  }, []);
+
   const onMessage = (event) => {
     try {
       const msg = JSON.parse(event.nativeEvent.data);
@@ -57,6 +92,18 @@ export default function App() {
         });
       } else if (msg.type === 'badge') {
         setBadgeCount(msg.count);
+      } else if (msg.type === 'openUrl') {
+        Linking.openURL(msg.url).catch(() => {});
+      } else if (msg.type === 'fetchmeta') {
+        // WebView内はCORSで外部サイトを読めないため、ネイティブ側でタイトルを取得して返す
+        fetch(msg.url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
+          .then((r) => r.text())
+          .then((html) => {
+            const m = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+            const title = m ? m[1].trim().slice(0, 120) : null;
+            if (title) tellWebView(`window.__inboxMeta && window.__inboxMeta(${JSON.stringify(msg.id)}, ${JSON.stringify(title)})`);
+          })
+          .catch(() => {});
       } else if (msg.type === 'widget') {
         if (widgetStorage) {
           try { widgetStorage.set('today', JSON.stringify(msg.payload)); } catch {}
@@ -82,6 +129,8 @@ export default function App() {
         source={{ html: APP_HTML, baseUrl: 'https://adhdo.app' }}
         injectedJavaScriptBeforeContentLoaded={seedJs}
         onMessage={onMessage}
+        onLoadEnd={() => setTimeout(drainShareQueue, 800)}
+        keyboardDisplayRequiresUserAction={false}
         javaScriptEnabled
         domStorageEnabled
         allowFileAccess

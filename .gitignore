@@ -43,3 +43,5 @@ yarn-error.*
 # @bacons/apple-targets がprebuild時に生成するファイル
 targets/widget/Info.plist
 targets/widget/generated.entitlements
+targets/share/Info.plist
+targets/share/generated.entitlements
