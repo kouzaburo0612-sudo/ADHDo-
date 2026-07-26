@@ -1,0 +1,39 @@
+name: EAS Submit
+
+# 完成済みのEASビルドをTestFlightへ(再)提出する。結果をログで直接確認できる完了待機モード
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'EAS Build ID'
+        required: true
+        type: string
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Restore App Store Connect API key
+        env:
+          ASC_API_KEY: ${{ secrets.ASC_API_KEY }}
+        run: printf '%s\n' "$ASC_API_KEY" > ./asc_api_key.p8
+
+      - name: Submit to TestFlight
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas submit --platform ios --id "${{ inputs.build_id }}" --non-interactive --wait
