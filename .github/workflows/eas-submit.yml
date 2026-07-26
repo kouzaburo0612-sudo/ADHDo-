@@ -36,4 +36,4 @@ jobs:
       - name: Submit to TestFlight
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas submit --platform ios --id "${{ inputs.build_id }}" --non-interactive --wait
+        run: eas submit --platform ios --id "${{ inputs.build_id }}" --non-interactive --wait --verbose --verbose-fastlane
