@@ -96,6 +96,34 @@ jobs:
           fi
           rm -f /tmp/boot_priv.pem
 
+      - name: Restore Supabase project if paused (無料プランは放置で自動停止する)
+        env:
+          PROJECT_REF: ${{ inputs.project_ref }}
+        run: |
+          set -euo pipefail
+          PAT=$(cat /tmp/sb_pat)
+          B="https://api.supabase.com/v1/projects/${PROJECT_REF}"
+          status=$(curl -sS -H "Authorization: Bearer $PAT" "$B" | python3 -c "import json,sys;print(json.load(sys.stdin).get('status',''))")
+          echo "project status: $status"
+          if [ "$status" = "INACTIVE" ]; then
+            echo "一時停止中 → 復旧を要求します"
+            code=$(curl -sS -o /tmp/restore.json -w '%{http_code}' -X POST -H "Authorization: Bearer $PAT" "$B/restore")
+            echo "POST /restore -> $code"
+            head -c 300 /tmp/restore.json || true; echo ""
+          fi
+          # ACTIVE_HEALTHY になるまで最大10分待機
+          for i in $(seq 1 60); do
+            status=$(curl -sS -H "Authorization: Bearer $PAT" "$B" | python3 -c "import json,sys;print(json.load(sys.stdin).get('status',''))" || echo "")
+            echo "[$i] status: $status"
+            [ "$status" = "ACTIVE_HEALTHY" ] && break
+            sleep 10
+          done
+          if [ "$status" != "ACTIVE_HEALTHY" ]; then
+            echo "::error::プロジェクトが復旧しませんでした (status: $status)。Supabaseダッシュボードから手動でRestoreしてください。"
+            exit 1
+          fi
+          echo "プロジェクトは稼働中です"
+
       - name: Set ANTHROPIC_API_KEY secret (指定時のみ)
         env:
           PROJECT_REF: ${{ inputs.project_ref }}
