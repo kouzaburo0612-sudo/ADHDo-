@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- 共有シートに出す条件: テキスト/URL/画像(最大10枚)。
+         既定のTRUEPREDICATEはApp Store提出で拒否される(ITMS-90362)ため明示する -->
+    <key>NSExtension</key>
+    <dict>
+      <key>NSExtensionAttributes</key>
+      <dict>
+        <key>NSExtensionActivationRule</key>
+        <dict>
+          <key>NSExtensionActivationSupportsText</key>
+          <true/>
+          <key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+          <integer>1</integer>
+          <key>NSExtensionActivationSupportsImageWithMaxCount</key>
+          <integer>10</integer>
+        </dict>
+      </dict>
+      <key>NSExtensionPrincipalClass</key>
+      <string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
+      <key>NSExtensionPointIdentifier</key>
+      <string>com.apple.share-services</string>
+    </dict>
+  </dict>
+</plist>
