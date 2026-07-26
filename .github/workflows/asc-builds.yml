@@ -1,0 +1,40 @@
+name: ASC Builds Status
+
+# App Store Connect側にビルドが届いているか・処理状態を確認する
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Restore App Store Connect API key
+        env:
+          ASC_API_KEY: ${{ secrets.ASC_API_KEY }}
+        run: printf '%s\n' "$ASC_API_KEY" > asc.p8
+
+      - name: Install deps
+        run: pip install pyjwt cryptography requests
+
+      - name: List recent builds on App Store Connect
+        run: |
+          python3 << 'EOF'
+          import jwt, time, requests, json
+
+          key = open('asc.p8').read()
+          now = int(time.time())
+          tok = jwt.encode({'iss': 'd14dbdb1-1931-46b6-881a-94cc160cb823', 'iat': now - 30,
+                            'exp': now + 900, 'aud': 'appstoreconnect-v1'},
+                           key, algorithm='ES256', headers={'kid': '6SG3K4BN9L'})
+          H = {'Authorization': 'Bearer ' + tok}
+          r = requests.get(
+              'https://api.appstoreconnect.apple.com/v1/builds'
+              '?filter[app]=6788549225&sort=-uploadedDate&limit=6'
+              '&fields[builds]=version,processingState,uploadedDate,expired',
+              headers=H)
+          print('HTTP', r.status_code)
+          for b in r.json().get('data', []):
+              a = b['attributes']
+              print(f"build {a.get('version')}: {a.get('processingState')} uploaded={a.get('uploadedDate')} expired={a.get('expired')}")
+          EOF
