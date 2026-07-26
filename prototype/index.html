@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>ADHDo — 今日のタイムライン</title>
 <style>
 :root{
@@ -26,6 +26,7 @@
   --ink-2:#98a2b8;
   --ink-3:#5f6a82;
   --footer-h:64px;
+  --top-h:62px;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
@@ -38,10 +39,18 @@ body{
 button{font-family:inherit;cursor:pointer}
 
 /* ============ レイアウト ============ */
-.screen{display:none;padding:0 16px calc(var(--footer-h) + 24px)}
+.screen{display:none;padding:var(--top-h) 16px calc(var(--footer-h) + 24px)}
 .screen.active{display:block}
+#app-top{
+  position:fixed;top:0;left:50%;transform:translateX(-50%);
+  width:100%;max-width:480px;z-index:46;
+  background:color-mix(in srgb,var(--bg) 90%,transparent);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line);
+  padding:9px 16px 8px;
+}
 header.app{
-  position:sticky;top:0;z-index:20;
+  position:sticky;top:var(--top-h);z-index:20;
   background:var(--bg);
   box-shadow:0 8px 16px -8px var(--bg);
   padding:12px 2px 8px;
@@ -300,10 +309,44 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .ed-error.show{display:block}
 
 /* ============ Inbox(唯一の受信箱) ============ */
-#scr-inbox{padding:0 0 calc(var(--footer-h) + 70px)}
+#scr-inbox{
+  padding:var(--top-h) 0 calc(var(--footer-h) + 70px);
+  min-height:100vh;
+  background:
+    radial-gradient(220px 90px at 18% 24%, rgba(255,255,255,.35), transparent 70%),
+    radial-gradient(260px 100px at 82% 46%, rgba(255,255,255,.28), transparent 70%),
+    radial-gradient(200px 80px at 40% 72%, rgba(255,255,255,.22), transparent 70%),
+    linear-gradient(180deg,#aec3e6 0%,#93abd8 55%,#9db3dc 100%);
+}
+#scr-inbox .ib-chip{background:rgba(255,255,255,.32);border-color:rgba(255,255,255,.4);color:#2c4570}
+#scr-inbox .ib-chip.sel{background:#fff;border-color:#fff;color:#2c4f8a}
+#scr-inbox .ib-item{background:#8de05f;border:none;box-shadow:0 1px 2px rgba(30,60,110,.22);border-radius:18px 18px 5px 18px}
+#scr-inbox .ib-text{color:#1c2e1c}
+#scr-inbox .ib-link-title{color:#14304f}
+#scr-inbox .ib-url{color:#1f5fbf}
+#scr-inbox .ib-meta{color:rgba(28,46,28,.6)}
+#scr-inbox .ib-item.done{opacity:.55}
+#scr-inbox .ib-day{background:rgba(70,90,130,.4);border:none;color:#fff}
+#scr-inbox .ib-empty{color:#31527f}
+#scr-inbox .ib-inputbar{background:#fff;border-top:1px solid #e2e6ed;backdrop-filter:none;-webkit-backdrop-filter:none}
+#scr-inbox .ib-inputbar textarea{background:#f1f3f6;border-color:#e2e6ed;color:#151a22}
+#scr-inbox .ib-iconbtn{background:#fff;border-color:#e2e6ed;color:#5b6470}
+#scr-inbox .ib-send{background:#06c755;color:#fff}
+/* アプリからの説明バブル(左寄せ・白) */
+.ib-intro{
+  align-self:flex-start!important;max-width:88%;
+  background:#fff!important;border:none!important;border-radius:5px 18px 18px 18px!important;
+}
+.ib-intro .ib-text{color:#2a2f36!important;font-size:13px}
+.ib-intro-x{display:block;margin-top:8px;background:#eef1f5;border:none;color:#5b6470;border-radius:8px;padding:6px 12px;font-size:11.5px;font-weight:700}
+/* 新着バブルの入場アニメーション(LINEっぽい滑らかさ) */
+@keyframes ibIn{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}
+.ib-new{animation:ibIn .28s cubic-bezier(.2,.8,.3,1)}
+.ib-item{transition:transform .12s}
+.ib-item:active{transform:scale(.98)}
 .ib-filters{
-  position:sticky;top:0;z-index:20;display:flex;gap:6px;overflow-x:auto;
-  padding:12px 14px 10px;background:linear-gradient(var(--bg) 78%,transparent);
+  position:sticky;top:var(--top-h);z-index:20;display:flex;gap:6px;overflow-x:auto;
+  padding:12px 14px 10px;background:linear-gradient(rgba(150,171,216,.94) 62%,transparent);
   -webkit-overflow-scrolling:touch;scrollbar-width:none;
 }
 .ib-filters::-webkit-scrollbar{display:none}
@@ -333,7 +376,7 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
   border-top:1px solid var(--line);
 }
-.ib-inputbar textarea{flex:1;resize:none;max-height:110px;border-radius:19px;padding:10px 14px;font-size:14px;line-height:1.5}
+.ib-inputbar textarea{flex:1;resize:none;max-height:110px;border-radius:19px;padding:9px 14px;font-size:16px;line-height:1.5}
 .ib-iconbtn{width:40px;height:40px;flex:none;border-radius:50%;background:var(--surface);border:1px solid var(--line);color:var(--ink-2);font-size:17px;padding:0}
 .ib-send{width:40px;height:40px;flex:none;border-radius:50%;background:var(--brand);border:none;color:#0d1017;font-size:18px;font-weight:800;padding:0}
 .ib-sheet-item{width:100%;text-align:left;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);border-radius:12px;padding:13px 14px;font-size:14px;font-weight:600;margin-bottom:8px}
@@ -495,23 +538,24 @@ textarea:focus,input:focus{border-color:var(--c-work)}
 <body>
 
 <!-- ============ ホーム(タイムスケジュール) ============ -->
+<!-- ============ 全ページ共通の固定ヘッダー ============ -->
+<div id="app-top">
+  <div class="head-row">
+    <div class="brand">
+      <span class="logo-word">ADH<span class="o">Do</span></span>
+      <span class="lv-chip" id="lv-chip">Lv.1</span>
+    </div>
+    <div class="ach-mini">
+      <div class="ach-mini-top"><span>今日の達成率</span><b id="ach-pct">0%</b></div>
+      <div class="ach-bar"><div class="ach-fill" id="ach-fill"></div></div>
+      <div class="ach-meta" id="ach-meta"></div>
+    </div>
+  </div>
+</div>
+
 <section class="screen active" id="scr-home">
   <header class="app">
-    <div class="head-row">
-      <div>
-        <div class="brand">
-          <span class="logo-word">ADH<span class="o">Do</span></span>
-          <span class="lv-chip" id="lv-chip">Lv.1</span>
-        </div>
-        <div class="date"><span id="home-date"></span><span class="live-clock" id="home-clock"></span></div>
-      </div>
-      <div class="ach-mini">
-        <div class="ach-mini-top"><span>今日の達成率</span><b id="ach-pct">0%</b></div>
-        <div class="ach-bar"><div class="ach-fill" id="ach-fill"></div></div>
-        <div class="ach-meta" id="ach-meta"></div>
-      </div>
-    </div>
-
+    <div class="date"><span id="home-date"></span><span class="live-clock" id="home-clock"></span></div>
     <div class="seg-tabs">
       <button id="tab-tl" class="sel">タイムライン</button>
       <button id="tab-clock">24Hグラフ</button>
@@ -661,7 +705,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <p style="font-size:11px;color:var(--ink-3);margin-top:6px">就寝〜起床の時間は、タイムラインと24Hグラフに「睡眠」として自動で組み込まれます。</p>
   </div>
   <p class="tagline">By ADHD. <b>For ADHD.</b></p>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v2.0</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v2.1</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -1226,13 +1270,16 @@ function renderLegend(){
 
 /* ================= Inbox(なんでも放り込む唯一の受信箱) ================= */
 // 絶対原則: 保存先はこの adhdo.inbox ただ1つ。分類・状態はすべてフィルタ表示で表現する
-const IB_CLS = {
-  task:    {label:'タスク', hex:'#4a8df8'},
-  memo:    {label:'メモ',   hex:'#8a94a5'},
-  link:    {label:'リンク', hex:'#1a9fbd'},
-  vision:  {label:'構想',   hex:'#9d7bf5'},
-  schedule:{label:'予定',   hex:'#0da06f'},
-};
+const IB_CLS_DEFAULT = [
+  {key:'task',     label:'タスク', hex:'#4a8df8'},
+  {key:'memo',     label:'メモ',   hex:'#8a94a5'},
+  {key:'link',     label:'リンク', hex:'#1a9fbd'},
+  {key:'vision',   label:'構想',   hex:'#9d7bf5'},
+  {key:'schedule', label:'予定',   hex:'#0da06f'},
+];
+// 分類はユーザーが自由に追加・削除できる(メモ=受け皿、リンク=URL自動判定先だけは固定)
+let IB_CATS = store.get('ibcats', null) || IB_CLS_DEFAULT.map(x => ({...x}));
+const ibCat = k => IB_CATS.find(c => c.key === k) || IB_CATS.find(c => c.key === 'memo') || IB_CATS[0];
 let INBOX = store.get('inbox', []);
 let ibFilter = 'all';
 const URL_RE = /https?:\/\/[^\s]+/;
@@ -1279,10 +1326,9 @@ window.__inboxIngest = (json) => {
   }catch{}
 };
 
-const IB_FILTERS = [
-  ['all','すべて'], ['unproc','未処理'], ['task','タスク'], ['memo','メモ'],
-  ['link','リンク'], ['vision','構想'], ['schedule','予定'],
-];
+function ibFilterDefs(){
+  return [['all','すべて'], ['unproc','未処理'], ...IB_CATS.map(c => [c.key, c.label])];
+}
 function ibVisible(){
   return INBOX.filter(it => {
     if(it.status === 'archived') return false;
@@ -1299,36 +1345,71 @@ function ibDayLabel(ts){
   if(d.toDateString() === y.toDateString()) return '昨日';
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
-function renderInbox(scroll = true){
-  // フィルタチップ
-  $('#ib-filters').innerHTML = IB_FILTERS.map(([k, label]) => {
+let ibLastDay = '';
+function ibItemHTML(it, isNew = false){
+  const c = ibCat(it.cls);
+  const t = new Date(it.ts);
+  const time = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
+  let body = '';
+  if(it.image) body = `<img src="${it.image}" alt="">` + (it.text ? `<div class="ib-text" style="margin-top:6px">${esc(it.text)}</div>` : '');
+  else if(it.url) body = `<div class="ib-link-title">🔗 ${esc(it.meta.title || it.text || it.url)}</div><div class="ib-url">${esc(it.url)}</div>`;
+  else body = `<div class="ib-text">${esc(it.text)}</div>`;
+  return `<div class="ib-item${it.status === 'done' ? ' done' : ''}${isNew ? ' ib-new' : ''}" data-ib="${it.id}">
+    ${body}
+    <div class="ib-meta"><span class="ib-tag" style="background:${c.hex}">${c.label}</span><span>${time}</span>${it.src === 'share' ? '<span>共有シート</span>' : ''}${it.status === 'done' ? '<span>✓ 済み</span>' : ''}</div>
+  </div>`;
+}
+function ibIntroHTML(){
+  if(store.get('ibIntroHide', false)) return '';
+  return `<div class="ib-item ib-intro">
+    <div class="ib-text"><b>ここは「なんでも放り込む箱」📥</b>
+頭に浮かんだこと・あとで見たいURL・スクショを、考えずに全部ここへ。整理はあとでOK!
+
+・SafariやYouTubeの「共有」からも放り込めます
+・上のチップで絞り込み(保存先はずっとここ1つ)
+・バブルをタップ → 開く / 済み / 分類変更
+・分類は ⚙ から自由に追加・削除できます</div>
+    <button class="ib-intro-x" data-ibintro>説明を閉じる</button>
+  </div>`;
+}
+function renderIbChips(){
+  $('#ib-filters').innerHTML = ibFilterDefs().map(([k, label]) => {
     const cnt = k === 'unproc' ? INBOX.filter(i => i.status === 'new').length : 0;
     return `<button class="ib-chip${ibFilter === k ? ' sel' : ''}" data-ibf="${k}">${label}${k === 'unproc' && cnt ? ' ' + cnt : ''}</button>`;
-  }).join('');
-  // 本文(LINEトーク風・古→新)
+  }).join('') + '<button class="ib-chip" data-ibcats-edit aria-label="分類を編集">⚙</button>';
+}
+function renderInbox(scroll = true){
+  renderIbChips();
   const list = ibVisible();
+  let html = ibIntroHTML();
   if(!list.length){
-    $('#ib-list').innerHTML = '<div class="ib-empty">まだ空っぽ。<br>思いついたこと・あとで見るURL・スクショ、<br>ぜんぶここに放り込もう📥</div>';
+    if(!html) html = '<div class="ib-empty">まだ空っぽ。<br>思いついたこと・あとで見るURL・スクショ、<br>ぜんぶここに放り込もう📥</div>';
+    $('#ib-list').innerHTML = html;
+    ibLastDay = '';
     return;
   }
   let lastDay = '';
-  $('#ib-list').innerHTML = list.map(it => {
+  html += list.map(it => {
     const day = ibDayLabel(it.ts);
     const sep = day !== lastDay ? `<div class="ib-day">${day}</div>` : '';
     lastDay = day;
-    const c = IB_CLS[it.cls] || IB_CLS.memo;
-    const t = new Date(it.ts);
-    const time = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
-    let body = '';
-    if(it.image) body = `<img src="${it.image}" alt="">` + (it.text ? `<div class="ib-text" style="margin-top:6px">${esc(it.text)}</div>` : '');
-    else if(it.url) body = `<div class="ib-link-title">🔗 ${esc(it.meta.title || it.text || it.url)}</div><div class="ib-url">${esc(it.url)}</div>`;
-    else body = `<div class="ib-text">${esc(it.text)}</div>`;
-    return `${sep}<div class="ib-item${it.status === 'done' ? ' done' : ''}" data-ib="${it.id}">
-      ${body}
-      <div class="ib-meta"><span class="ib-tag" style="background:${c.hex}">${c.label}</span><span>${time}</span>${it.src === 'share' ? '<span>共有シート</span>' : ''}${it.status === 'done' ? '<span>✓ 済み</span>' : ''}</div>
-    </div>`;
+    return sep + ibItemHTML(it);
   }).join('');
+  $('#ib-list').innerHTML = html;
+  ibLastDay = lastDay;
   if(scroll) requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight));
+}
+// 送信時は全再描画せず1バブルだけ追加(LINEっぽい滑らかさ)
+function ibAppend(item){
+  const visibleHere = ibFilter === 'all' || ibFilter === 'unproc' || item.cls === ibFilter;
+  if(!visibleHere || !$('#ib-list').querySelector('.ib-item, .ib-day')){ renderInbox(); return; }
+  const day = ibDayLabel(item.ts);
+  let html = '';
+  if(day !== ibLastDay){ html += `<div class="ib-day">${day}</div>`; ibLastDay = day; }
+  html += ibItemHTML(item, true);
+  $('#ib-list').insertAdjacentHTML('beforeend', html);
+  renderIbChips();
+  requestAnimationFrame(() => window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'}));
 }
 // 入力まわり
 function ibAutoGrow(){
@@ -1339,10 +1420,10 @@ function ibAutoGrow(){
 function ibSend(){
   const v = $('#ib-input').value.trim();
   if(!v) return;
-  ibAdd({text: v});
+  const item = ibAdd({text: v});
   $('#ib-input').value = '';
   ibAutoGrow();
-  renderInbox();
+  ibAppend(item);
   $('#ib-input').focus();
 }
 $('#ib-send').addEventListener('click', ibSend);
@@ -1365,9 +1446,9 @@ $('#ib-file').addEventListener('change', e => {
       cv.width = Math.round(img.width * sc);
       cv.height = Math.round(img.height * sc);
       cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-      ibAdd({image: cv.toDataURL('image/jpeg', .72), text: $('#ib-input').value.trim()});
+      const item = ibAdd({image: cv.toDataURL('image/jpeg', .72), text: $('#ib-input').value.trim()});
       $('#ib-input').value = '';
-      renderInbox();
+      ibAppend(item);
     };
     img.src = reader.result;
   };
@@ -1376,13 +1457,66 @@ $('#ib-file').addEventListener('change', e => {
 });
 // フィルタ切替 / 項目タップでアクションシート
 $('#ib-filters').addEventListener('click', e => {
+  if(e.target.closest('[data-ibcats-edit]')){ openIbCatSheet(); return; }
   const b = e.target.closest('[data-ibf]');
   if(b){ ibFilter = b.dataset.ibf; renderInbox(false); window.scrollTo(0, 0); }
 });
 $('#ib-list').addEventListener('click', e => {
+  if(e.target.closest('[data-ibintro]')){ store.set('ibIntroHide', true); renderInbox(false); return; }
+  if(e.target.closest('.ib-intro')) return;
   const el = e.target.closest('[data-ib]');
   if(el) openIbSheet(el.dataset.ib);
 });
+// 分類の追加・削除(メモとリンクはアプリの動作に必要なので固定)
+function openIbCatSheet(){
+  const PALETTE = ['#f4526a','#d97706','#84a31c','#0da06f','#1a9fbd','#4a8df8','#9d7bf5','#c94f8e','#a1792e','#8a94a5'];
+  let selHex = PALETTE[3];
+  const render = () => {
+    $('#ibsheet-body').innerHTML = `
+      <h3 style="margin-bottom:4px">分類を編集</h3>
+      <p style="font-size:11.5px;color:var(--ink-2);margin-bottom:12px">分類は「別の保存先」ではなくInbox内のフィルタです。<br>メモ(受け皿)とリンク(URLの自動判定先)は削除できません。</p>
+      ${IB_CATS.map(c => `
+        <div class="ib-sheet-item" style="display:flex;align-items:center;gap:10px">
+          <span style="width:12px;height:12px;border-radius:50%;background:${c.hex};flex:none"></span>
+          <span style="flex:1">${esc(c.label)}</span>
+          ${c.key === 'memo' || c.key === 'link' ? '<span style="font-size:10px;color:var(--ink-3)">固定</span>' : `<button class="sub-del" data-ibcatdel="${c.key}" aria-label="削除">×</button>`}
+        </div>`).join('')}
+      <div class="f-label">新しい分類を追加</div>
+      <input type="text" id="ibcat-name" placeholder="分類名(例: 買い物、アイデア)" style="margin-bottom:10px">
+      <div class="ib-cls-row">${PALETTE.map(h =>
+        `<button class="cat-chip${h === selHex ? ' sel' : ''}" data-ibcathex="${h}" style="background:${h === selHex ? h : 'var(--surface-2)'};color:${h === selHex ? '#fff' : h};border-color:${h}55">●</button>`).join('')}</div>
+      <button class="ib-sheet-item" data-ibcatadd style="text-align:center">+ 追加する</button>
+      <button class="ib-sheet-item" data-ibcatclose style="text-align:center">閉じる</button>`;
+  };
+  render();
+  $('#ibsheet').classList.add('show');
+  $('#ibsheet-body').onclick = ev => {
+    const del = ev.target.closest('[data-ibcatdel]');
+    if(del){
+      const k = del.dataset.ibcatdel;
+      const cat = IB_CATS.find(c => c.key === k);
+      if(!confirm(`分類「${cat ? cat.label : ''}」を削除しますか?\n(この分類の項目は「メモ」扱いになります)`)) return;
+      IB_CATS = IB_CATS.filter(c => c.key !== k);
+      INBOX.forEach(it => { if(it.cls === k) it.cls = 'memo'; });
+      if(ibFilter === k) ibFilter = 'all';
+      store.set('ibcats', IB_CATS); ibPersist();
+      render(); renderInbox(false);
+      return;
+    }
+    const hx = ev.target.closest('[data-ibcathex]');
+    if(hx){ const v = $('#ibcat-name').value; selHex = hx.dataset.ibcathex; render(); $('#ibcat-name').value = v; return; }
+    if(ev.target.closest('[data-ibcatadd]')){
+      const name = $('#ibcat-name').value.trim();
+      if(!name) return;
+      IB_CATS.push({key: 'c' + Date.now(), label: name, hex: selHex});
+      store.set('ibcats', IB_CATS);
+      render(); renderInbox(false);
+      return;
+    }
+    if(ev.target.closest('[data-ibcatclose]')) $('#ibsheet').classList.remove('show');
+  };
+}
+
 function openIbSheet(id){
   const it = INBOX.find(x => x.id === id);
   if(!it) return;
@@ -1392,8 +1526,8 @@ function openIbSheet(id){
     ${it.url ? `<button class="ib-sheet-item" data-ibact="open">🔗 リンクを開く</button>` : ''}
     <button class="ib-sheet-item" data-ibact="toggle">${it.status === 'done' ? '↩︎ 未処理に戻す' : '✓ 済みにする'}</button>
     <div class="f-label">分類を変更(あなたが直すとAIは上書きしません)</div>
-    <div class="ib-cls-row">${Object.entries(IB_CLS).map(([k, v]) =>
-      `<button class="cat-chip${it.cls === k ? ' sel' : ''}" data-ibcls="${k}" ${it.cls === k ? `style="background:${v.hex}"` : ''}>${v.label}</button>`).join('')}</div>
+    <div class="ib-cls-row">${IB_CATS.map(c =>
+      `<button class="cat-chip${it.cls === c.key ? ' sel' : ''}" data-ibcls="${c.key}" ${it.cls === c.key ? `style="background:${c.hex}"` : ''}>${esc(c.label)}</button>`).join('')}</div>
     <button class="ib-sheet-item danger" data-ibact="trash">🗑 捨てる</button>
     <button class="ib-sheet-item" data-ibact="close">閉じる</button>`;
   $('#ibsheet').classList.add('show');
