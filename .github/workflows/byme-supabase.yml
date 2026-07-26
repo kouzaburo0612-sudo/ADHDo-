@@ -1,0 +1,138 @@
+name: BYME 3. Supabase AI Function Deploy
+
+# AI変換バックエンド(Edge Function: byme-ai)をSupabaseへデプロイする。
+# - Anthropic APIキーをSupabaseのシークレットに設定(クライアントには置かない)
+# - byme-ai をデプロイ(JWT検証なし・公開エンドポイント)
+# - スモークテストで動作確認
+# アクセストークン等は暗号化入力で受け取り、ログには出さない。
+# 事前に「BYME 0」「BYME 9」を実行し、公開鍵で暗号化した値を渡すこと。
+
+on:
+  workflow_dispatch:
+    inputs:
+      enc_pat:
+        description: '暗号化されたSupabaseアクセストークン(内部用)'
+        required: true
+      enc_anthropic:
+        description: '暗号化されたAnthropic APIキー(初回のみ必須・以後省略可)'
+        required: false
+        default: ''
+      project_ref:
+        description: 'SupabaseプロジェクトRef'
+        required: false
+        default: 'wxqsvcsrbuidqqsmkqnx'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: byme
+    steps:
+      - name: Checkout (BYMEブランチを固定でチェックアウト)
+        uses: actions/checkout@v4
+        with:
+          ref: claude/app-dev-instructions-xpncjc
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Decrypt inputs (Supabase PAT / Anthropic key)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          ENC_PAT: ${{ inputs.enc_pat }}
+          ENC_ANTHROPIC: ${{ inputs.enc_anthropic }}
+        run: |
+          set -euo pipefail
+          strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
+          fetch_chunks() {
+            local name="$1" out="" i=0 raw val
+            while [ $i -lt 30 ]; do
+              raw=$(timeout 120 eas env:get --variable-name "${name}_${i}" --variable-environment production --format short --non-interactive </dev/null 2>/dev/null || true)
+              val=$(printf '%s' "$raw" | strip_ansi | tr -d '\r' | sed -n "s/^${name}_${i}=//p" | tr -d '\n')
+              [ -z "$val" ] && break
+              out="${out}${val}"
+              i=$((i+1))
+            done
+            [ -n "$out" ] || return 1
+            printf '%s' "$out"
+          }
+          decrypt() {
+            local enc="$1" outfile="$2"
+            printf '%s' "${enc%%.*}" | base64 -d > /tmp/wrapped.bin
+            printf '%s' "${enc#*.}" | base64 -d > /tmp/secret.enc
+            openssl pkeyutl -decrypt -inkey /tmp/boot_priv.pem -in /tmp/wrapped.bin -out /tmp/aes.pass -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
+            openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/tmp/aes.pass -in /tmp/secret.enc > "$outfile"
+            rm -f /tmp/wrapped.bin /tmp/secret.enc /tmp/aes.pass
+          }
+
+          PRIV_B64=$(fetch_chunks BYME_BOOT_PRIV) || { echo "::error::bootstrap秘密鍵がありません。先にBYME 9を実行してください"; exit 1; }
+          printf '%s' "$PRIV_B64" | base64 -d > /tmp/boot_priv.pem
+
+          decrypt "$ENC_PAT" /tmp/sb_pat
+          chmod 600 /tmp/sb_pat
+          echo "::add-mask::$(cat /tmp/sb_pat)"
+          echo "Supabaseアクセストークンを復号しました"
+
+          if [ -n "${ENC_ANTHROPIC:-}" ]; then
+            decrypt "$ENC_ANTHROPIC" /tmp/anthropic_key
+            chmod 600 /tmp/anthropic_key
+            echo "::add-mask::$(cat /tmp/anthropic_key)"
+            echo "Anthropic APIキーを復号しました"
+          fi
+          rm -f /tmp/boot_priv.pem
+
+      - name: Set ANTHROPIC_API_KEY secret (指定時のみ)
+        env:
+          PROJECT_REF: ${{ inputs.project_ref }}
+        run: |
+          set -euo pipefail
+          [ -f /tmp/anthropic_key ] || { echo "Anthropicキー未指定(既存のシークレットを使用)"; exit 0; }
+          export SUPABASE_ACCESS_TOKEN=$(cat /tmp/sb_pat)
+          supabase secrets set "ANTHROPIC_API_KEY=$(cat /tmp/anthropic_key)" --project-ref "$PROJECT_REF"
+          rm -f /tmp/anthropic_key
+          echo "ANTHROPIC_API_KEY を設定しました"
+
+      - name: Deploy byme-ai Edge Function
+        env:
+          PROJECT_REF: ${{ inputs.project_ref }}
+        run: |
+          set -euo pipefail
+          export SUPABASE_ACCESS_TOKEN=$(cat /tmp/sb_pat)
+          supabase functions deploy byme-ai --project-ref "$PROJECT_REF" --no-verify-jwt --use-api
+          rm -f /tmp/sb_pat
+          echo "デプロイ完了: https://${PROJECT_REF}.supabase.co/functions/v1/byme-ai"
+
+      - name: Smoke test
+        env:
+          PROJECT_REF: ${{ inputs.project_ref }}
+        run: |
+          set -euo pipefail
+          sleep 5
+          BODY='{"task":"affirmations","payload":{"goals":["2026年までに年商1億円を達成する"]}}'
+          CODE=$(curl -sS -o /tmp/resp.json -w '%{http_code}' -X POST \
+            -H 'content-type: application/json' \
+            -d "$BODY" \
+            "https://${PROJECT_REF}.supabase.co/functions/v1/byme-ai" || echo 000)
+          echo "HTTP $CODE"
+          head -c 600 /tmp/resp.json || true
+          echo ""
+          if [ "$CODE" != "200" ]; then
+            echo "::error::スモークテスト失敗。ANTHROPIC_API_KEYが未設定の可能性があります(enc_anthropic を渡して再実行)"
+            exit 1
+          fi
+          echo "SMOKE TEST: OK"
