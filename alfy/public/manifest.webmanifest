@@ -1,0 +1,21 @@
+{
+  "name": "Alfy — 日程調整を、スマートに。",
+  "short_name": "Alfy",
+  "description": "AI秘書のAlfyくんが日程調整をお手伝い。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F5F0",
+  "theme_color": "#1B2B4B",
+  "icons": [
+    {
+      "src": "/brand/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/brand/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
