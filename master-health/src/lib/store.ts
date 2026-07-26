@@ -258,8 +258,12 @@ export interface GoalPlan {
   /** 摂取カロリー目標: auto=目標ペースから逆算 / custom=手入力 */
   intakeMode: 'auto' | 'custom';
   customIntakeKcal: number | null;
-  /** PFCバランス(%)。合計100 */
+  /** PFCバランス(%)。合計100(方式A: 比率指定) */
   pfc: { p: number; f: number; c: number };
+  /** PFC目標の方式: ratio=バランス%から自動計算 / grams=グラム直接指定 */
+  pfcMode: 'ratio' | 'grams';
+  /** 方式B(グラム直接指定)の目標値 */
+  pfcTargets: { p: number; f: number; c: number } | null;
 }
 
 export const DEFAULT_GOAL_PLAN: GoalPlan = {
@@ -272,6 +276,8 @@ export const DEFAULT_GOAL_PLAN: GoalPlan = {
   intakeMode: 'auto',
   customIntakeKcal: null,
   pfc: { p: 30, f: 25, c: 45 },
+  pfcMode: 'grams',
+  pfcTargets: { p: 180, f: 45, c: 150 },
 };
 
 /** 旧バージョンで保存したプランに新フィールドを補完して返す */
@@ -421,6 +427,11 @@ export async function addMealLog(log: MealLog): Promise<void> {
 
 export async function deleteMealLog(id: string): Promise<void> {
   await db.runAsync('DELETE FROM meal_logs WHERE id = ?', id);
+}
+
+/** 記録の時刻修正(ログタブの編集用) */
+export async function updateMealLogTimestamp(id: string, iso: string): Promise<void> {
+  await db.runAsync('UPDATE meal_logs SET timestamp = ? WHERE id = ?', iso, id);
 }
 
 export async function listMealLogs(fromIso: string, toIso: string): Promise<MealLog[]> {

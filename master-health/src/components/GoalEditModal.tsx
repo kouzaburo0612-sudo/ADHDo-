@@ -26,6 +26,10 @@ export function GoalEditModal({ visible, goal, onClose, onSave }: {
   const [p, setP] = useState('30');
   const [f, setF] = useState('25');
   const [c, setC] = useState('45');
+  const [pfcMode, setPfcMode] = useState<'ratio' | 'grams'>('grams');
+  const [gp, setGp] = useState('180');
+  const [gf, setGf] = useState('45');
+  const [gc, setGc] = useState('150');
   const [initialized, setInitialized] = useState(false);
 
   // モーダルを開くたびに現在の設定値を反映
@@ -39,6 +43,10 @@ export function GoalEditModal({ visible, goal, onClose, onSave }: {
     setP(String(plan?.pfc.p ?? 30));
     setF(String(plan?.pfc.f ?? 25));
     setC(String(plan?.pfc.c ?? 45));
+    setPfcMode(plan?.pfcMode ?? 'grams');
+    setGp(String(plan?.pfcTargets?.p ?? 180));
+    setGf(String(plan?.pfcTargets?.f ?? 45));
+    setGc(String(plan?.pfcTargets?.c ?? 150));
     setInitialized(true);
   }
   if (!visible && initialized) setInitialized(false);
@@ -65,8 +73,19 @@ export function GoalEditModal({ visible, goal, onClose, onSave }: {
       intakeMode,
       customIntakeKcal: parseFloat(customKcal) || null,
       pfc: { p: pn, f: fn, c: cn },
+      pfcMode,
+      pfcTargets: {
+        p: Math.max(0, Math.round(parseFloat(gp) || 180)),
+        f: Math.max(0, Math.round(parseFloat(gf) || 45)),
+        c: Math.max(0, Math.round(parseFloat(gc) || 150)),
+      },
     });
   };
+
+  // 方式B: グラム指定の合計カロリー(P×4 + F×9 + C×4)
+  const gramsKcal = (parseFloat(gp) || 0) * 4 + (parseFloat(gf) || 0) * 9 + (parseFloat(gc) || 0) * 4;
+  const intakeRef = goal?.targetIntakeKcal ?? null;
+  const kcalGap = intakeRef != null ? Math.round(gramsKcal - intakeRef) : null;
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -174,15 +193,45 @@ export function GoalEditModal({ visible, goal, onClose, onSave }: {
           )}
         </Card>
 
-        <SectionTitle>PFCバランス(%)</SectionTitle>
+        <SectionTitle>PFC目標</SectionTitle>
         <Card>
-          <View style={styles.pfcRow}>
-            <PfcInput label="P たんぱく質" value={p} onChange={setP} />
-            <PfcInput label="F 脂質" value={f} onChange={setF} />
-            <PfcInput label="C 炭水化物" value={c} onChange={setC} />
-          </View>
-          {(parseInt(p, 10) || 0) + (parseInt(f, 10) || 0) + (parseInt(c, 10) || 0) !== 100 && (
-            <Text style={[styles.modalHint, { color: Colors.warn }]}>合計が100%になっていません</Text>
+          <Segmented
+            options={[
+              { value: 'grams', label: 'グラム直接指定' },
+              { value: 'ratio', label: 'バランス%' },
+            ]}
+            value={pfcMode}
+            onChange={setPfcMode}
+          />
+          {pfcMode === 'grams' ? (
+            <>
+              <View style={[styles.pfcRow, { marginTop: Spacing.md }]}>
+                <PfcInput label="P (g)" value={gp} onChange={setGp} />
+                <PfcInput label="F (g)" value={gf} onChange={setGf} />
+                <PfcInput label="C (g)" value={gc} onChange={setGc} />
+              </View>
+              <Text style={styles.modalHint}>
+                合計 {Math.round(gramsKcal).toLocaleString()}kcal(P×4 + F×9 + C×4)
+                {intakeRef != null ? ` / カロリー目標 ${intakeRef.toLocaleString()}kcal` : ''}
+              </Text>
+              {kcalGap != null && Math.abs(kcalGap) > 100 && (
+                <Text style={[styles.modalHint, { color: Colors.warn }]}>
+                  ⚠️ カロリー目標と{Math.abs(kcalGap).toLocaleString()}kcal乖離しています(保存は可能です)
+                </Text>
+              )}
+              <Text style={styles.modalHint}>たんぱく質は「多いほど良い」評価、脂質・炭水化物は「以内に収める」評価になります</Text>
+            </>
+          ) : (
+            <>
+              <View style={[styles.pfcRow, { marginTop: Spacing.md }]}>
+                <PfcInput label="P %" value={p} onChange={setP} />
+                <PfcInput label="F %" value={f} onChange={setF} />
+                <PfcInput label="C %" value={c} onChange={setC} />
+              </View>
+              {(parseInt(p, 10) || 0) + (parseInt(f, 10) || 0) + (parseInt(c, 10) || 0) !== 100 && (
+                <Text style={[styles.modalHint, { color: Colors.warn }]}>合計が100%になっていません</Text>
+              )}
+            </>
           )}
         </Card>
       </ScrollView>

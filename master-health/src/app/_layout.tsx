@@ -78,8 +78,8 @@ export default function RootLayout() {
             <NativeTabs.Trigger.Icon sf={{ default: 'heart.text.square', selected: 'heart.text.square.fill' }} />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="report">
-            <NativeTabs.Trigger.Label>実績報告</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon sf={{ default: 'fork.knife.circle', selected: 'fork.knife.circle.fill' }} />
+            <NativeTabs.Trigger.Label>ログ</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon sf={{ default: 'list.bullet.rectangle', selected: 'list.bullet.rectangle.fill' }} />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="chat">
             <NativeTabs.Trigger.Label>Mr. Vyta</NativeTabs.Trigger.Label>

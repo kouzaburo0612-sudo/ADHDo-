@@ -296,6 +296,21 @@ export async function roughBaselineKcal(): Promise<number> {
   return 1800;
 }
 
+/**
+ * その日のPFC目標(g)。方式B(グラム直接指定)ならその値、
+ * 方式A(比率)ならその日の目標摂取kcalから計算する。
+ */
+export function macroTargetsFor(g: GoalNumbers, targetIntakeKcal: number | null): { p: number; f: number; c: number } | null {
+  if (g.plan.pfcMode === 'grams' && g.plan.pfcTargets != null) return g.plan.pfcTargets;
+  const t = targetIntakeKcal ?? g.targetIntakeKcal;
+  if (t == null) return null;
+  return {
+    p: Math.round((t * g.plan.pfc.p) / 100 / 4),
+    f: Math.round((t * g.plan.pfc.f) / 100 / 9),
+    c: Math.round((t * g.plan.pfc.c) / 100 / 4),
+  };
+}
+
 /** ざっくり5段階のレベル定義(基準日の摂取に対する割合) */
 export const ROUGH_LEVELS = [
   { level: 1, label: '全然食べてない', pct: 0.4 },
@@ -418,13 +433,16 @@ export async function goalNumbers(): Promise<GoalNumbers> {
     }
   }
 
-  const pfcGrams = targetIntakeKcal != null
-    ? {
-        p: Math.round((targetIntakeKcal * plan.pfc.p) / 100 / 4),
-        f: Math.round((targetIntakeKcal * plan.pfc.f) / 100 / 9),
-        c: Math.round((targetIntakeKcal * plan.pfc.c) / 100 / 4),
-      }
-    : null;
+  // 方式B(グラム直接指定)ならその値、方式A(比率)なら目標摂取から計算
+  const pfcGrams = plan.pfcMode === 'grams' && plan.pfcTargets != null
+    ? plan.pfcTargets
+    : targetIntakeKcal != null
+      ? {
+          p: Math.round((targetIntakeKcal * plan.pfc.p) / 100 / 4),
+          f: Math.round((targetIntakeKcal * plan.pfc.f) / 100 / 9),
+          c: Math.round((targetIntakeKcal * plan.pfc.c) / 100 / 4),
+        }
+      : null;
 
   return {
     plan, profile, currentWeightKg, currentBodyFatPct, remainingKg, daysLeft,

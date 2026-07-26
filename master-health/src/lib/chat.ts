@@ -21,7 +21,7 @@ import {
   type ExerciseSet, type FoodTemplate, type MemoryCategory,
 } from '@/lib/store';
 import { computeBudget } from '@/utils/budget';
-import { balanceSeries, calorieBank, goalNumbers, targetIntakeToday } from '@/utils/deficit';
+import { balanceSeries, calorieBank, goalNumbers, macroTargetsFor, targetIntakeToday } from '@/utils/deficit';
 import { planForecast } from '@/utils/forecast';
 import { computeTdee, type TdeeInput } from '@/utils/tdee';
 import { mean } from '@/utils/stats';
@@ -218,6 +218,19 @@ const TOOLS = [
     },
   },
   {
+    name: 'set_macro_targets',
+    description: 'PFC目標をグラム直接指定で設定する。「タンパク質の目標180gにして」「脂質は45gまで」等。指定しなかった栄養素は現在値を維持する。実行前にユーザー確認カードが表示される。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        protein_g: { type: 'number', description: 'たんぱく質の目標(g)。多いほど良い評価' },
+        fat_g: { type: 'number', description: '脂質の目標(g)。以内に収める評価' },
+        carbs_g: { type: 'number', description: '炭水化物の目標(g)。以内に収める評価' },
+      },
+      required: [],
+    },
+  },
+  {
     name: 'confirm_day',
     description: '指定日の食事記録を「これで全部」として確定する。確定した日の収支は累積赤字に反映される(食事2件以上かつ1,000kcal以上の日は自動確定されるため不要)。ユーザーが「今日はもう食べない」「その日はそれで全部」と言ったときに使う。実行前にユーザー確認カードが表示される。',
     input_schema: {
@@ -315,6 +328,7 @@ const TOOLS = [
 const MUTATION_TOOLS = new Set([
   'log_meal', 'log_workout', 'log_stress', 'set_day_type', 'add_template', 'add_workout_template',
   'delete_meal_log', 'delete_template', 'set_goal', 'update_settings', 'confirm_day', 'log_rough_day',
+  'set_macro_targets',
 ]);
 
 // ---- 型 ----
@@ -408,6 +422,10 @@ async function buildSystemPrompt(): Promise<string> {
         balanceLine += `\n- 「あと何kcal食べられる」への回答は目標摂取基準(${target - (bal.intake ?? 0)}kcal)を主とし、維持ラインを従として添える`;
       } else {
         balanceLine += ` / 維持ラインまで: ${remainTdee}kcal`;
+      }
+      const mt = macroTargetsFor(g, bal.burn);
+      if (mt != null) {
+        balanceLine += `\n- 今日のPFC目標: P ${Math.round(todayIntake.protein)}/${mt.p}g(多いほど良い・達成を褒める・超過を責めない) F ${Math.round(todayIntake.fat)}/${mt.f}g C ${Math.round(todayIntake.carbs)}/${mt.c}g(F・Cは以内に収める・超過は指摘)`;
       }
     }
     balanceLine += `\n- カロリー赤字の累積(確定日のみ): ${bank.bankedKcal}kcal(脂肪${bank.fatKgEquivalent}kg相当)、連続脂肪燃焼${bank.streakDays}日`;
@@ -582,6 +600,7 @@ ${workoutTemplates.map((t) => `- ${t.name}`).join('\n') || '- (なし)'}
 ## 応答方針(重要)
 - 「いつもの」等の曖昧な表現はテンプレートの別名と照合する
 - 設定変更もあなたの仕事。「身長168にして」「目標体脂肪率13%で9月末までに」等はupdate_settingsツールで変更する
+- PFC目標のグラム変更(「タンパク質の目標180gにして」等)はset_macro_targetsツールで変更する
 - アプリ内の記録・テンプレート・設定・目標はすべてあなたのツールで操作できる。「アプリからはできません」とは言わない
 - 食事の自由入力はあなたがPFCを概算し、is_estimate=trueでlog_mealを呼ぶ
 - あなたはツールを呼ばない限り何も記録できない。「記録します」「記録しますね」と言うだけの応答は禁止。記録の意思があるなら同じ応答の中で必ずlog_meal等のツールを呼ぶ
@@ -824,6 +843,19 @@ export async function executeMutation(name: string, input: Record<string, unknow
     }
     return JSON.stringify({ ok: true, deleted: input.name });
   }
+  if (name === 'set_macro_targets') {
+    const plan = await getGoalPlan();
+    const cur = plan.pfcTargets ?? { p: 180, f: 45, c: 150 };
+    plan.pfcMode = 'grams';
+    plan.pfcTargets = {
+      p: input.protein_g != null ? Math.max(0, Math.round(Number(input.protein_g))) : cur.p,
+      f: input.fat_g != null ? Math.max(0, Math.round(Number(input.fat_g))) : cur.f,
+      c: input.carbs_g != null ? Math.max(0, Math.round(Number(input.carbs_g))) : cur.c,
+    };
+    await saveGoalPlan(plan);
+    const kcal = plan.pfcTargets.p * 4 + plan.pfcTargets.f * 9 + plan.pfcTargets.c * 4;
+    return JSON.stringify({ ok: true, targets: plan.pfcTargets, totalKcal: kcal });
+  }
   if (name === 'confirm_day') {
     const date = String(input.date ?? toKey(new Date()));
     await (await import('@/lib/store')).confirmDay(date, 'chat');
@@ -971,6 +1003,13 @@ function summarize(name: string, input: Record<string, unknown>): string {
     return `${head}\n${ex.map((e) => `${e.exerciseName} ${e.weight ?? ''}${e.weightUnit ?? ''} ${e.reps}回×${e.sets}セット`).join('\n')}`;
   }
   if (name === 'set_day_type') return `${input.date ?? '今日'} を「${input.day_type_name}」に設定`;
+  if (name === 'set_macro_targets') {
+    const parts: string[] = [];
+    if (input.protein_g != null) parts.push(`P ${input.protein_g}g`);
+    if (input.fat_g != null) parts.push(`F ${input.fat_g}g`);
+    if (input.carbs_g != null) parts.push(`C ${input.carbs_g}g`);
+    return `PFC目標を変更(グラム直接指定): ${parts.join(' / ') || '変更なし'}`;
+  }
   if (name === 'confirm_day') return `${input.date ?? '今日'} の記録を「これで全部」として確定します(収支が累積赤字に反映されます)`;
   if (name === 'log_rough_day') {
     const labels = ['', '全然食べてない(約40%)', 'あまり食べていない(約70%)', '同じくらい食べた(100%)', '多めに食べた(約130%)', 'かなり食べた(約170%)'];

@@ -23,8 +23,9 @@ import {
   listTemplates, listWorkoutLogs, localDateKey, newId, type PendingPhoto,
 } from '@/lib/store';
 import { estimateFoodFromPhoto } from '@/lib/vision';
+import { NUTRIENTS } from '@/lib/nutrients';
 import {
-  balanceSeries, calorieBank, goalNumbers, KCAL_PER_KG_FAT, ROUGH_LEVELS,
+  balanceSeries, calorieBank, goalNumbers, KCAL_PER_KG_FAT, macroTargetsFor, ROUGH_LEVELS,
   roughBaselineKcal, targetIntakeToday,
   type BankSummary, type DayBalance, type GoalNumbers,
 } from '@/utils/deficit';
@@ -47,9 +48,11 @@ interface DayData {
   bodyFat: number | null;
   balance: DayBalance | null;
   tags: string[];
-  /** その日に記録された食事・運動(実績報告タブ/AIチャット経由) */
+  /** その日に記録された食事・運動(ログタブ/AIチャット経由) */
   meals: MealRow[];
   workouts: WorkoutRow[];
+  /** その日のPFC合計(g) */
+  pfc: { p: number; f: number; c: number };
 }
 
 const hhmm = (iso: string): string => {
@@ -108,15 +111,19 @@ export default function MyBodyScreen() {
       const qFrom = addDays(dayStart, -1).toISOString();
       const qTo = addDays(dayStart, 2).toISOString();
       const tplName = new Map((await listTemplates()).map((t) => [t.id, t.name]));
-      const meals: MealRow[] = (await listMealLogs(qFrom, qTo))
+      const rawMeals = (await listMealLogs(qFrom, qTo))
         .filter((m) => localDateKey(m.timestamp) === key)
-        .sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
-        .map((m) => ({
-          id: m.id,
-          time: hhmm(m.timestamp),
-          label: m.freeText ?? (m.templateId != null ? tplName.get(m.templateId) : null) ?? '食事',
-          kcal: Math.round(m.kcal),
-        }));
+        .sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1));
+      const meals: MealRow[] = rawMeals.map((m) => ({
+        id: m.id,
+        time: hhmm(m.timestamp),
+        label: m.freeText ?? (m.templateId != null ? tplName.get(m.templateId) : null) ?? '食事',
+        kcal: Math.round(m.kcal),
+      }));
+      const pfc = rawMeals.reduce(
+        (a, m) => ({ p: a.p + m.protein, f: a.f + m.fat, c: a.c + m.carbs }),
+        { p: 0, f: 0, c: 0 },
+      );
       const workouts: WorkoutRow[] = (await listWorkoutLogs(qFrom, qTo))
         .filter((w) => localDateKey(w.timestamp) === key)
         .sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))
@@ -132,7 +139,7 @@ export default function MyBodyScreen() {
           return { id: w.id, time: hhmm(w.timestamp), label, detail };
         });
 
-      setDay({ metrics, weight, bodyFat, balance, tags, meals, workouts });
+      setDay({ metrics, weight, bodyFat, balance, tags, meals, workouts, pfc });
       setScores(await scoresForDate(key)); // 過去日も同じフォーマットでスコアを出す
       setBank(await calorieBank(key)); // その日「時点まで」の累積
       try { setGoal(await goalNumbers()); } catch { /* 目標未設定でも動く */ }
@@ -511,6 +518,40 @@ export default function MyBodyScreen() {
           )}
         </Card>
 
+        {/* PFCミニバー(摂取/目標/残り)。Pは多いほど良い、F・C・kcalは以内に収める */}
+        {(() => {
+          const targets = goal != null ? macroTargetsFor(goal, todayBurn) : null;
+          if (targets == null || day == null) return null;
+          return (
+            <Pressable onPress={() => router.push('/report')}>
+              <Card style={styles.balanceCard}>
+                <View style={styles.balanceHead}>
+                  <Text style={styles.heroLabel}>{isToday ? '今日のPFC' : 'この日のPFC実績 vs 目標'}</Text>
+                  <Text style={styles.macroLink}>ログへ ›</Text>
+                </View>
+                {NUTRIENTS.map((n) => {
+                  const used = n.key === 'kcal' ? todayIntakeVal
+                    : n.key === 'protein' ? Math.round(day.pfc.p)
+                    : n.key === 'fat' ? Math.round(day.pfc.f)
+                    : Math.round(day.pfc.c);
+                  const target = n.key === 'kcal' ? targetIntake
+                    : n.key === 'protein' ? targets.p
+                    : n.key === 'fat' ? targets.f : targets.c;
+                  if (target == null || target <= 0) return null;
+                  return (
+                    <MacroRow
+                      key={n.key}
+                      label={n.short ? `${n.short} ${n.label}` : n.label}
+                      used={used} target={target} unit={n.unit}
+                      direction={n.direction}
+                    />
+                  );
+                })}
+              </Card>
+            </Pressable>
+          );
+        })()}
+
         {/* カロリー赤字の累積(ゲーム化) */}
         {bank && (bank.countedDays > 0 || bank.neededKcal != null) && (
           <Card style={styles.bankCard}>
@@ -685,6 +726,53 @@ export default function MyBodyScreen() {
   );
 }
 
+/**
+ * PFCミニバー1行。「摂取済み / 目標(残り)」形式。
+ * more_is_better(たんぱく質): 達成で緑+💪、未達は淡色の「あと◯g」、超過しても警告しない
+ * less_is_better(カロリー・脂質・炭水化物): 以内は通常、超過は赤の「+◯ オーバー」
+ */
+function MacroRow({ label, used, target, unit, direction }: {
+  label: string; used: number; target: number; unit: string;
+  direction: 'more_is_better' | 'less_is_better';
+}) {
+  const ratio = Math.min(1, used / target);
+  const achieved = used >= target;
+  const over = used - target;
+  let fillColor: string = Colors.accentDim;
+  let statusText = '';
+  let statusColor: string = Colors.textFaint;
+  if (direction === 'more_is_better') {
+    if (achieved) {
+      fillColor = Colors.good;
+      statusText = '達成 💪';
+      statusColor = Colors.good;
+    } else {
+      statusText = `あと${Math.round(target - used)}${unit}`;
+    }
+  } else {
+    if (achieved && over > 0) {
+      fillColor = Colors.surplus;
+      statusText = `+${Math.round(over)}${unit} オーバー`;
+      statusColor = Colors.surplus;
+    } else {
+      fillColor = Colors.accentDim;
+      statusText = `あと${Math.round(target - used)}${unit}`;
+    }
+  }
+  return (
+    <View style={styles.macroRow}>
+      <Text style={styles.macroLabel} numberOfLines={1}>{label}</Text>
+      <View style={styles.macroTrack}>
+        <View style={[styles.macroFill, { width: `${Math.max(2, ratio * 100)}%`, backgroundColor: fillColor }]} />
+      </View>
+      <Text style={[styles.macroNum, achieved && direction === 'more_is_better' && { color: Colors.good }]}>
+        {Math.round(used).toLocaleString()} / {Math.round(target).toLocaleString()}{unit}
+      </Text>
+      <Text style={[styles.macroStatus, { color: statusColor }]} numberOfLines={1}>{statusText}</Text>
+    </View>
+  );
+}
+
 /** 本日の記録一覧+合計を見せて「これで確定」or「追加する」。未処理写真もここでまとめて解析 */
 function DayConfirmModal({ visible, meals, onClose, onConfirm, onAdd, onProcessed }: {
   visible: boolean;
@@ -854,6 +942,14 @@ const styles = StyleSheet.create({
   statValue: { color: Colors.text, fontSize: Type.body, fontWeight: '600', fontVariant: ['tabular-nums'] },
   statUnit: { color: Colors.textFaint, fontSize: Type.caption, fontWeight: '400' },
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  // PFCミニバー
+  macroLink: { color: Colors.textFaint, fontSize: Type.caption },
+  macroRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  macroLabel: { color: Colors.textSecondary, fontSize: Type.caption, width: 82 },
+  macroTrack: { flex: 1, height: 10, borderRadius: 5, backgroundColor: Colors.surfaceRaised, overflow: 'hidden' },
+  macroFill: { height: 10, borderRadius: 5 },
+  macroNum: { color: Colors.text, fontSize: Type.caption, fontWeight: '600', fontVariant: ['tabular-nums'], minWidth: 86, textAlign: 'right' },
+  macroStatus: { fontSize: Type.label, width: 84, textAlign: 'right' },
   // 日次確定まわり
   declareBtn: {
     marginTop: Spacing.sm, borderRadius: 10, borderWidth: 1, borderColor: Colors.accentDim,

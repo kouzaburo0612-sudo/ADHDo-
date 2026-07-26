@@ -7,7 +7,7 @@ import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 import { AppHeader } from '@/components/AppHeader';
 import { Card, Chip, SectionTitle } from '@/components/ui';
@@ -15,15 +15,16 @@ import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { adviceErrorMessage } from '@/lib/ai';
 import { lookupBarcode, type BarcodeProduct } from '@/lib/barcode';
 import { getDay } from '@/lib/db';
-import { todayKey } from '@/lib/dates';
+import { addDays, formatKeyJa, fromKey, toKey, todayKey } from '@/lib/dates';
+import { calorieBank } from '@/utils/deficit';
 import { formatValue } from '@/lib/metrics';
 import { rescheduleReminders } from '@/lib/notifications';
 import {
-  addMealLog, addPendingPhoto, addStressLog, addWorkoutLog, dailyIntake, deleteMealLog,
-  deleteStressLog, deleteTemplate, deleteWorkoutLog, deleteWorkoutTemplate, listMealLogs,
-  listPendingPhotos, listStressLogs,
+  addMealLog, addPendingPhoto, addStressLog, addWorkoutLog, confirmDay, dailyIntake,
+  deleteMealLog, deleteStressLog, deleteTemplate, deleteWorkoutLog, deleteWorkoutTemplate,
+  listMealLogs, listPendingPhotos, listStressLogs,
   listTemplates, listWorkoutLogs, listWorkoutTemplates, localDateKey, newId,
-  templateNutrition, upsertIngredient, upsertTemplate, upsertWorkoutTemplate,
+  templateNutrition, updateMealLogTimestamp, upsertWorkoutTemplate,
   type ExerciseSet, type FoodTemplate, type MealLog, type StressLog, type WorkoutLog,
   type WorkoutTemplate,
 } from '@/lib/store';
@@ -43,15 +44,20 @@ const CARDIO_PRESETS = ['ウォーキング', 'ランニング', 'サイクリ�
 
 export default function ReportScreen() {
   const [tab, setTab] = useState<Tab>('meal');
+  const router = useRouter();
 
   return (
     <View style={styles.root}>
-    <AppHeader sub="実績報告" />
+    <AppHeader sub="ログ ・ 記録の閲覧と確定" />
     <ScrollView
       style={{ flex: 1 }}
       contentContainerStyle={{ padding: Spacing.md, paddingBottom: 120 }}
       keyboardShouldPersistTaps="handled"
     >
+      {/* 新規入力の主動線はMr. Vytaに一本化 */}
+      <Pressable style={styles.chatCta} onPress={() => router.push('/chat')}>
+        <Text style={styles.chatCtaText}>💬 チャットで記録する(Mr. Vytaに話すだけ)</Text>
+      </Pressable>
       {/* 大きく目立つ切り替えタブ(食事/運動/ストレス) */}
       <View style={styles.bigTabs}>
         {([
@@ -85,11 +91,6 @@ function MealSection() {
   const [analyzing, setAnalyzing] = useState(false);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<FoodEstimate | null>(null);
-  const [name, setName] = useState('');
-  const [kcal, setKcal] = useState('');
-  const [protein, setProtein] = useState('');
-  const [fat, setFat] = useState('');
-  const [carbs, setCarbs] = useState('');
   // バーコード
   const [scanOpen, setScanOpen] = useState(false);
   const [camPerm, requestCamPerm] = useCameraPermissions();
@@ -99,15 +100,22 @@ function MealSection() {
 
   const [templates, setTemplates] = useState<{ t: FoodTemplate; kcal: number }[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
+  // 日別表示(‹ ›で過去日の記録を閲覧・編集できる)
+  const [dateKey, setDateKey] = useState(todayKey());
+  const [unconfirmed, setUnconfirmed] = useState<string[]>([]);
+  const isToday = dateKey === todayKey();
 
   const load = useCallback(async () => {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    const list = await listMealLogs(start.toISOString(), end.toISOString());
+    const dayStart = fromKey(dateKey);
+    const dayEnd = addDays(dayStart, 1);
+    // 前後に広めに取ってローカル日付で絞る(TZ表現の揺れ対策)
+    const wide = await listMealLogs(addDays(dayStart, -1).toISOString(), addDays(dayEnd, 1).toISOString());
+    const list = wide.filter((m) => localDateKey(m.timestamp) === dateKey);
     setMeals(list);
-    const t = (await dailyIntake(start.toISOString(), end.toISOString()))
-      .get(localDateKey(now.toISOString())) ?? { kcal: 0, protein: 0, fat: 0, carbs: 0 };
+    const t = list.reduce(
+      (a, m) => ({ kcal: a.kcal + m.kcal, protein: a.protein + m.protein, fat: a.fat + m.fat, carbs: a.carbs + m.carbs }),
+      { kcal: 0, protein: 0, fat: 0, carbs: 0 },
+    );
     setTotals({
       kcal: Math.round(t.kcal), protein: Math.round(t.protein),
       fat: Math.round(t.fat), carbs: Math.round(t.carbs),
@@ -115,7 +123,8 @@ function MealSection() {
     const tpls = await listTemplates();
     setTemplates(await Promise.all(tpls.map(async (tp) => ({ t: tp, kcal: (await templateNutrition(tp)).kcal }))));
     setPendingCount((await listPendingPhotos().catch(() => [])).length);
-  }, []);
+    try { setUnconfirmed((await calorieBank()).unconfirmedDates); } catch { setUnconfirmed([]); }
+  }, [dateKey]);
 
   /** 「後で記録」: 写真だけ撮って未処理ボックスへ。夜の確定フローでまとめてAI解析する */
   const laterPhoto = async () => {
@@ -222,55 +231,6 @@ function MealSection() {
     load();
   };
 
-  const recordManual = async () => {
-    const k = parseFloat(kcal);
-    if (!name.trim() || !Number.isFinite(k)) {
-      Alert.alert('入力エラー', '名前とカロリーは必須です');
-      return;
-    }
-    await addMealLog({
-      id: newId(), timestamp: new Date().toISOString(),
-      freeText: name.trim(),
-      kcal: k,
-      protein: parseFloat(protein) || 0,
-      fat: parseFloat(fat) || 0,
-      carbs: parseFloat(carbs) || 0,
-      isEstimate: false,
-    });
-    setName(''); setKcal(''); setProtein(''); setFat(''); setCarbs('');
-    rescheduleReminders().catch(() => {});
-    load();
-  };
-
-  /** 手入力フォームの内容を食事テンプレートとして保存(上限30件) */
-  const saveAsTemplate = async () => {
-    const k = parseFloat(kcal);
-    if (!name.trim() || !Number.isFinite(k)) {
-      Alert.alert('入力エラー', 'テンプレ保存には名前とカロリーが必要です');
-      return;
-    }
-    try {
-      const ingId = newId();
-      await upsertIngredient({
-        id: ingId, name: name.trim(), unit: '食',
-        kcalPerUnit: k,
-        proteinPerUnit: parseFloat(protein) || 0,
-        fatPerUnit: parseFloat(fat) || 0,
-        carbsPerUnit: parseFloat(carbs) || 0,
-        dietaryTags: [],
-      });
-      await upsertTemplate({ id: newId(), name: name.trim(), aliases: [], items: [{ ingredientId: ingId, quantity: 1 }] });
-      Alert.alert('保存しました', `テンプレート「${name.trim()}」を登録しました。ワンタップやチャットの「${name.trim()}」で記録できます。`);
-      load();
-    } catch (e) {
-      if (e instanceof Error && e.message === 'TEMPLATE_LIMIT') {
-        Alert.alert('上限に達しています', '食事テンプレートは30件までです。長押しで不要なものを削除してください。');
-      } else {
-        Alert.alert('保存に失敗しました');
-      }
-    }
-  };
-
   const recordTemplate = async (item: { t: FoodTemplate; kcal: number }) => {
     const n = await templateNutrition(item.t);
     await addMealLog({
@@ -297,8 +257,48 @@ function MealSection() {
     ]);
   };
 
+  /** タップで編集メニュー(時刻修正・削除) */
+  const editMeal = (m: MealLog) => {
+    Alert.alert(m.freeText ?? 'テンプレート食', `${fmtTime(m.timestamp)} ・ ${Math.round(m.kcal)}kcal`, [
+      {
+        text: '時刻を変更',
+        onPress: () => {
+          Alert.prompt('時刻を変更', 'HH:mm形式で入力(例 19:30)。日付はこの日のまま変わりません。', async (v) => {
+            const mt = /^(\d{1,2}):(\d{2})$/.exec((v ?? '').trim());
+            if (!mt) { Alert.alert('形式が違います', '例: 19:30'); return; }
+            const [y, mo, dd] = dateKey.split('-').map(Number);
+            const t = new Date(y, mo - 1, dd, Number(mt[1]), Number(mt[2]), 0);
+            await updateMealLogTimestamp(m.id, t.toISOString());
+            load();
+          }, 'plain-text', fmtTime(m.timestamp));
+        },
+      },
+      { text: '削除', style: 'destructive', onPress: () => confirmDelete(m.id) },
+      { text: 'キャンセル', style: 'cancel' },
+    ]);
+  };
+
+  const confirmDate = async (key: string) => {
+    await confirmDay(key, 'manual');
+    load();
+  };
+
   return (
     <>
+      {/* 日別ナビゲーション(閲覧・編集の場としての「ログ」) */}
+      <View style={styles.dayNav}>
+        <Pressable onPress={() => setDateKey(toKey(addDays(fromKey(dateKey), -1)))} hitSlop={10} style={styles.dayNavBtn}>
+          <Text style={styles.dayNavArrow}>‹</Text>
+        </Pressable>
+        <Text style={styles.dayNavLabel}>{isToday ? `今日 ${formatKeyJa(dateKey)}` : formatKeyJa(dateKey)}</Text>
+        <Pressable
+          onPress={() => setDateKey((prev) => { const next = toKey(addDays(fromKey(prev), 1)); return next > todayKey() ? todayKey() : next; })}
+          hitSlop={10} style={[styles.dayNavBtn, isToday && { opacity: 0.25 }]}
+        >
+          <Text style={styles.dayNavArrow}>›</Text>
+        </Pressable>
+      </View>
+
       <Card style={styles.totalCard}>
         <Text style={styles.totalKcal}>
           {totals.kcal.toLocaleString()}<Text style={styles.totalUnit}> kcal</Text>
@@ -306,7 +306,33 @@ function MealSection() {
         <Text style={styles.totalPfc}>P {totals.protein}g ・ F {totals.fat}g ・ C {totals.carbs}g</Text>
       </Card>
 
-      {templates.length > 0 && (
+      {/* 未確定日の一覧と確定操作 */}
+      {(unconfirmed.length > 0 || isToday) && (
+        <Card style={{ marginTop: Spacing.sm }}>
+          {unconfirmed.length > 0 && (
+            <>
+              <Text style={styles.unconfTitle}>⏳ 未確定の日({unconfirmed.length}日)— 確定すると累積赤字に反映</Text>
+              {unconfirmed.map((d, i) => (
+                <View key={d} style={[styles.unconfRow, i > 0 && styles.unconfRowBorder]}>
+                  <Pressable onPress={() => setDateKey(d)} style={{ flex: 1 }}>
+                    <Text style={styles.unconfDate}>{formatKeyJa(d)} <Text style={styles.hint}>タップで表示</Text></Text>
+                  </Pressable>
+                  <Pressable style={styles.unconfBtn} onPress={() => confirmDate(d)}>
+                    <Text style={styles.unconfBtnText}>確定</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </>
+          )}
+          {isToday && (
+            <Pressable style={[styles.unconfBtn, { alignSelf: 'stretch', marginTop: unconfirmed.length > 0 ? Spacing.sm : 0 }]} onPress={() => confirmDate(todayKey())}>
+              <Text style={styles.unconfBtnText}>本日を確定(今日はこれで全部)</Text>
+            </Pressable>
+          )}
+        </Card>
+      )}
+
+      {isToday && templates.length > 0 && (
         <>
           <SectionTitle>マイテンプレート(タップで記録)</SectionTitle>
           <View style={styles.tplWrap}>
@@ -326,6 +352,7 @@ function MealSection() {
         </>
       )}
 
+      {isToday && (<>
       <SectionTitle>かんたん記録</SectionTitle>
       <View style={styles.photoRow}>
         <Pressable style={styles.photoBtn} onPress={() => pick(true)} disabled={analyzing}>
@@ -432,35 +459,17 @@ function MealSection() {
         </Card>
       )}
 
-      <SectionTitle>手入力で記録</SectionTitle>
-      <Card>
-        <TextInput
-          style={styles.input}
-          value={name} onChangeText={setName}
-          placeholder="料理名(例: 牛丼 並盛)"
-          placeholderTextColor={Colors.textFaint}
-        />
-        <View style={styles.inputGrid}>
-          <NumInput label="kcal" value={kcal} onChange={setKcal} />
-          <NumInput label="P (g)" value={protein} onChange={setProtein} />
-          <NumInput label="F (g)" value={fat} onChange={setFat} />
-          <NumInput label="C (g)" value={carbs} onChange={setCarbs} />
-        </View>
-        <View style={styles.btnRow}>
-          <Pressable style={[styles.btn, styles.btnGhost]} onPress={saveAsTemplate}>
-            <Text style={styles.btnGhostText}>テンプレに保存</Text>
-          </Pressable>
-          <Pressable style={[styles.btn, styles.btnPrimary]} onPress={recordManual}>
-            <Text style={styles.btnPrimaryText}>記録する</Text>
-          </Pressable>
-        </View>
-      </Card>
+      {/* 手入力フォームはv4.1で廃止。新規入力はチャット・写真・テンプレへ一本化 */}
+      <Text style={styles.hint}>
+        細かい手入力は不要です。Mr. Vytaに「牛丼並盛食べた」と話すだけでPFC込みで記録されます
+      </Text>
+      </>)}
 
-      <SectionTitle>今日の食事</SectionTitle>
+      <SectionTitle>{isToday ? '今日の食事(タップで編集)' : `${formatKeyJa(dateKey)}の食事(タップで編集)`}</SectionTitle>
       {meals.length === 0 ? (
-        <Card><Text style={styles.muted}>まだ記録がありません</Text></Card>
+        <Card><Text style={styles.muted}>{isToday ? 'まだ記録がありません' : 'この日の記録はありません(ざっくり入力はMy Bodyのこの日の画面から)'}</Text></Card>
       ) : meals.map((m) => (
-        <Pressable key={m.id} onLongPress={() => confirmDelete(m.id)}>
+        <Pressable key={m.id} onPress={() => editMeal(m)} onLongPress={() => confirmDelete(m.id)}>
           <Card style={styles.mealRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.mealName}>
@@ -472,7 +481,7 @@ function MealSection() {
           </Card>
         </Pressable>
       ))}
-      {meals.length > 0 && <Text style={styles.hint}>長押しで削除できます</Text>}
+      {meals.length > 0 && <Text style={styles.hint}>タップで時刻修正・削除 / 長押しで即削除</Text>}
     </>
   );
 }
@@ -867,6 +876,28 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceRaised, paddingVertical: 11, alignItems: 'center',
   },
   laterBtnText: { color: Colors.accent, fontSize: Type.caption, fontWeight: '700' },
+  chatCta: {
+    borderRadius: 12, backgroundColor: Colors.accentDim,
+    borderWidth: 1, borderColor: Colors.accent,
+    paddingVertical: 13, alignItems: 'center', marginBottom: Spacing.sm,
+  },
+  chatCtaText: { color: Colors.accent, fontSize: Type.body, fontWeight: '700' },
+  dayNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: Spacing.sm },
+  dayNavBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.surface,
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.border,
+  },
+  dayNavArrow: { color: Colors.text, fontSize: 20, lineHeight: 22 },
+  dayNavLabel: { color: Colors.text, fontSize: Type.body, fontWeight: '700' },
+  unconfTitle: { color: Colors.warn, fontSize: Type.caption, fontWeight: '700', marginBottom: 4 },
+  unconfRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
+  unconfRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
+  unconfDate: { color: Colors.text, fontSize: Type.body },
+  unconfBtn: {
+    backgroundColor: Colors.accentDim, borderRadius: 8,
+    paddingHorizontal: 14, paddingVertical: 8, alignItems: 'center',
+  },
+  unconfBtnText: { color: Colors.accent, fontSize: Type.caption, fontWeight: '700' },
   preview: { width: '100%', height: 180, borderRadius: Radius.sm, backgroundColor: Colors.bg },
   analyzing: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: Spacing.md },
   analyzingText: { color: Colors.textSecondary, fontSize: Type.body },
