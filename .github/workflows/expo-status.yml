@@ -1,0 +1,17 @@
+name: Expo Status Probe
+
+# Expo(EAS)側の障害情報を取得する
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check Expo status page
+        run: |
+          echo "== summary =="
+          curl -s https://status.expo.dev/api/v2/summary.json | jq '{status: .status, incidents: [.incidents[] | {name, status, impact, updated_at}], components: [.components[] | select(.status != "operational") | {name, status}]}'
+          echo "== recent incidents =="
+          curl -s https://status.expo.dev/api/v2/incidents.json | jq '[.incidents[0:5][] | {name, status, impact, created_at, latest: .incident_updates[0].body}]'
