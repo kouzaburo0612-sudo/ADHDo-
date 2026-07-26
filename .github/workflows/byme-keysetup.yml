@@ -1,0 +1,70 @@
+name: BYME 9. KeySetup (internal)
+
+# 内部用: チャット経由でクレデンシャルを安全に受け渡すためのブートストラップ。
+# 1) EAS環境変数の読み書きが機能するか自己テスト
+# 2) RSA鍵ペアを生成し、秘密鍵はEAS環境変数(sensitive)へ、公開鍵はログへ出力
+# 以後、公開鍵で暗号化した値をworkflow_dispatch入力として渡せば、
+# 平文が公開リポジトリのどこにも残らずにCIへ注入できる。
+# 事前に「BYME 0. EAS Project Init」を実行しておくこと(EAS環境変数はプロジェクト単位)。
+on:
+  workflow_dispatch:
+
+jobs:
+  keysetup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: byme
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: claude/app-dev-instructions-xpncjc
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Selftest EAS env + generate bootstrap keypair
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
+
+          echo "[1/3] EAS環境変数の自己テスト"
+          timeout 120 eas env:create --environment production --name BYME_SELFTEST --value ok123 --type string --visibility sensitive --scope project --force --non-interactive </dev/null
+          raw=$(timeout 120 eas env:get --variable-name BYME_SELFTEST --variable-environment production --format short --non-interactive </dev/null | strip_ansi)
+          case "$raw" in
+            *ok123*) echo "→ EAS env 読み書き OK" ;;
+            *) echo "::error::EAS env selftest FAILED (got: $raw)"; exit 1 ;;
+          esac
+
+          echo "[2/3] ブートストラップRSA鍵ペアを生成"
+          openssl genrsa -out /tmp/bootstrap_priv.pem 2048 2>/dev/null
+          openssl rsa -in /tmp/bootstrap_priv.pem -pubout -out /tmp/bootstrap_pub.pem 2>/dev/null
+
+          echo "[3/3] 秘密鍵をEAS環境変数へ保存"
+          PRIV_B64=$(base64 -w0 /tmp/bootstrap_priv.pem)
+          i=0
+          value="$PRIV_B64"
+          while [ -n "$value" ]; do
+            part="${value:0:3000}"
+            value="${value:3000}"
+            timeout 120 eas env:create --environment production --name "BYME_BOOT_PRIV_${i}" --value "$part" --type string --visibility sensitive --scope project --force --non-interactive </dev/null >/dev/null
+            i=$((i+1))
+          done
+          echo "→ 秘密鍵を ${i} chunk で保存"
+
+          echo ""
+          echo "===PUBLIC KEY BEGIN==="
+          cat /tmp/bootstrap_pub.pem
+          echo "===PUBLIC KEY END==="
