@@ -1,0 +1,37 @@
+name: EAS Submission Info
+
+# 失敗した提出の詳細(Apple/fastlaneの生ログ)をEAS APIから取得する
+on:
+  workflow_dispatch:
+    inputs:
+      submission_id:
+        description: 'EAS Submission ID'
+        required: true
+        type: string
+
+jobs:
+  info:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Query submission and fetch logs
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -e
+          RESP=$(curl -s https://api.expo.dev/graphql \
+            -H "Authorization: Bearer $EXPO_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"query($id:ID!){submissions{byId(submissionId:$id){id status logsUrl error{errorCode message}}}}","variables":{"id":"${{ inputs.submission_id }}"}}')
+          echo "== GraphQL response =="
+          echo "$RESP" | head -c 3000
+          echo
+          LOGS=$(echo "$RESP" | jq -r '.data.submissions.byId.logsUrl // empty')
+          if [ -n "$LOGS" ]; then
+            echo "== fastlane log: error-ish lines =="
+            curl -s "$LOGS" | grep -inE "ERROR|ITMS-|Invalid|missing|rejected|Asset validation|failed" | tail -60 || true
+            echo "== fastlane log: last 80 lines =="
+            curl -s "$LOGS" | tail -80
+          else
+            echo "logsUrl not available"
+          fi
