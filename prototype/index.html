@@ -26,7 +26,7 @@
   --ink-2:#98a2b8;
   --ink-3:#5f6a82;
   --footer-h:64px;
-  --top-h:62px;
+  --top-h:80px;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%}
@@ -66,7 +66,7 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .tagline{text-align:center;font-family:'Quicksand',-apple-system,sans-serif;font-weight:500;font-size:13px;letter-spacing:2.5px;color:var(--ink-2);margin-top:16px}
 .tagline b{color:#55ccbe;font-weight:700}
 .live-clock{color:var(--brand);font-weight:700;font-variant-numeric:tabular-nums;margin-left:7px}
-#scr-home header.app .date{font-size:11.5px;margin-top:3px}
+#app-top .date{font-size:11.5px;color:var(--ink-2);margin-top:3px}
 .ach-mini{min-width:134px;flex:none;padding-top:2px}
 .ach-mini-top{display:flex;justify-content:flex-end;align-items:baseline;gap:6px;font-size:10px;color:var(--ink-2)}
 .ach-mini-top b{font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
@@ -309,44 +309,22 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .ed-error.show{display:block}
 
 /* ============ Inbox(唯一の受信箱) ============ */
-#scr-inbox{
-  padding:var(--top-h) 0 calc(var(--footer-h) + 70px);
-  min-height:100vh;
-  background:
-    radial-gradient(220px 90px at 18% 24%, rgba(255,255,255,.35), transparent 70%),
-    radial-gradient(260px 100px at 82% 46%, rgba(255,255,255,.28), transparent 70%),
-    radial-gradient(200px 80px at 40% 72%, rgba(255,255,255,.22), transparent 70%),
-    linear-gradient(180deg,#aec3e6 0%,#93abd8 55%,#9db3dc 100%);
-}
-#scr-inbox .ib-chip{background:rgba(255,255,255,.32);border-color:rgba(255,255,255,.4);color:#2c4570}
-#scr-inbox .ib-chip.sel{background:#fff;border-color:#fff;color:#2c4f8a}
-#scr-inbox .ib-item{background:#8de05f;border:none;box-shadow:0 1px 2px rgba(30,60,110,.22);border-radius:18px 18px 5px 18px}
-#scr-inbox .ib-text{color:#1c2e1c}
-#scr-inbox .ib-link-title{color:#14304f}
-#scr-inbox .ib-url{color:#1f5fbf}
-#scr-inbox .ib-meta{color:rgba(28,46,28,.6)}
-#scr-inbox .ib-item.done{opacity:.55}
-#scr-inbox .ib-day{background:rgba(70,90,130,.4);border:none;color:#fff}
-#scr-inbox .ib-empty{color:#31527f}
-#scr-inbox .ib-inputbar{background:#fff;border-top:1px solid #e2e6ed;backdrop-filter:none;-webkit-backdrop-filter:none}
-#scr-inbox .ib-inputbar textarea{background:#f1f3f6;border-color:#e2e6ed;color:#151a22}
-#scr-inbox .ib-iconbtn{background:#fff;border-color:#e2e6ed;color:#5b6470}
-#scr-inbox .ib-send{background:#06c755;color:#fff}
-/* アプリからの説明バブル(左寄せ・白) */
-.ib-intro{
-  align-self:flex-start!important;max-width:88%;
-  background:#fff!important;border:none!important;border-radius:5px 18px 18px 18px!important;
-}
-.ib-intro .ib-text{color:#2a2f36!important;font-size:13px}
-.ib-intro-x{display:block;margin-top:8px;background:#eef1f5;border:none;color:#5b6470;border-radius:8px;padding:6px 12px;font-size:11.5px;font-weight:700}
+#scr-inbox{padding:var(--top-h) 0 calc(var(--footer-h) + 70px)}
+/* アプリからの説明バブル(左寄せ) */
+.ib-intro{align-self:flex-start;max-width:88%;border-radius:5px 16px 16px 16px}
+.ib-intro .ib-text{font-size:13px}
+.ib-intro-x{display:block;margin-top:8px;background:var(--surface-2);border:1px solid var(--line);color:var(--ink-2);border-radius:8px;padding:6px 12px;font-size:11.5px;font-weight:700}
 /* 新着バブルの入場アニメーション(LINEっぽい滑らかさ) */
 @keyframes ibIn{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}
 .ib-new{animation:ibIn .28s cubic-bezier(.2,.8,.3,1)}
 .ib-item{transition:transform .12s}
-.ib-item:active{transform:scale(.98)}
+.ib-item:active{transform:scale(.97)}
+/* 長押し=アクションシート。iOSのテキスト選択と競合しないよう選択は無効化し、
+   コピーはシート内の「コピー」ボタンで行う */
+.ib-item{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .ib-filters{
   position:sticky;top:var(--top-h);z-index:20;display:flex;gap:6px;overflow-x:auto;
-  padding:12px 14px 10px;background:linear-gradient(rgba(150,171,216,.94) 62%,transparent);
+  padding:12px 14px 10px;background:linear-gradient(var(--bg) 78%,transparent);
   -webkit-overflow-scrolling:touch;scrollbar-width:none;
 }
 .ib-filters::-webkit-scrollbar{display:none}
@@ -541,9 +519,12 @@ textarea:focus,input:focus{border-color:var(--c-work)}
 <!-- ============ 全ページ共通の固定ヘッダー ============ -->
 <div id="app-top">
   <div class="head-row">
-    <div class="brand">
-      <span class="logo-word">ADH<span class="o">Do</span></span>
-      <span class="lv-chip" id="lv-chip">Lv.1</span>
+    <div>
+      <div class="brand">
+        <span class="logo-word">ADH<span class="o">Do</span></span>
+        <span class="lv-chip" id="lv-chip">Lv.1</span>
+      </div>
+      <div class="date"><span id="home-date"></span><span class="live-clock" id="home-clock"></span></div>
     </div>
     <div class="ach-mini">
       <div class="ach-mini-top"><span>今日の達成率</span><b id="ach-pct">0%</b></div>
@@ -555,7 +536,6 @@ textarea:focus,input:focus{border-color:var(--c-work)}
 
 <section class="screen active" id="scr-home">
   <header class="app">
-    <div class="date"><span id="home-date"></span><span class="live-clock" id="home-clock"></span></div>
     <div class="seg-tabs">
       <button id="tab-tl" class="sel">タイムライン</button>
       <button id="tab-clock">24Hグラフ</button>
@@ -705,7 +685,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <p style="font-size:11px;color:var(--ink-3);margin-top:6px">就寝〜起床の時間は、タイムラインと24Hグラフに「睡眠」として自動で組み込まれます。</p>
   </div>
   <p class="tagline">By ADHD. <b>For ADHD.</b></p>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v2.1</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v2.2</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -1367,7 +1347,7 @@ function ibIntroHTML(){
 
 ・SafariやYouTubeの「共有」からも放り込めます
 ・上のチップで絞り込み(保存先はずっとここ1つ)
-・バブルをタップ → 開く / 済み / 分類変更
+・バブルをタップ or 長押し → 開く / コピー / 済み / 分類変更
 ・分類は ⚙ から自由に追加・削除できます</div>
     <button class="ib-intro-x" data-ibintro>説明を閉じる</button>
   </div>`;
@@ -1464,9 +1444,27 @@ $('#ib-filters').addEventListener('click', e => {
 $('#ib-list').addEventListener('click', e => {
   if(e.target.closest('[data-ibintro]')){ store.set('ibIntroHide', true); renderInbox(false); return; }
   if(e.target.closest('.ib-intro')) return;
+  if(ibLPFired){ ibLPFired = false; return; } // 長押し直後のclickは無視
   const el = e.target.closest('[data-ib]');
   if(el) openIbSheet(el.dataset.ib);
 });
+// 長押しでもアクションシート(タップと同じ。押している感のあるやつ)
+let ibLPTimer = null, ibLPFired = false, ibLPStart = null;
+$('#ib-list').addEventListener('pointerdown', e => {
+  const el = e.target.closest('[data-ib]');
+  if(!el) return;
+  ibLPStart = {x: e.clientX, y: e.clientY};
+  clearTimeout(ibLPTimer);
+  ibLPTimer = setTimeout(() => { ibLPFired = true; openIbSheet(el.dataset.ib); }, 420);
+});
+$('#ib-list').addEventListener('pointermove', e => {
+  if(!ibLPTimer || !ibLPStart) return;
+  if(Math.hypot(e.clientX - ibLPStart.x, e.clientY - ibLPStart.y) > 12){
+    clearTimeout(ibLPTimer); ibLPTimer = null; // スクロール中はキャンセル
+  }
+});
+['pointerup', 'pointercancel'].forEach(ev =>
+  $('#ib-list').addEventListener(ev, () => { clearTimeout(ibLPTimer); ibLPTimer = null; }));
 // 分類の追加・削除(メモとリンクはアプリの動作に必要なので固定)
 function openIbCatSheet(){
   const PALETTE = ['#f4526a','#d97706','#84a31c','#0da06f','#1a9fbd','#4a8df8','#9d7bf5','#c94f8e','#a1792e','#8a94a5'];
@@ -1520,10 +1518,11 @@ function openIbCatSheet(){
 function openIbSheet(id){
   const it = INBOX.find(x => x.id === id);
   if(!it) return;
-  const c = IB_CLS[it.cls] || IB_CLS.memo;
+  const c = ibCat(it.cls);
   $('#ibsheet-body').innerHTML = `
     <h3 style="margin-bottom:12px;word-break:break-word">${esc(it.meta.title || it.text || 'この項目')}</h3>
     ${it.url ? `<button class="ib-sheet-item" data-ibact="open">🔗 リンクを開く</button>` : ''}
+    ${it.text || it.url ? `<button class="ib-sheet-item" data-ibact="copy">📋 テキストをコピー</button>` : ''}
     <button class="ib-sheet-item" data-ibact="toggle">${it.status === 'done' ? '↩︎ 未処理に戻す' : '✓ 済みにする'}</button>
     <div class="f-label">分類を変更(あなたが直すとAIは上書きしません)</div>
     <div class="ib-cls-row">${IB_CATS.map(c =>
@@ -1543,6 +1542,20 @@ function openIbSheet(id){
         if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({type:'openUrl', url: it.url}));
         else window.open(it.url, '_blank');
       }catch{}
+    }
+    else if(a === 'copy'){
+      const txt = it.text || it.url || '';
+      const fallback = () => {
+        const ta = document.createElement('textarea');
+        ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.focus(); ta.select();
+        try{ document.execCommand('copy'); }catch{}
+        ta.remove();
+      };
+      try{
+        if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).catch(fallback);
+        else fallback();
+      }catch{ fallback(); }
     }
     else if(a === 'toggle'){ it.status = it.status === 'done' ? 'new' : 'done'; ibPersist(); renderInbox(false); }
     else if(a === 'trash'){ it.status = 'archived'; ibPersist(); renderInbox(false); }
