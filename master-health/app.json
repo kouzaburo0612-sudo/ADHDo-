@@ -6,7 +6,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "masterhealth",
+    "scheme": "vyta",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0B1220",
     "ios": {
