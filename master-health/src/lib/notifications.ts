@@ -112,8 +112,8 @@ export async function rescheduleReminders(): Promise<void> {
     }
     await replaceScheduled(MEAL_IDS[key], {
       title: `${label}の記録をお忘れなく 🍚`,
-      body: 'タップで記録画面へ。写真1枚でもOKです。',
-      data: { url: '/report' },
+      body: 'タップでMr. Vytaへ。話すだけ・写真1枚でもOKです。',
+      data: { url: '/chat' },
     }, fire);
   }
 

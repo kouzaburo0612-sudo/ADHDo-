@@ -42,7 +42,7 @@ export default function RootLayout() {
     });
     // 初回起動のみチュートリアルを出す
     kvGet('onboarded_v1').then((v) => { if (!v) setShowOnboarding(true); }).catch(() => {});
-    // 通知タップ → data.urlの画面へ(食事リマインダー=/report、本日確定=/?confirm=1)
+    // 通知タップ → data.urlの画面へ(食事リマインダー=/chat、本日確定=/?confirm=1)
     const notifSub = Notifications.addNotificationResponseReceivedListener((response) => {
       const url = response.notification.request.content.data?.url;
       if (typeof url === 'string' && url.startsWith('/')) {
@@ -71,15 +71,15 @@ export default function RootLayout() {
           tintColor={Colors.accent}
           labelStyle={{ color: Colors.textSecondary, selected: { color: Colors.accent } }}
         >
-          {/* 左から My Body / 実績報告 / Mr. Vyta / トレンド / More(自前画面。
+          {/* 左から My Body / Body Data / Mr. Vyta / トレンド / More(自前画面。
               6個以上にするとiOSが素のMoreリストを自動生成して品質が落ちるため5個厳守) */}
           <NativeTabs.Trigger name="index">
             <NativeTabs.Trigger.Label>My Body</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon sf={{ default: 'heart.text.square', selected: 'heart.text.square.fill' }} />
           </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="report">
-            <NativeTabs.Trigger.Label>ログ</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon sf={{ default: 'list.bullet.rectangle', selected: 'list.bullet.rectangle.fill' }} />
+          <NativeTabs.Trigger name="bodydata">
+            <NativeTabs.Trigger.Label>Body Data</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon sf={{ default: 'waveform.path.ecg.rectangle', selected: 'waveform.path.ecg.rectangle.fill' }} />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="chat">
             <NativeTabs.Trigger.Label>Mr. Vyta</NativeTabs.Trigger.Label>

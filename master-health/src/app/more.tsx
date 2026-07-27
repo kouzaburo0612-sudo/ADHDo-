@@ -242,7 +242,7 @@ function Row({ icon, title, value, onPress, border, disabled, badge }: {
   );
 }
 
-/** テンプレート管理(一覧+削除)。登録は実績報告タブ or Mr. Vytaから */
+/** テンプレート管理(一覧+削除)。登録はMr. Vytaに話しかける */
 function TemplateModal({ visible, onClose, foods, workouts }: {
   visible: boolean; onClose: () => void;
   foods: FoodTemplate[]; workouts: WorkoutTemplate[];
@@ -278,7 +278,7 @@ function TemplateModal({ visible, onClose, foods, workouts }: {
           <Pressable onPress={onClose} hitSlop={12}><Text style={styles.modalDone}>完了</Text></Pressable>
         </View>
         <ScrollView contentContainerStyle={{ padding: Spacing.md, paddingBottom: 60 }}>
-          <Text style={styles.hint}>新規登録は実績報告タブの「テンプレに保存」か、Mr. Vytaに話しかけてください</Text>
+          <Text style={styles.hint}>新規登録はMr. Vytaに「これをテンプレにして」と話しかけてください</Text>
           <SectionTitle>{`食事テンプレート(${foodList.length}/30)`}</SectionTitle>
           <Card style={{ paddingVertical: 4 }}>
             {foodList.length === 0 ? <Text style={styles.hint}>まだありません</Text> : foodList.map((t, i) => (

@@ -14,6 +14,7 @@ import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { useHealthAuth } from '@/hooks/useHealthData';
 import { kvSet } from '@/lib/db';
 import { rescheduleReminders } from '@/lib/notifications';
+import { getOuraToken, setOuraToken, syncOura } from '@/lib/oura';
 import { lastSyncDate, syncHealthData } from '@/lib/sync';
 import {
   DEFAULT_SETTINGS, getApiKey, loadSettings, saveSettings, setApiKey,
@@ -30,6 +31,9 @@ export function SettingsBody() {
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [keySet, setKeySet] = useState(false);
+  const [ouraInput, setOuraInput] = useState('');
+  const [ouraSet, setOuraSet] = useState(false);
+  const [ouraBusy, setOuraBusy] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [avgTdee, setAvgTdee] = useState<number | null>(null);
@@ -40,6 +44,7 @@ export function SettingsBody() {
     loadSettings().then(setSettings);
     getProfile().then(setProfile);
     getApiKey().then((k) => setKeySet(k != null));
+    getOuraToken().then((t) => setOuraSet(t != null)).catch(() => {});
     lastSyncDate().then(setLastSync);
     // 直近7日の平均TDEE(消費)と内訳
     balanceSeries(7).then((s) => {
@@ -211,6 +216,56 @@ export function SettingsBody() {
             <Pressable onPress={() => Linking.openURL('app-settings:')}>
               <Text style={styles.link}>iPhoneの設定アプリで個別の許可を変更する ›</Text>
             </Pressable>
+          </Card>
+
+          <SectionHead emoji="💍" title="Oura連携(スコア直接取得)" />
+          <Card>
+            <Text style={styles.hint}>
+              {ouraSet
+                ? '設定済み。レディネス・睡眠・アクティビティスコアと体表温偏差を同期しています(Body Dataタブに表示)。変更する場合のみ新しいトークンを入力してください。空で保存すると連携解除。'
+                : 'Oura独自のスコア(レディネス等)はヘルスケア経由では取れないため、APIから直接取得します。cloud.ouraring.com/personal-access-tokens でトークンを発行して入力してください。'}
+            </Text>
+            <TextInput
+              style={styles.input}
+              value={ouraInput}
+              onChangeText={setOuraInput}
+              placeholder="Oura Personal Access Token"
+              placeholderTextColor={Colors.textFaint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+            />
+            <Pressable
+              style={[styles.btn, ouraBusy && { opacity: 0.5 }]}
+              disabled={ouraBusy}
+              onPress={async () => {
+                setOuraBusy(true);
+                try {
+                  await setOuraToken(ouraInput);
+                  if (ouraInput.trim() === '') {
+                    setOuraSet(false);
+                    Alert.alert('連携を解除しました');
+                  } else {
+                    const r = await syncOura(90);
+                    setOuraSet(true);
+                    setOuraInput('');
+                    Alert.alert('接続成功 💍', `過去90日分のOuraスコア(${r?.synced ?? 0}件)を取り込みました。Body Dataタブで確認できます。`);
+                  }
+                } catch (e) {
+                  const msg = e instanceof Error && e.message === 'OURA_BAD_TOKEN'
+                    ? 'トークンが無効です。発行し直して再入力してください。'
+                    : '接続に失敗しました。通信環境を確認してください。';
+                  Alert.alert('Oura連携', msg);
+                } finally {
+                  setOuraBusy(false);
+                }
+              }}
+            >
+              <Text style={styles.btnText}>{ouraBusy ? '接続確認中…' : '保存して接続テスト'}</Text>
+            </Pressable>
+            <Text style={styles.hint}>
+              睡眠時間・HRVなどの基本データはこれまで通りヘルスケア経由です。複数デバイスで同じ指標がある場合の優先順位は、iOSヘルスケアアプリ → データソースの設定に従います
+            </Text>
           </Card>
 
           <SectionHead emoji="🔑" title="AI(Anthropic APIキー)" />

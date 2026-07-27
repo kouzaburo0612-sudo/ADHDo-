@@ -18,9 +18,12 @@ import type { Scores } from '@/utils/score';
 import { getCustomTags, addCustomTag, addTag, removeTag, getTags, getRange } from '@/lib/db';
 import { addDays, formatKeyJa, fromKey, toKey, todayKey } from '@/lib/dates';
 import { BODY_DETAIL_ORDER, METRICS, formatValue, PRESET_TAGS, type MetricKey } from '@/lib/metrics';
+import * as ImagePicker from 'expo-image-picker';
 import {
-  addMealLog, confirmDay, deletePendingPhoto, getGoalPlan, listMealLogs, listPendingPhotos,
-  listTemplates, listWorkoutLogs, localDateKey, newId, type PendingPhoto,
+  addMealLog, addPendingPhoto, confirmDay, deleteMealLog, deletePendingPhoto, getGoalPlan,
+  listMealLogs, listPendingPhotos,
+  listTemplates, listWorkoutLogs, localDateKey, newId, updateMealLogTimestamp,
+  type PendingPhoto,
 } from '@/lib/store';
 import { estimateFoodFromPhoto } from '@/lib/vision';
 import { NUTRIENTS } from '@/lib/nutrients';
@@ -163,6 +166,43 @@ export default function MyBodyScreen() {
     setConfirmOpen(false);
     loadDay(key);
   }, [loadDay]);
+
+  /** 食事記録の編集(時刻修正・削除)。ログタブ廃止に伴いMy Bodyへ集約 */
+  const editMeal = useCallback((m: MealRow) => {
+    Alert.alert(m.label, `${m.time} ・ ${m.kcal.toLocaleString()}kcal`, [
+      {
+        text: '時刻を変更',
+        onPress: () => {
+          Alert.prompt('時刻を変更', 'HH:mm形式で入力(例 19:30)。日付はこの日のままです。', async (v) => {
+            const mt = /^(\d{1,2}):(\d{2})$/.exec((v ?? '').trim());
+            if (!mt) { Alert.alert('形式が違います', '例: 19:30'); return; }
+            const [y, mo, dd] = dateKey.split('-').map(Number);
+            await updateMealLogTimestamp(m.id, new Date(y, mo - 1, dd, Number(mt[1]), Number(mt[2]), 0).toISOString());
+            loadDay(dateKey);
+          }, 'plain-text', m.time);
+        },
+      },
+      {
+        text: '削除',
+        style: 'destructive',
+        onPress: () => Alert.alert('削除', 'この記録を削除しますか?', [
+          { text: 'キャンセル', style: 'cancel' },
+          { text: '削除', style: 'destructive', onPress: async () => { await deleteMealLog(m.id); loadDay(dateKey); } },
+        ]),
+      },
+      { text: 'キャンセル', style: 'cancel' },
+    ]);
+  }, [dateKey, loadDay]);
+
+  /** 「後で記録」: 写真だけ撮って未処理ボックスへ(夜の確定でまとめてAI解析) */
+  const laterPhoto = useCallback(async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) { Alert.alert('カメラの許可が必要です'); return; }
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.4, base64: true, allowsEditing: false });
+    if (result.canceled || !result.assets[0]?.base64) return;
+    await addPendingPhoto(`data:image/jpeg;base64,${result.assets[0].base64}`);
+    Alert.alert('保存しました 📥', '夜の「本日を確定」でまとめてAI解析して記録できます。');
+  }, []);
 
   /** ざっくり5段階入力(過去日の詳細を覚えていないとき) */
   const onRoughLog = useCallback(async (key: string, level: number) => {
@@ -472,7 +512,7 @@ export default function MyBodyScreen() {
           ) : (
             <Text style={styles.balanceEmpty}>
               {day?.balance?.intake == null
-                ? '食事を記録すると収支が出ます(実績報告タブ or AIチャット)'
+                ? '食事を記録すると収支が出ます(Mr. Vytaに話すだけ)'
                 : '設定タブで身長・生年月日を入れると消費カロリーを計算できます'}
             </Text>
           )}
@@ -523,11 +563,11 @@ export default function MyBodyScreen() {
           const targets = goal != null ? macroTargetsFor(goal, todayBurn) : null;
           if (targets == null || day == null) return null;
           return (
-            <Pressable onPress={() => router.push('/report')}>
+            <Pressable onPress={() => router.push('/chat')}>
               <Card style={styles.balanceCard}>
                 <View style={styles.balanceHead}>
                   <Text style={styles.heroLabel}>{isToday ? '今日のPFC' : 'この日のPFC実績 vs 目標'}</Text>
-                  <Text style={styles.macroLink}>ログへ ›</Text>
+                  <Text style={styles.macroLink}>記録はMr. Vytaへ ›</Text>
                 </View>
                 {NUTRIENTS.map((n) => {
                   const used = n.key === 'kcal' ? todayIntakeVal
@@ -580,26 +620,46 @@ export default function MyBodyScreen() {
               <Text style={styles.balanceSub}>トレンドタブで目標体重を設定すると進捗バーが出ます</Text>
             )}
             {bank.unconfirmedDates.length > 0 && (
-              <Text style={styles.unconfirmedNote}>
-                ⏳ 未確定の日が{bank.unconfirmedDates.length}日あります(左スワイプで各日を開いて確定できます)
-              </Text>
+              <View style={{ marginTop: Spacing.sm }}>
+                <Text style={styles.unconfirmedNote}>⏳ 未確定の日({bank.unconfirmedDates.length}日)— 確定すると累積に反映</Text>
+                {bank.unconfirmedDates.slice(-5).map((dk) => (
+                  <View key={dk} style={styles.unconfRow}>
+                    <Pressable style={{ flex: 1 }} onPress={() => setDateKey(dk)}>
+                      <Text style={styles.statLabel}>{formatKeyJa(dk)} <Text style={styles.statUnit}>タップで表示</Text></Text>
+                    </Pressable>
+                    <Pressable style={styles.unconfBtn} onPress={() => onConfirmDay(dk, 'manual')}>
+                      <Text style={styles.unconfBtnText}>確定</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
             )}
           </Card>
         )}
 
-        {/* その日の食事・運動の記録 */}
-        <SectionTitle>{isToday ? '今日の食事' : 'この日の食事'}</SectionTitle>
+        {/* その日の食事・運動の記録(閲覧・編集はここに集約。入力はMr. Vytaへ) */}
+        <SectionTitle>{isToday ? '今日の食事(タップで編集)' : 'この日の食事(タップで編集)'}</SectionTitle>
+        {isToday && (
+          <View style={styles.mealActions}>
+            <Pressable style={styles.mealActionBtn} onPress={laterPhoto}>
+              <Text style={styles.mealActionText}>📥 写真だけ保存</Text>
+            </Pressable>
+            <Pressable style={styles.mealActionBtn} onPress={() => setConfirmOpen(true)}>
+              <Text style={styles.mealActionText}>✅ 本日を確定</Text>
+            </Pressable>
+          </View>
+        )}
         <Card>
           {day != null && day.meals.length > 0 ? (
             <>
               {day.meals.map((m, i) => (
-                <View key={m.id} style={[styles.statRow, i > 0 && styles.statRowBorder]}>
+                <Pressable key={m.id} onPress={() => editMeal(m)} style={[styles.statRow, i > 0 && styles.statRowBorder]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 }}>
                     <Text style={styles.logTime}>{m.time}</Text>
                     <Text style={styles.statLabel} numberOfLines={1}>{m.label}</Text>
                   </View>
                   <Text style={styles.statValue}>{m.kcal.toLocaleString()}<Text style={styles.statUnit}> kcal</Text></Text>
-                </View>
+                </Pressable>
               ))}
               <View style={[styles.statRow, styles.statRowBorder]}>
                 <Text style={[styles.statLabel, { fontWeight: '700', color: Colors.text }]}>合計</Text>
@@ -609,7 +669,7 @@ export default function MyBodyScreen() {
               </View>
             </>
           ) : (
-            <Text style={styles.balanceEmpty}>{isToday ? 'まだ記録がありません(実績報告タブ or Mr. Vyta)' : 'この日の食事記録はありません'}</Text>
+            <Text style={styles.balanceEmpty}>{isToday ? 'まだ記録がありません。Mr. Vytaに話すか写真を送ってください' : 'この日の食事記録はありません'}</Text>
           )}
 
           {/* 過去日で記録が無い/少ない: 詳細を覚えていなくても「ざっくり5段階」で埋められる */}
@@ -655,7 +715,7 @@ export default function MyBodyScreen() {
             <Text style={styles.balanceEmpty}>
               {day?.metrics.workout_energy != null
                 ? `手動の記録なし(Apple Watchのワークアウト ${formatValue('workout_energy', day.metrics.workout_energy)}kcal は消費に反映済み)`
-                : isToday ? 'まだ記録がありません(実績報告タブ or Mr. Vyta)' : 'この日の運動記録はありません'}
+                : isToday ? 'まだ記録がありません(Mr. Vytaに話すだけで記録できます)' : 'この日の運動記録はありません'}
             </Text>
           )}
         </Card>
@@ -719,7 +779,7 @@ export default function MyBodyScreen() {
         meals={day?.meals ?? []}
         onClose={() => setConfirmOpen(false)}
         onConfirm={() => onConfirmDay(todayKey(), 'manual')}
-        onAdd={() => { setConfirmOpen(false); router.push('/report'); }}
+        onAdd={() => { setConfirmOpen(false); router.push('/chat'); }}
         onProcessed={() => loadDay(dateKey)}
       />
     </View>
@@ -861,7 +921,7 @@ function DayConfirmModal({ visible, meals, onClose, onConfirm, onAdd, onProcesse
           </Pressable>
           <Pressable style={styles.addBigBtn} onPress={onAdd}>
             <Text style={styles.addBigBtnText}>追加する</Text>
-            <Text style={styles.addBigBtnSub}>まだ記録していない食事があれば実績報告へ</Text>
+            <Text style={styles.addBigBtnSub}>まだ記録していない食事があればMr. Vytaへ</Text>
           </Pressable>
         </ScrollView>
       </View>
@@ -942,6 +1002,16 @@ const styles = StyleSheet.create({
   statValue: { color: Colors.text, fontSize: Type.body, fontWeight: '600', fontVariant: ['tabular-nums'] },
   statUnit: { color: Colors.textFaint, fontSize: Type.caption, fontWeight: '400' },
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  // 食事の操作(My Bodyへ集約)
+  mealActions: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
+  mealActionBtn: {
+    flex: 1, borderRadius: 10, borderWidth: 1, borderColor: Colors.accentDim,
+    backgroundColor: Colors.surfaceRaised, paddingVertical: 10, alignItems: 'center',
+  },
+  mealActionText: { color: Colors.accent, fontSize: Type.caption, fontWeight: '700' },
+  unconfRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6 },
+  unconfBtn: { backgroundColor: Colors.accentDim, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 7 },
+  unconfBtnText: { color: Colors.accent, fontSize: Type.caption, fontWeight: '700' },
   // PFCミニバー
   macroLink: { color: Colors.textFaint, fontSize: Type.caption },
   macroRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },

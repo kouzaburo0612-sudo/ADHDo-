@@ -23,7 +23,12 @@ export type MetricKey =
   | 'exercise_time'
   | 'active_energy'
   | 'workout_energy'
-  | 'basal_energy';
+  | 'basal_energy'
+  // Oura API直接連携(Personal Access Token)で取得するスコア類
+  | 'oura_readiness'
+  | 'oura_sleep_score'
+  | 'oura_activity_score'
+  | 'temp_deviation';
 
 export interface MetricDef {
   key: MetricKey;
@@ -62,13 +67,18 @@ export const METRICS: Record<MetricKey, MetricDef> = {
   active_energy: { key: 'active_energy', label: 'アクティブカロリー', unit: 'kcal', decimals: 0, higherIsBetter: true, aggregation: 'sum' },
   workout_energy: { key: 'workout_energy', label: 'ワークアウト消費', unit: 'kcal', decimals: 0, higherIsBetter: true, aggregation: 'sum' },
   basal_energy:  { key: 'basal_energy',  label: '基礎消費',    unit: 'kcal',  decimals: 0, higherIsBetter: null,  aggregation: 'sum' },
+  oura_readiness:      { key: 'oura_readiness',      label: 'レディネススコア',     unit: '',   decimals: 0, higherIsBetter: true, aggregation: 'last' },
+  oura_sleep_score:    { key: 'oura_sleep_score',    label: '睡眠スコア(Oura)',     unit: '',   decimals: 0, higherIsBetter: true, aggregation: 'last' },
+  oura_activity_score: { key: 'oura_activity_score', label: 'アクティビティスコア', unit: '',   decimals: 0, higherIsBetter: true, aggregation: 'last' },
+  temp_deviation:      { key: 'temp_deviation',      label: '体表温偏差(Oura)',     unit: '°C', decimals: 2, higherIsBetter: null, aggregation: 'last' },
 };
 
 /** トレンド画面での表示順 */
 export const METRIC_ORDER: MetricKey[] = [
   'body_fat', 'weight', 'lean_mass', 'bmi',
-  'sleep_total', 'sleep_deep', 'sleep_rem', 'sleep_core',
+  'sleep_total', 'sleep_deep', 'sleep_rem', 'sleep_core', 'oura_sleep_score',
   'hrv', 'rhr', 'heart_rate', 'walking_hr', 'spo2', 'vo2max', 'wrist_temp', 'resp_rate',
+  'oura_readiness', 'oura_activity_score', 'temp_deviation',
   'steps', 'distance', 'flights', 'exercise_time', 'active_energy', 'workout_energy', 'basal_energy',
 ];
 

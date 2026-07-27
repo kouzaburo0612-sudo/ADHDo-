@@ -1,7 +1,8 @@
-/** HealthKit → SQLite 同期 */
+/** HealthKit → SQLite 同期(+ Oura APIスコア同期) */
 import { kvGet, kvSet, upsertMetrics } from '@/lib/db';
 import { addDays, fromKey } from '@/lib/dates';
 import { fetchDailyMetrics, healthAvailable } from '@/lib/healthkit';
+import { syncOura } from '@/lib/oura';
 
 const LAST_SYNC_KEY = 'last_sync_date';
 /** 初回はトレンド年表示のため400日分取得 */
@@ -45,6 +46,10 @@ export async function syncHealthData(force = false): Promise<{ synced: number }>
   const rows = await fetchDailyMetrics(start);
   await upsertMetrics(rows);
   await kvSet(LAST_SYNC_KEY, new Date().toISOString().slice(0, 10));
+
+  // Ouraスコア(トークン設定時のみ)。失敗してもHK同期は成立させる
+  try { await syncOura(!last || force ? 90 : 14); } catch { /* 次回リトライ */ }
+
   return { synced: rows.length };
 }
 
