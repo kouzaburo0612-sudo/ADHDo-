@@ -1,0 +1,108 @@
+name: MH 4. ASC App Rename
+
+# App Store Connect上のアプリ表示名(TestFlightに出る名前)を変更する。
+# bundleId(com.nash.masterhealth)はAppleの仕様で変更するとアプリごと別物になるため触らない。
+on:
+  workflow_dispatch:
+    inputs:
+      new_name:
+        description: '新しいアプリ名'
+        required: false
+        default: 'VYTA'
+
+jobs:
+  rename:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: master-health
+    steps:
+      - name: Checkout (master-healthブランチを固定でチェックアウト)
+        uses: actions/checkout@v4
+        with:
+          ref: claude/master-health-ios-06hrvw
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Rename app in App Store Connect
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          NEW_NAME: ${{ github.event.inputs.new_name }}
+        run: |
+          set -euo pipefail
+          strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
+          fetch_chunks() {
+            local name="$1" out="" i=0 raw val
+            while [ $i -lt 30 ]; do
+              raw=$(timeout 120 eas env:get --variable-name "${name}_${i}" --variable-environment production --format short --non-interactive </dev/null 2>/dev/null || true)
+              val=$(printf '%s' "$raw" | strip_ansi | tr -d '\r' | sed -n "s/^${name}_${i}=//p" | tr -d '\n')
+              [ -z "$val" ] && break
+              out="${out}${val}"
+              i=$((i+1))
+            done
+            printf '%s' "$out"
+          }
+          P8_B64=$(fetch_chunks MH_ASCP8) || true
+          KID=$(fetch_chunks MH_ASCKID) || true
+          ISS=$(fetch_chunks MH_ASCISS) || true
+          if [ -z "$P8_B64" ] || [ -z "$KID" ] || [ -z "$ISS" ]; then
+            echo "::error::ASCクレデンシャルがEAS保管庫にありません"
+            exit 1
+          fi
+          printf '%s' "$P8_B64" | base64 -d > /tmp/asc.p8
+          echo "::add-mask::$KID"
+          echo "::add-mask::$ISS"
+          python3 -m pip install --quiet --break-system-packages pyjwt cryptography requests 2>/dev/null \
+            || python3 -m pip install --quiet pyjwt cryptography requests
+          ASC_KEY_ID="$KID" ASC_ISSUER_ID="$ISS" python3 - <<'PYEOF'
+          import os, time
+          import jwt, requests
+
+          KEY_ID = os.environ['ASC_KEY_ID'].strip()
+          ISSUER = os.environ['ASC_ISSUER_ID'].strip()
+          NEW_NAME = (os.environ.get('NEW_NAME') or 'VYTA').strip()
+          B = 'https://api.appstoreconnect.apple.com'
+          key = open('/tmp/asc.p8').read()
+          now = int(time.time())
+          tok = jwt.encode({'iss': ISSUER, 'exp': now + 900, 'aud': 'appstoreconnect-v1', 'iat': now},
+                           key, algorithm='ES256', headers={'kid': KEY_ID, 'typ': 'JWT'})
+          H = {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'}
+          r = requests.get(B + '/v1/apps?filter[bundleId]=com.nash.masterhealth', headers=H, timeout=60)
+          apps = r.json().get('data', []) if r.status_code == 200 else []
+          if not apps:
+              print('RENAME: app record not found')
+              raise SystemExit(1)
+          appid = apps[0]['id']
+          print('app name(current record):', apps[0]['attributes'].get('name'))
+
+          r = requests.get(B + f'/v1/apps/{appid}/appInfos', headers=H, timeout=60)
+          infos = r.json().get('data', [])
+          print('appInfos:', [(i['id'], i['attributes'].get('appStoreState') or i['attributes'].get('state')) for i in infos])
+          renamed = 0
+          for info in infos:
+              r2 = requests.get(B + f"/v1/appInfos/{info['id']}/appInfoLocalizations", headers=H, timeout=60)
+              for loc in r2.json().get('data', []):
+                  attrs = loc['attributes']
+                  print(f"locale={attrs.get('locale')} name={attrs.get('name')}")
+                  if attrs.get('name') == NEW_NAME:
+                      continue
+                  body = {'data': {'type': 'appInfoLocalizations', 'id': loc['id'],
+                                   'attributes': {'name': NEW_NAME}}}
+                  r3 = requests.patch(B + f"/v1/appInfoLocalizations/{loc['id']}", headers=H, json=body, timeout=60)
+                  print(f"PATCH {attrs.get('locale')} -> {r3.status_code}")
+                  if r3.status_code == 200:
+                      renamed += 1
+                  else:
+                      print(r3.text[:500])
+          print(f'RENAME RESULT: {renamed} localization(s) updated to {NEW_NAME}')
+          PYEOF
