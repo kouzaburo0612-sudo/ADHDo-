@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { supabaseAdmin } from "./supabaseAdmin";
-import { todayJst } from "./jst";
+import { todayJst, weekdayOf, WEEKDAYS_JA } from "./jst";
 
 // 仕様書 §1: claude-sonnet-4-6 を使用(環境変数で差し替え可能)
 const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
@@ -13,7 +13,7 @@ function client(): Anthropic {
 
 export type Candidate = { date: string; start: string | null; end: string | null };
 
-type ImageInput = { mediaType: string; base64: string };
+export type ImageInput = { mediaType: string; base64: string };
 
 // レスポンス本文からJSONオブジェクトを取り出す(コードフェンス等が混ざっても耐える)
 function extractJson(text: string): unknown {
@@ -38,34 +38,48 @@ async function logUsage(eventCode: string | null, kind: "candidates" | "auto_ans
   }
 }
 
+// 複数写真(上限5枚)を1回のAPI呼び出しにまとめる:
+// imageブロックを枚数分並べ、最後にtextブロックで抽出指示を置く(要件B-2)
 function buildUserContent(
   text: string,
-  image: ImageInput | null
+  images: ImageInput[]
 ): Anthropic.MessageParam["content"] {
-  if (!image) return text;
-  return [
-    {
-      type: "image",
-      source: {
-        type: "base64",
-        media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-        data: image.base64,
-      },
+  if (images.length === 0) return text;
+  const blocks: Exclude<Anthropic.MessageParam["content"], string> = images.map((img) => ({
+    type: "image" as const,
+    source: {
+      type: "base64" as const,
+      media_type: img.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+      data: img.base64,
     },
-    { type: "text", text },
+  }));
+  blocks.push({ type: "text", text });
+  return blocks;
+}
+
+// 写真・テキスト併用時の共通ルール(要件B-2, B-4)
+function imageRules(images: ImageInput[], freeText: string): string[] {
+  if (images.length === 0) return [];
+  const rules = [
+    `添付した${images.length}枚の写真は同一人物の予定表です。複数ページある場合は全ページを統合して空き時間を抽出し、重複する時間帯は1つにまとめてください。`,
   ];
+  if (freeText.trim()) {
+    rules.push(`テキスト入力もあります。写真とテキストを合算して抽出・判断してください。`);
+  }
+  return rules;
 }
 
 // §5a 候補生成: 空き情報の自由文(+写真) → 候補枠
 export async function generateCandidates(params: {
   freeText: string;
-  image: ImageInput | null;
+  images: ImageInput[];
   durationMinutes: number | null; // null = 終日
   maxCandidates: number | null; // null = できるだけ
   periodFrom: string | null;
   periodTo: string | null;
   timeFrom: string | null;
   timeTo: string | null;
+  ngWeekdays: number[]; // 0=日〜6=土(要件A)
   eventCode: string | null;
 }): Promise<Candidate[]> {
   const today = todayJst();
@@ -77,6 +91,7 @@ export async function generateCandidates(params: {
       ? `所要時間は「終日」です。候補は日付のみとし、start と end は null にしてください。`
       : `所要時間は ${params.durationMinutes} 分です。ユーザーの空き時間がそれより長い場合は、空き時間の先頭から ${params.durationMinutes} 分ごとに区切って候補を作ってください。`,
     `ユーザーが書いた空き時間の範囲内でのみ候補を作ってください(勝手に空きを追加しない)。`,
+    ...imageRules(params.images, params.freeText),
   ];
   if (params.periodFrom || params.periodTo) {
     rules.push(
@@ -87,6 +102,10 @@ export async function generateCandidates(params: {
     rules.push(
       `時間帯フィルタ: ${params.timeFrom ?? ""}〜${params.timeTo ?? ""}。この時間帯の範囲外は除外してください。`
     );
+  }
+  if (params.ngWeekdays.length > 0) {
+    const names = params.ngWeekdays.map((d) => `${WEEKDAYS_JA[d]}曜日`).join("・");
+    rules.push(`以下の曜日は候補にしない: ${names}`);
   }
   if (params.maxCandidates != null) {
     rules.push(`候補は最大 ${params.maxCandidates} 件までにしてください。`);
@@ -109,7 +128,7 @@ ${rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}`;
     max_tokens: 2048,
     system:
       "あなたは日程調整アシスタントです。入力された空き時間情報から日程候補をJSONで出力します。JSONのみを出力し、それ以外のテキストは出力しないでください。",
-    messages: [{ role: "user", content: buildUserContent(userText, params.image) }],
+    messages: [{ role: "user", content: buildUserContent(userText, params.images) }],
   });
 
   await logUsage(params.eventCode, "candidates");
@@ -135,13 +154,16 @@ ${rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}`;
       end: (end as string | null) ?? null,
     });
   }
-  return candidates;
+
+  // NG曜日はAI任せにせず、サーバー側でも二重にフィルタして保証する(要件A-3)
+  const ngSet = new Set(params.ngWeekdays);
+  return candidates.filter((c) => !ngSet.has(weekdayOf(c.date)));
 }
 
 // §5b 自動回答: 空き情報 → 候補ごとの yes/maybe/no
 export async function generateAutoAnswers(params: {
   freeText: string;
-  image: ImageInput | null;
+  images: ImageInput[];
   slots: { date: string; start_time: string | null; end_time: string | null }[];
   eventCode: string | null;
 }): Promise<("yes" | "maybe" | "no")[]> {
@@ -151,6 +173,10 @@ export async function generateAutoAnswers(params: {
       (s, i) =>
         `${i + 1}. ${s.date} ${s.start_time ? `${s.start_time.slice(0, 5)}〜${s.end_time?.slice(0, 5) ?? ""}` : "終日"}`
     )
+    .join("\n");
+
+  const extraRules = imageRules(params.images, params.freeText)
+    .map((r, i) => `${7 + i}. ${r}`)
     .join("\n");
 
   const userText = `以下は回答者が入力した予定・空き時間の情報です。各候補枠について出欠(yes/maybe/no)を判定してください。
@@ -169,14 +195,14 @@ ${slotList}
 3. 一部だけ重なる・調整可能と読める → "maybe"
 4. 空いていない・NG条件(「火曜日は難しい」等)に該当 → "no"
 5. 判断できない場合 → "maybe"
-6. 出力は次の形式のJSONのみ: {"answers":["yes","no","maybe", ...]} (候補枠と同数・同順)`;
+6. 出力は次の形式のJSONのみ: {"answers":["yes","no","maybe", ...]} (候補枠と同数・同順)${extraRules ? `\n${extraRules}` : ""}`;
 
   const response = await client().messages.create({
     model: MODEL,
     max_tokens: 1024,
     system:
       "あなたは日程調整アシスタントです。回答者の予定情報から各候補枠の出欠をJSONで判定します。JSONのみを出力し、それ以外のテキストは出力しないでください。",
-    messages: [{ role: "user", content: buildUserContent(userText, params.image) }],
+    messages: [{ role: "user", content: buildUserContent(userText, params.images) }],
   });
 
   await logUsage(params.eventCode, "auto_answer");

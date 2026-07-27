@@ -72,6 +72,49 @@ test("イベント作成の主要フローが通しで完了する", async ({ pa
   await expect(page.getByRole("link", { name: "管理ページへ" })).toBeVisible();
 });
 
+test("入力保持: 戻る・進む・リロードでもSTEP1/STEP2の入力が残る", async ({ page }) => {
+  // STEP1入力(NG曜日含む)
+  await page.goto("/new");
+  await page.getByLabel("イベント名").fill("保持テスト会議");
+  await page.getByRole("button", { name: "90分" }).click();
+  await page.getByRole("button", { name: "火", exact: true }).click();
+  await page.waitForTimeout(500); // debounce保存を待つ
+
+  // STEP2へ進んでテキスト入力
+  await page.getByRole("button", { name: "次へ(空き時間の入力)" }).click();
+  await page.waitForURL(/\/new\/google$/, { timeout: 30_000 });
+  await page.getByRole("link", { name: "手書き・テキストで入力する" }).click();
+  await page.waitForURL(/\/new\/availability$/, { timeout: 30_000 });
+  await page.getByPlaceholder(/来週の月曜午後/).fill("月曜午後が空いてます");
+  await page.waitForTimeout(500);
+
+  // ブラウザ戻る×2 → STEP1の入力が残っている
+  await page.goBack();
+  await page.goBack();
+  await page.waitForURL(/\/new$/, { timeout: 30_000 });
+  await expect(page.getByLabel("イベント名")).toHaveValue("保持テスト会議", { timeout: 10_000 });
+  await expect(page.getByRole("button", { name: "90分" })).toHaveClass(/selected/);
+  await expect(page.getByRole("button", { name: "火", exact: true })).toHaveClass(/selected/);
+
+  // リロードしても残る
+  await page.reload();
+  await expect(page.getByLabel("イベント名")).toHaveValue("保持テスト会議", { timeout: 10_000 });
+
+  // 進む×2 → STEP2のテキストも残っている
+  await page.goForward();
+  await page.goForward();
+  await page.waitForURL(/\/new\/availability$/, { timeout: 30_000 });
+  await expect(page.getByPlaceholder(/来週の月曜午後/)).toHaveValue("月曜午後が空いてます", {
+    timeout: 10_000,
+  });
+
+  // STEP2をリロードしても残る
+  await page.reload();
+  await expect(page.getByPlaceholder(/来週の月曜午後/)).toHaveValue("月曜午後が空いてます", {
+    timeout: 10_000,
+  });
+});
+
 test("回答ページ: 登録不要で○△×回答と代理回答ができる", async ({ page }) => {
   // イベント取得APIをモック
   await page.route("**/api/events/test1234", (route) =>

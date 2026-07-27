@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import AvailabilityInput, { ImagePayload } from "@/components/AvailabilityInput";
+import AvailabilityInput from "@/components/AvailabilityInput";
 import { EventDraft, loadDraft, clearDraft } from "@/lib/draft";
-import { formatDateJa } from "@/lib/jst";
+import { useDraft, DRAFT_KEYS } from "@/lib/useDraft";
+import { StoredImage, saveImages, loadImages, clearImages } from "@/lib/imageStore";
+import { formatDateJa, WEEKDAYS_JA } from "@/lib/jst";
 
 // 作成 STEP2: 空き時間提出 → AI候補生成 → 確認 → 保存 — 仕様書 §3-4,5
+// 追加要件B(写真複数枚)・C(入力保持: テキスト/候補はsessionStorage、写真はIndexedDB)
 type Candidate = { date: string; start: string | null; end: string | null };
 
 function candidateLabel(c: Candidate): string {
@@ -14,13 +17,23 @@ function candidateLabel(c: Candidate): string {
   return `${formatDateJa(c.date)} ${c.start}〜${c.end ?? ""}`;
 }
 
+type Step2Draft = {
+  text: string;
+  candidates: Candidate[] | null;
+};
+
 export default function AvailabilityPage() {
   const router = useRouter();
   const [draft, setDraft] = useState<EventDraft | null>(null);
   const [draftMissing, setDraftMissing] = useState(false);
-  const [text, setText] = useState("");
-  const [image, setImage] = useState<ImagePayload>(null);
-  const [candidates, setCandidates] = useState<Candidate[] | null>(null);
+  const {
+    value: step2,
+    setValue: setStep2,
+    clear: clearStep2,
+    restored,
+  } = useDraft<Step2Draft>(DRAFT_KEYS.step2, { text: "", candidates: null });
+  const [images, setImagesState] = useState<StoredImage[]>([]);
+  const imagesLoaded = useRef(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +49,23 @@ export default function AvailabilityPage() {
     } else {
       setDraft(d);
     }
+    // 写真ドラフトをIndexedDBから復元(要件C-2)
+    loadImages(DRAFT_KEYS.step2Images).then((imgs) => {
+      imagesLoaded.current = true;
+      if (imgs.length > 0) setImagesState(imgs);
+    });
   }, []);
+
+  const setImages = (imgs: StoredImage[]) => {
+    setImagesState(imgs);
+    if (imagesLoaded.current) saveImages(DRAFT_KEYS.step2Images, imgs);
+  };
+
+  const text = step2.text;
+  const candidates = step2.candidates;
+  const setText = (t: string) => setStep2((prev) => ({ ...prev, text: t }));
+  const setCandidates = (c: Candidate[] | null) =>
+    setStep2((prev) => ({ ...prev, candidates: c }));
 
   const generate = async () => {
     if (!draft) return;
@@ -48,14 +77,14 @@ export default function AvailabilityPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           freeText: text,
-          imageBase64: image?.base64,
-          imageMediaType: image?.mediaType,
+          images: images.map((i) => ({ base64: i.base64, mediaType: i.mediaType })),
           durationMinutes: draft.durationMinutes,
           maxCandidates: draft.maxCandidates,
           periodFrom: draft.periodFrom,
           periodTo: draft.periodTo,
           timeFrom: draft.timeFrom,
           timeTo: draft.timeTo,
+          ngWeekdays: draft.ngWeekdays ?? [],
         }),
       });
       const data = await res.json();
@@ -76,7 +105,7 @@ export default function AvailabilityPage() {
   };
 
   const removeCandidate = (index: number) => {
-    setCandidates((prev) => (prev ? prev.filter((_, i) => i !== index) : prev));
+    setCandidates(candidates ? candidates.filter((_, i) => i !== index) : null);
   };
 
   const addCandidate = () => {
@@ -93,10 +122,24 @@ export default function AvailabilityPage() {
     const c: Candidate = isAllDay
       ? { date: addDate, start: null, end: null }
       : { date: addDate, start: addStart, end: addEnd };
-    setCandidates((prev) => [...(prev ?? []), c]);
+    setCandidates([...(candidates ?? []), c]);
     setAddDate("");
     setAddStart("");
     setAddEnd("");
+  };
+
+  const clearAllDrafts = () => {
+    clearDraft();
+    clearStep2();
+    sessionStorage.removeItem(DRAFT_KEYS.step1);
+    clearImages(DRAFT_KEYS.step2Images);
+  };
+
+  // 明示破棄(要件C-4)
+  const restart = () => {
+    if (!window.confirm("入力内容をすべて消して最初からやり直しますか?")) return;
+    clearAllDrafts();
+    router.push("/new");
   };
 
   // 「確認をスキップして確定」してはならない — 必ず候補一覧の確認を挟む(仕様書 §3-5)
@@ -116,6 +159,7 @@ export default function AvailabilityPage() {
           periodTo: draft.periodTo,
           timeFrom: draft.timeFrom,
           timeTo: draft.timeTo,
+          ngWeekdays: draft.ngWeekdays ?? [],
           slots: candidates,
         }),
       });
@@ -124,7 +168,8 @@ export default function AvailabilityPage() {
         setError(data.error ?? "保存に失敗しました");
         return;
       }
-      clearDraft();
+      // イベント発行完了 → ドラフト破棄(要件C-4)
+      clearAllDrafts();
       router.push(`/e/${data.code}/share?token=${encodeURIComponent(data.adminToken)}`);
     } catch {
       setError("通信に失敗しました。時間をおいて再度お試しください。");
@@ -132,6 +177,19 @@ export default function AvailabilityPage() {
       setSaving(false);
     }
   };
+
+  // 候補確認画面の説明文(要件A-4)
+  const summaryText = (() => {
+    if (!draft || !candidates) return "";
+    const durationPart =
+      draft.durationMinutes == null ? "終日" : `所要${draft.durationMinutes}分`;
+    const ng = draft.ngWeekdays ?? [];
+    const ngPart =
+      ng.length > 0
+        ? `・${ng.map((d) => `${WEEKDAYS_JA[d]}曜日`).join("・")}を除いて`
+        : "・";
+    return `${durationPart}${ngPart}候補を${candidates.length}件つくりました`;
+  })();
 
   if (draftMissing) {
     return (
@@ -151,7 +209,7 @@ export default function AvailabilityPage() {
       <h1 style={{ fontSize: 22, margin: "8px 0 4px" }}>空き時間を教えてください</h1>
       <p className="muted">STEP 2 / 2 — {draft?.title}</p>
 
-      {!candidates && (
+      {restored && !candidates && (
         <>
           <div className="card mt-2">
             <p className="muted" style={{ marginBottom: 8 }}>
@@ -162,8 +220,8 @@ export default function AvailabilityPage() {
             <AvailabilityInput
               text={text}
               onTextChange={setText}
-              image={image}
-              onImageChange={setImage}
+              images={images}
+              onImagesChange={setImages}
               placeholder="例) 来週の月曜午後と、木曜の16時半以降なら空いてます"
             />
           </div>
@@ -177,13 +235,26 @@ export default function AvailabilityPage() {
               "候補をつくる"
             )}
           </button>
+          <div style={{ marginTop: 10 }}>
+            {/* STEP間の「もどる」は router.push で入力状態を保つ(要件C-5) */}
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => router.push("/new")}
+            >
+              ← イベント情報にもどる
+            </button>
+          </div>
         </>
       )}
 
-      {candidates && (
+      {restored && candidates && (
         <>
           <div className="card mt-2">
-            <h2 style={{ fontSize: 17, marginBottom: 8 }}>候補をおつくりしました</h2>
+            <h2 style={{ fontSize: 17, marginBottom: 4 }}>候補をおつくりしました</h2>
+            {summaryText && (
+              <p style={{ fontSize: 14, marginBottom: 6 }}>{summaryText}</p>
+            )}
             <p className="muted" style={{ marginBottom: 8 }}>
               不要な候補は×で削除、必要なら追加もできます。
             </p>
@@ -261,6 +332,23 @@ export default function AvailabilityPage() {
           </div>
         </>
       )}
+
+      <p style={{ textAlign: "center", marginTop: 14 }}>
+        <button
+          type="button"
+          onClick={restart}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--muted)",
+            fontSize: 12,
+            textDecoration: "underline",
+            cursor: "pointer",
+          }}
+        >
+          最初からやり直す(入力を消去)
+        </button>
+      </p>
     </main>
   );
 }

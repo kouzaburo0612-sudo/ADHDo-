@@ -9,6 +9,7 @@ export type EventDraft = {
   periodTo: string | null;
   timeFrom: string | null;
   timeTo: string | null;
+  ngWeekdays: number[]; // 0=日〜6=土(要件A)
 };
 
 const KEY = "alfy_event_draft";

@@ -17,6 +17,7 @@ export async function POST(req: NextRequest) {
     periodTo?: string | null;
     timeFrom?: string | null;
     timeTo?: string | null;
+    ngWeekdays?: unknown;
     slots?: SlotInput[];
   };
   try {
@@ -44,6 +45,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const ngWeekdays = Array.isArray(body.ngWeekdays)
+    ? body.ngWeekdays.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6)
+    : [];
+
   const db = supabaseAdmin();
   const code = generateCode();
   const adminToken = generateAdminToken();
@@ -64,6 +69,8 @@ export async function POST(req: NextRequest) {
       period_to: body.periodTo || null,
       time_from: body.timeFrom || null,
       time_to: body.timeTo || null,
+      // マイグレーション未適用のDBでも作成が失敗しないよう、選択時のみ送る
+      ...(ngWeekdays.length > 0 ? { ng_weekdays: ngWeekdays } : {}),
       delete_at: deleteAt,
     })
     .select("id, code")
