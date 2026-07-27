@@ -7,6 +7,10 @@ export const metadata: Metadata = {
   description:
     "AI秘書のAlfyくんが日程調整をお手伝い。回答者は登録・アプリ不要。データは30日で自動削除。",
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/brand/icon-192.png",
+    apple: "/brand/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
@@ -29,7 +33,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </header>
         {children}
         <footer className="site-footer">
-          {/* ロゴ・Alfyくん画像は依頼者支給アセットを /public/brand/ に配置 */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/icon-192.png" alt="" className="alfy-face" />
           <div className="brand">
             Alfy<span>.</span>
           </div>
