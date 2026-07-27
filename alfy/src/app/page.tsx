@@ -22,7 +22,12 @@ export default function HomePage() {
   return (
     <main className="container">
       <div style={{ textAlign: "center", padding: "24px 0 8px" }}>
-        <h1 style={{ fontSize: 26 }}>日程調整を、スマートに。</h1>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/brand/logo.png"
+          alt="Alfy — 日程調整を、スマートに。"
+          style={{ maxWidth: 300, width: "80%", height: "auto" }}
+        />
         <p className="muted" style={{ marginTop: 8 }}>
           AI秘書のAlfyくんが、日程調整をお手伝いします。
         </p>
