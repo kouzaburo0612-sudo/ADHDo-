@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { saveDraft } from "@/lib/draft";
+import { saveDraft, clearDraft } from "@/lib/draft";
+import { useDraft, DRAFT_KEYS } from "@/lib/useDraft";
+import { clearImages } from "@/lib/imageStore";
 
-// 作成 STEP1 — 仕様書 §3-2
+// 作成 STEP1 — 仕様書 §3-2 / 追加要件A(NG曜日)・C(入力保持)
 const DURATION_OPTIONS: { label: string; value: number | "allday" | "custom" }[] = [
   { label: "30分", value: 30 },
   { label: "60分", value: 60 },
@@ -16,51 +18,107 @@ const DURATION_OPTIONS: { label: string; value: number | "allday" | "custom" }[]
 
 const COUNT_OPTIONS: (number | "auto")[] = ["auto", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
+// 表示は月〜日、値は 0=日〜6=土(要件A-2)
+const WEEKDAY_CHIPS: { label: string; value: number }[] = [
+  { label: "月", value: 1 },
+  { label: "火", value: 2 },
+  { label: "水", value: 3 },
+  { label: "木", value: 4 },
+  { label: "金", value: 5 },
+  { label: "土", value: 6 },
+  { label: "日", value: 0 },
+];
+
+type Step1Form = {
+  title: string;
+  duration: number | "allday" | "custom";
+  customDuration: string;
+  maxCandidates: number | "auto";
+  deadline: string;
+  periodFrom: string;
+  periodTo: string;
+  timeFrom: string;
+  timeTo: string;
+  ngWeekdays: number[];
+};
+
+const INITIAL_FORM: Step1Form = {
+  title: "",
+  duration: 60,
+  customDuration: "",
+  maxCandidates: "auto",
+  deadline: "",
+  periodFrom: "",
+  periodTo: "",
+  timeFrom: "",
+  timeTo: "",
+  ngWeekdays: [],
+};
+
 export default function NewEventPage() {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [duration, setDuration] = useState<number | "allday" | "custom">(60);
-  const [customDuration, setCustomDuration] = useState("");
-  const [maxCandidates, setMaxCandidates] = useState<number | "auto">("auto");
-  const [deadline, setDeadline] = useState("");
-  const [periodFrom, setPeriodFrom] = useState("");
-  const [periodTo, setPeriodTo] = useState("");
-  const [timeFrom, setTimeFrom] = useState("");
-  const [timeTo, setTimeTo] = useState("");
+  // 入力のたびに自動保存し、戻る・進む・リロードでも消えない(要件C)
+  const { value: form, setValue: setForm, clear: clearForm } = useDraft<Step1Form>(
+    DRAFT_KEYS.step1,
+    INITIAL_FORM
+  );
   const [error, setError] = useState<string | null>(null);
+
+  const patch = (p: Partial<Step1Form>) => setForm((prev) => ({ ...prev, ...p }));
+
+  const toggleWeekday = (value: number) => {
+    setForm((prev) => ({
+      ...prev,
+      ngWeekdays: prev.ngWeekdays.includes(value)
+        ? prev.ngWeekdays.filter((d) => d !== value)
+        : [...prev.ngWeekdays, value],
+    }));
+  };
+
+  // 明示破棄(要件C-4)
+  const restart = () => {
+    if (!window.confirm("入力内容をすべて消して最初からやり直しますか?")) return;
+    clearForm();
+    clearDraft();
+    sessionStorage.removeItem(DRAFT_KEYS.step2);
+    clearImages(DRAFT_KEYS.step2Images);
+    setForm(INITIAL_FORM);
+    setError(null);
+  };
 
   const next = () => {
     setError(null);
-    if (!title.trim()) {
+    if (!form.title.trim()) {
       setError("イベント名を入力してください");
       return;
     }
     let durationMinutes: number | null;
-    if (duration === "allday") {
+    if (form.duration === "allday") {
       durationMinutes = null;
-    } else if (duration === "custom") {
-      const n = parseInt(customDuration, 10);
+    } else if (form.duration === "custom") {
+      const n = parseInt(form.customDuration, 10);
       if (!n || n <= 0) {
         setError("カスタムの分数を入力してください");
         return;
       }
       durationMinutes = n;
     } else {
-      durationMinutes = duration;
+      durationMinutes = form.duration;
     }
-    if (periodFrom && periodTo && periodFrom > periodTo) {
+    if (form.periodFrom && form.periodTo && form.periodFrom > form.periodTo) {
       setError("候補期間の開始と終了が逆になっています");
       return;
     }
     saveDraft({
-      title: title.trim(),
+      title: form.title.trim(),
       durationMinutes,
-      maxCandidates: maxCandidates === "auto" ? null : maxCandidates,
-      deadline: deadline || null,
-      periodFrom: periodFrom || null,
-      periodTo: periodTo || null,
-      timeFrom: timeFrom || null,
-      timeTo: timeTo || null,
+      maxCandidates: form.maxCandidates === "auto" ? null : form.maxCandidates,
+      deadline: form.deadline || null,
+      periodFrom: form.periodFrom || null,
+      periodTo: form.periodTo || null,
+      timeFrom: form.timeFrom || null,
+      timeTo: form.timeTo || null,
+      ngWeekdays: form.ngWeekdays,
     });
     router.push("/new/google");
   };
@@ -77,8 +135,8 @@ export default function NewEventPage() {
         <input
           id="title"
           type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          value={form.title}
+          onChange={(e) => patch({ title: e.target.value })}
           placeholder="例) 7月の定例ミーティング"
         />
 
@@ -90,21 +148,21 @@ export default function NewEventPage() {
             <button
               key={String(opt.value)}
               type="button"
-              className={`chip ${duration === opt.value ? "selected" : ""}`}
-              onClick={() => setDuration(opt.value)}
+              className={`chip ${form.duration === opt.value ? "selected" : ""}`}
+              onClick={() => patch({ duration: opt.value })}
             >
               {opt.label}
             </button>
           ))}
         </div>
-        {duration === "custom" && (
+        {form.duration === "custom" && (
           <input
             type="number"
             inputMode="numeric"
             min={5}
             step={5}
-            value={customDuration}
-            onChange={(e) => setCustomDuration(e.target.value)}
+            value={form.customDuration}
+            onChange={(e) => patch({ customDuration: e.target.value })}
             placeholder="分数を入力(例: 45)"
           />
         )}
@@ -117,8 +175,8 @@ export default function NewEventPage() {
             <button
               key={String(opt)}
               type="button"
-              className={`chip ${maxCandidates === opt ? "selected" : ""}`}
-              onClick={() => setMaxCandidates(opt)}
+              className={`chip ${form.maxCandidates === opt ? "selected" : ""}`}
+              onClick={() => patch({ maxCandidates: opt })}
             >
               {opt === "auto" ? "できるだけ" : `${opt}件`}
             </button>
@@ -131,8 +189,8 @@ export default function NewEventPage() {
         <input
           id="deadline"
           type="date"
-          value={deadline}
-          onChange={(e) => setDeadline(e.target.value)}
+          value={form.deadline}
+          onChange={(e) => patch({ deadline: e.target.value })}
         />
 
         <label className="field-label">
@@ -141,15 +199,15 @@ export default function NewEventPage() {
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input
             type="date"
-            value={periodFrom}
-            onChange={(e) => setPeriodFrom(e.target.value)}
+            value={form.periodFrom}
+            onChange={(e) => patch({ periodFrom: e.target.value })}
             aria-label="候補期間の開始日"
           />
           <span>〜</span>
           <input
             type="date"
-            value={periodTo}
-            onChange={(e) => setPeriodTo(e.target.value)}
+            value={form.periodTo}
+            onChange={(e) => patch({ periodTo: e.target.value })}
             aria-label="候補期間の終了日"
           />
         </div>
@@ -160,18 +218,38 @@ export default function NewEventPage() {
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input
             type="time"
-            value={timeFrom}
-            onChange={(e) => setTimeFrom(e.target.value)}
+            value={form.timeFrom}
+            onChange={(e) => patch({ timeFrom: e.target.value })}
             aria-label="時間帯の開始"
           />
           <span>〜</span>
           <input
             type="time"
-            value={timeTo}
-            onChange={(e) => setTimeTo(e.target.value)}
+            value={form.timeTo}
+            onChange={(e) => patch({ timeTo: e.target.value })}
             aria-label="時間帯の終了"
           />
         </div>
+
+        <label className="field-label">
+          NG曜日<span className="opt">任意</span>
+        </label>
+        <div className="chip-row">
+          {WEEKDAY_CHIPS.map((d) => (
+            <button
+              key={d.value}
+              type="button"
+              className={`chip ${form.ngWeekdays.includes(d.value) ? "selected" : ""}`}
+              onClick={() => toggleWeekday(d.value)}
+              aria-pressed={form.ngWeekdays.includes(d.value)}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+        <p className="muted" style={{ marginTop: 4 }}>
+          選んだ曜日は候補から外します
+        </p>
       </div>
 
       {error && <div className="error-box">{error}</div>}
@@ -179,6 +257,23 @@ export default function NewEventPage() {
       <button className="btn btn-primary" onClick={next}>
         次へ(空き時間の入力)
       </button>
+
+      <p style={{ textAlign: "center", marginTop: 14 }}>
+        <button
+          type="button"
+          onClick={restart}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--muted)",
+            fontSize: 12,
+            textDecoration: "underline",
+            cursor: "pointer",
+          }}
+        >
+          最初からやり直す(入力を消去)
+        </button>
+      </p>
     </main>
   );
 }

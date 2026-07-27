@@ -11,7 +11,13 @@ export function todayJst(): string {
   return nowJst().toISOString().slice(0, 10);
 }
 
-const WEEKDAYS_JA = ["日", "月", "火", "水", "木", "金", "土"];
+export const WEEKDAYS_JA = ["日", "月", "火", "水", "木", "金", "土"];
+
+// "2026-07-27" -> 曜日番号(0=日〜6=土)
+export function weekdayOf(isoDate: string): number {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
 
 // "2026-07-27" -> "7/27(月)"
 export function formatDateJa(isoDate: string): string {

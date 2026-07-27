@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import AvailabilityInput, { ImagePayload } from "@/components/AvailabilityInput";
+import AvailabilityInput from "@/components/AvailabilityInput";
+import { useDraft, DRAFT_KEYS } from "@/lib/useDraft";
+import type { StoredImage } from "@/lib/imageStore";
 import { slotLabel, formatDateJaLong, formatTime } from "@/lib/jst";
 
 // 回答ページ(参加者・登録不要)+ 確定表示 — 仕様書 §3-7, §3-9
+// 追加要件B(写真複数枚)・C-3(回答途中の入力保持: イベントコード単位)
 type Slot = { id: string; date: string; start_time: string | null; end_time: string | null };
 type EventInfo = {
   code: string;
@@ -23,6 +26,28 @@ const MARKS: { value: Answer; label: string; cls: string }[] = [
   { value: "no", label: "×", cls: "sel-no" },
 ];
 
+type RespondDraft = {
+  proxyMode: boolean;
+  lastName: string;
+  firstName: string;
+  proxyLastName: string;
+  proxyFirstName: string;
+  email: string;
+  answers: Record<string, Answer>;
+  aiText: string;
+};
+
+const INITIAL_RESPOND: RespondDraft = {
+  proxyMode: false,
+  lastName: "",
+  firstName: "",
+  proxyLastName: "",
+  proxyFirstName: "",
+  email: "",
+  answers: {},
+  aiText: "",
+};
+
 export default function RespondPage() {
   const params = useParams<{ code: string }>();
   const [event, setEvent] = useState<EventInfo | null>(null);
@@ -30,16 +55,14 @@ export default function RespondPage() {
   const [notFound, setNotFound] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // 回答フォーム
-  const [proxyMode, setProxyMode] = useState(false);
-  const [lastName, setLastName] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [proxyLastName, setProxyLastName] = useState("");
-  const [proxyFirstName, setProxyFirstName] = useState("");
-  const [email, setEmail] = useState("");
-  const [answers, setAnswers] = useState<Record<string, Answer>>({});
-  const [aiText, setAiText] = useState("");
-  const [aiImage, setAiImage] = useState<ImagePayload>(null);
+  // 回答途中の入力を保持(戻る・リロードでも消えない — 要件C-3)
+  const { value: form, setValue: setForm, clear: clearForm } = useDraft<RespondDraft>(
+    DRAFT_KEYS.respond(params.code),
+    INITIAL_RESPOND
+  );
+  const patch = (p: Partial<RespondDraft>) => setForm((prev) => ({ ...prev, ...p }));
+
+  const [aiImages, setAiImages] = useState<StoredImage[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiFilled, setAiFilled] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +92,7 @@ export default function RespondPage() {
   }, [load]);
 
   const setAnswer = (slotId: string, answer: Answer) => {
-    setAnswers((prev) => ({ ...prev, [slotId]: answer }));
+    setForm((prev) => ({ ...prev, answers: { ...prev.answers, [slotId]: answer } }));
   };
 
   const aiFill = async () => {
@@ -81,9 +104,8 @@ export default function RespondPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code: params.code,
-          freeText: aiText,
-          imageBase64: aiImage?.base64,
-          imageMediaType: aiImage?.mediaType,
+          freeText: form.aiText,
+          images: aiImages.map((i) => ({ base64: i.base64, mediaType: i.mediaType })),
         }),
       });
       const data = await res.json();
@@ -91,7 +113,7 @@ export default function RespondPage() {
         setError(data.error ?? "自動判定に失敗しました");
         return;
       }
-      setAnswers(data.answers);
+      patch({ answers: data.answers });
       setAiFilled(true);
     } catch {
       setError("通信に失敗しました。手動で○△×を選んでください。");
@@ -102,15 +124,15 @@ export default function RespondPage() {
 
   const submit = async () => {
     setError(null);
-    if (!lastName.trim()) {
-      setError(proxyMode ? "本人の姓を入力してください" : "姓を入力してください");
+    if (!form.lastName.trim()) {
+      setError(form.proxyMode ? "本人の姓を入力してください" : "姓を入力してください");
       return;
     }
-    if (proxyMode && !proxyLastName.trim()) {
+    if (form.proxyMode && !form.proxyLastName.trim()) {
       setError("代理人の姓を入力してください");
       return;
     }
-    const answered = Object.keys(answers).length;
+    const answered = Object.keys(form.answers).length;
     if (answered < slots.length) {
       setError("すべての候補に○△×を選んでください");
       return;
@@ -121,12 +143,12 @@ export default function RespondPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          lastName: lastName.trim(),
-          firstName: firstName.trim(),
-          email: email.trim(),
-          proxyLastName: proxyMode ? proxyLastName.trim() : "",
-          proxyFirstName: proxyMode ? proxyFirstName.trim() : "",
-          answers,
+          lastName: form.lastName.trim(),
+          firstName: form.firstName.trim(),
+          email: form.email.trim(),
+          proxyLastName: form.proxyMode ? form.proxyLastName.trim() : "",
+          proxyFirstName: form.proxyMode ? form.proxyFirstName.trim() : "",
+          answers: form.answers,
         }),
       });
       const data = await res.json();
@@ -134,6 +156,8 @@ export default function RespondPage() {
         setError(data.error ?? "送信に失敗しました");
         return;
       }
+      // 回答送信完了 → ドラフト破棄(要件C-4)
+      clearForm();
       setSubmitted(true);
       window.scrollTo(0, 0);
     } catch {
@@ -228,7 +252,7 @@ export default function RespondPage() {
             ご協力ありがとうございます。日程が確定したらこのページでお知らせします。
           </p>
         </div>
-        {email.trim() && (
+        {form.email.trim() && (
           <p className="muted" style={{ textAlign: "center" }}>
             確定時にはメールでもお知らせします。
           </p>
@@ -250,42 +274,42 @@ export default function RespondPage() {
         <div className="chip-row">
           <button
             type="button"
-            className={`chip ${!proxyMode ? "selected" : ""}`}
-            onClick={() => setProxyMode(false)}
+            className={`chip ${!form.proxyMode ? "selected" : ""}`}
+            onClick={() => patch({ proxyMode: false })}
           >
             自分の分を回答
           </button>
           <button
             type="button"
-            className={`chip ${proxyMode ? "selected" : ""}`}
-            onClick={() => setProxyMode(true)}
+            className={`chip ${form.proxyMode ? "selected" : ""}`}
+            onClick={() => patch({ proxyMode: true })}
           >
             代理で回答
           </button>
         </div>
 
         <label className="field-label">
-          {proxyMode ? "本人の名前" : "名前"}
+          {form.proxyMode ? "本人の名前" : "名前"}
           <span className="req">姓は必須</span>
         </label>
         <div style={{ display: "flex", gap: 8 }}>
           <input
             type="text"
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
+            value={form.lastName}
+            onChange={(e) => patch({ lastName: e.target.value })}
             placeholder="姓"
-            aria-label={proxyMode ? "本人の姓" : "姓"}
+            aria-label={form.proxyMode ? "本人の姓" : "姓"}
           />
           <input
             type="text"
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
+            value={form.firstName}
+            onChange={(e) => patch({ firstName: e.target.value })}
             placeholder="名(任意)"
-            aria-label={proxyMode ? "本人の名" : "名"}
+            aria-label={form.proxyMode ? "本人の名" : "名"}
           />
         </div>
 
-        {proxyMode && (
+        {form.proxyMode && (
           <>
             <label className="field-label">
               代理人(あなた)の名前<span className="req">姓は必須</span>
@@ -293,15 +317,15 @@ export default function RespondPage() {
             <div style={{ display: "flex", gap: 8 }}>
               <input
                 type="text"
-                value={proxyLastName}
-                onChange={(e) => setProxyLastName(e.target.value)}
+                value={form.proxyLastName}
+                onChange={(e) => patch({ proxyLastName: e.target.value })}
                 placeholder="姓"
                 aria-label="代理人の姓"
               />
               <input
                 type="text"
-                value={proxyFirstName}
-                onChange={(e) => setProxyFirstName(e.target.value)}
+                value={form.proxyFirstName}
+                onChange={(e) => patch({ proxyFirstName: e.target.value })}
                 placeholder="名(任意)"
                 aria-label="代理人の名"
               />
@@ -316,10 +340,10 @@ export default function RespondPage() {
           予定をそのまま書く(または話す・写真を撮る)と、Alfyくんが○△×を自動でつけます。
         </p>
         <AvailabilityInput
-          text={aiText}
-          onTextChange={setAiText}
-          image={aiImage}
-          onImageChange={setAiImage}
+          text={form.aiText}
+          onTextChange={(t) => patch({ aiText: t })}
+          images={aiImages}
+          onImagesChange={setAiImages}
           placeholder="例) 火曜は終日NG。27日は15時まで会議です"
         />
         <div className="mt-2">
@@ -349,7 +373,7 @@ export default function RespondPage() {
                 <button
                   key={m.value}
                   type="button"
-                  className={`ans-btn ${answers[slot.id] === m.value ? m.cls : ""}`}
+                  className={`ans-btn ${form.answers[slot.id] === m.value ? m.cls : ""}`}
                   onClick={() => setAnswer(slot.id, m.value)}
                   aria-label={`${slotLabel(slot)} に ${m.label}`}
                 >
@@ -368,8 +392,8 @@ export default function RespondPage() {
         <input
           id="email"
           type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          value={form.email}
+          onChange={(e) => patch({ email: e.target.value })}
           placeholder="例) alfy@example.com"
         />
       </div>
