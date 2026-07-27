@@ -1,0 +1,86 @@
+# Alfy iOSアプリ(alfy-app)をビルドしてTestFlightへ自動アップロード
+# Mac不要。GitHubのActionsタブから手動実行(Run workflow)する。
+#
+# 必要なリポジトリシークレット(Settings → Secrets and variables → Actions):
+#   ASC_KEY_ID      App Store Connect APIキーのKey ID
+#   ASC_ISSUER_ID   同 Issuer ID
+#   ASC_API_KEY_P8  同 .p8ファイルの中身(テキストそのまま)
+#   APPLE_TEAM_ID   Apple DeveloperのTeam ID(Membershipページに記載)
+#
+# 事前に必要な1回きりの作業:
+#   1. developer.apple.com → Identifiers で Bundle ID「com.alfy.app」を登録
+#   2. App Store Connect → マイApp → 新規App(iOS / 名前: Alfy / com.alfy.app)
+#   3. App Store Connect → ユーザとアクセス → 統合 → App Store Connect API で
+#      チームキー作成(ロール: App Manager)→ .p8をダウンロードし上記シークレット登録
+#
+# 署名はクラウド自動署名(-allowProvisioningUpdates + ASC APIキー)。
+# 証明書・プロビジョニングは初回実行時に自動作成される。
+
+name: Alfy iOS TestFlight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-upload:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: alfy-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install deps & sync native project
+        run: |
+          npm ci
+          npx cap sync ios
+
+      - name: Write App Store Connect API key
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          mkdir -p "$HOME/private_keys"
+          printf '%s' "$ASC_API_KEY_P8" > "$HOME/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: Archive (cloud-managed signing)
+        run: |
+          xcodebuild -workspace ios/App/App.xcworkspace \
+            -scheme App -configuration Release -sdk iphoneos \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" archive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8" \
+            -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            CODE_SIGN_STYLE=Automatic \
+            MARKETING_VERSION=1.0.0 \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
+
+      - name: Export & upload to TestFlight
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>TEAM_ID_PLACEHOLDER</string>
+          </dict>
+          </plist>
+          PLIST
+          sed -i '' "s/TEAM_ID_PLACEHOLDER/${{ secrets.APPLE_TEAM_ID }}/" "$RUNNER_TEMP/ExportOptions.plist"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8" \
+            -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}"
