@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Alfy</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: #1b2b4b;
+      color: #fff;
+      font-family: "Hiragino Kaku Gothic ProN", sans-serif;
+      text-align: center;
+      padding: 24px;
+    }
+    h1 {
+      font-family: "Hiragino Mincho ProN", serif;
+      letter-spacing: 0.08em;
+      font-size: 32px;
+      margin: 0;
+    }
+    h1 span { color: #c9a869; }
+    p { color: #cfd6e4; font-size: 14px; margin: 0; }
+    button {
+      margin-top: 12px;
+      padding: 12px 28px;
+      border: none;
+      border-radius: 10px;
+      background: #b08d4c;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <!-- server.url に接続できないとき(オフライン)のみ表示されるフォールバック -->
+  <h1>Alfy<span>.</span></h1>
+  <p>インターネットに接続できません。<br />接続を確認して、もう一度お試しください。</p>
+  <button onclick="location.reload()">再読み込み</button>
+</body>
+</html>
