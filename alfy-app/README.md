@@ -13,7 +13,7 @@
 
 ```
 alfy-app/
-  capacitor.config.ts   # appId: com.alfy.app / server.url: 本番WebのURL
+  capacitor.config.ts   # appId: com.kozaburo.alfy / server.url: 本番WebのURL
   www/                  # オフライン時のフォールバック画面のみ
   ios/                  # Xcodeプロジェクト(生成済み)
   android/              # Android Studio(Gradle)プロジェクト(生成済み)
@@ -30,7 +30,7 @@ npx cap open ios   # Xcodeが開く
 
 Xcodeで:
 1. TARGETS「App」→ Signing & Capabilities → Team に自分のApple Developerチームを選択
-2. Bundle Identifier が `com.alfy.app` であること(App Store Connect側でも同じIDでアプリを作成)
+2. Bundle Identifier が `com.kozaburo.alfy` であること(App Store Connect側でも同じIDでアプリを作成)
 3. 実機テスト: 上部のデバイス選択で自分のiPhone → ▶
 4. 提出: Product → Archive → Distribute App → App Store Connect
 

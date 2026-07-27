@@ -1,4 +1,4 @@
-package com.alfy.app;
+package com.kozaburo.alfy;
 
 import com.getcapacitor.BridgeActivity;
 
