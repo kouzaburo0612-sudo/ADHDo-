@@ -34,6 +34,13 @@ jobs:
         with:
           node-version: 22
 
+      - name: Select latest Xcode (App Store Connect requires iOS 26 SDK+)
+        run: |
+          LATEST=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "Using $LATEST"
+          sudo xcode-select -s "$LATEST/Contents/Developer"
+          xcodebuild -version
+
       - name: Install deps & sync native project
         run: |
           npm ci
