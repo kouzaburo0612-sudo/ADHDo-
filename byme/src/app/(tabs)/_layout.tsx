@@ -4,13 +4,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, enLabel, fonts } from '../../theme/tokens';
 
 const TAB_LABELS: Record<string, { en: string; jp: string }> = {
-  today: { en: 'TODAY', jp: 'きょう' },
-  vision: { en: 'VISION', jp: 'ビジョン' },
-  mind: { en: 'MIND', jp: 'こころえ' },
-  log: { en: 'LOG', jp: 'きろく' },
+  cockpit: { en: 'COCKPIT', jp: '数字と期限' },
+  vision: { en: 'VISION', jp: '未来' },
+  quest: { en: 'QUEST', jp: '年間クエスト' },
+  mind: { en: 'MIND', jp: '心得' },
 };
 
-/** 英字+日本語サブラベル、アクティブ時はブルーの下線 */
+/** 英字ラベル+日本語サブラベル、アクティブ時はブルーの下線 */
 function BymeTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   return (
@@ -54,10 +54,10 @@ export default function TabsLayout() {
       }}
       tabBar={(props) => <BymeTabBar {...props} />}
     >
-      <Tabs.Screen name="today" />
+      <Tabs.Screen name="cockpit" />
       <Tabs.Screen name="vision" />
+      <Tabs.Screen name="quest" />
       <Tabs.Screen name="mind" />
-      <Tabs.Screen name="log" />
     </Tabs>
   );
 }

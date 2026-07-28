@@ -2,15 +2,16 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 /**
- * ローカル通知。
- * - 朝: ユーザー設定時刻。本文にはその日の宣言文を1つ載せる(通知自体がアファメーション)
- * - 夜21時: 日記未記入リマインド(オフ可)
+ * push型刷り込み(仕様6.5)。
+ * - 毎朝(起床時刻): 本文に今日の指針または宣言文をそのまま載せる
+ * - 日曜夕: KPI現在値の更新催促
+ * 通知文はコンテンツそのもの。「アプリを開いてください」的な文言は書かない。
  * リモートpushは使わない(aps-environment はプラグインで除去済み)。
  */
 
 const MORNING_ID = 'byme-morning';
-const EVENING_ID = 'byme-evening';
-const EVENING_HOUR = 21;
+const KPI_ID = 'byme-kpi-sunday';
+const KPI_HOUR = 18; // 日曜夕
 
 export function configureNotificationHandler(): void {
   Notifications.setNotificationHandler({
@@ -39,22 +40,19 @@ async function ensureAndroidChannel(): Promise<void> {
   });
 }
 
-/**
- * 朝の宣言通知を(再)スケジュールする。
- * 毎日同時刻に届く。本文の宣言文はアプリを開くたびに当日のローテーションで更新される。
- */
+/** 毎朝、起床時刻に今日の指針を届ける(通知自体が刷り込み) */
 export async function scheduleMorningNotification(
   hour: number,
   minute: number,
-  affirmationText: string
+  principleText: string
 ): Promise<void> {
   await ensureAndroidChannel();
   await Notifications.cancelScheduledNotificationAsync(MORNING_ID).catch(() => {});
   await Notifications.scheduleNotificationAsync({
     identifier: MORNING_ID,
     content: {
-      title: 'BE / 今日の宣言',
-      body: affirmationText,
+      title: 'TODAY’S CREED',
+      body: principleText,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -64,38 +62,22 @@ export async function scheduleMorningNotification(
   });
 }
 
-export async function cancelMorningNotification(): Promise<void> {
-  await Notifications.cancelScheduledNotificationAsync(MORNING_ID).catch(() => {});
-}
-
-/**
- * 21時の日記リマインドを更新する。
- * 「今日まだ日記を書いていない」場合のみ今日21時に一発通知を置き、
- * 書き終えている・21時を過ぎている場合は翌日21時に置く。
- * アプリ起動時と日記保存時に呼び直すことで「未記入のときだけ鳴る」を実現する。
- */
-export async function refreshEveningReminder(
-  enabled: boolean,
-  journalDoneToday: boolean
-): Promise<void> {
-  await Notifications.cancelScheduledNotificationAsync(EVENING_ID).catch(() => {});
+/** 日曜夕のKPI更新催促(オフ可) */
+export async function scheduleSundayKpiReminder(enabled: boolean): Promise<void> {
+  await Notifications.cancelScheduledNotificationAsync(KPI_ID).catch(() => {});
   if (!enabled) return;
   await ensureAndroidChannel();
-
-  const now = new Date();
-  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), EVENING_HOUR, 0, 0);
-  if (journalDoneToday || now.getTime() >= target.getTime()) {
-    target.setDate(target.getDate() + 1);
-  }
   await Notifications.scheduleNotificationAsync({
-    identifier: EVENING_ID,
+    identifier: KPI_ID,
     content: {
-      title: 'LOG / 今日の日記',
-      body: '今日を締めくくる3行を。感謝・前進・明日。',
+      title: 'THE NUMBERS',
+      body: 'KPI現在値を更新せよ。1日も、1円も、ごまかせない。',
     },
     trigger: {
-      type: Notifications.SchedulableTriggerInputTypes.DATE,
-      date: target,
+      type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+      weekday: 1, // 日曜
+      hour: KPI_HOUR,
+      minute: 0,
     },
   });
 }

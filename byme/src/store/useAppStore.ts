@@ -3,55 +3,44 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import * as q from '../db/queries';
 import type {
   Affirmation,
-  Goal,
-  GoalCategory,
-  JournalEntry,
+  DailyLog,
+  DailyLogField,
+  Kpi,
   Principle,
-  RitualDay,
+  Quest,
+  Scene,
   SettingKey,
 } from '../db/types';
+import { CREED } from '../data/master';
 import { dayOfYear, parseHHMM, todayKey } from '../lib/dates';
 import { computeStreak } from '../lib/streak';
 import {
-  refreshEveningReminder,
   scheduleMorningNotification,
+  scheduleSundayKpiReminder,
 } from '../lib/notifications';
 
 interface AppState {
   ready: boolean;
   settings: Record<string, string>;
-  goals: Goal[];
-  affirmations: Affirmation[];
+  kpis: Kpi[];
   principles: Principle[];
-  ritualDays: RitualDay[];
-  todayRitual: RitualDay;
-  todayJournal: JournalEntry | null;
+  affirmations: Affirmation[];
+  scenes: Scene[];
+  quests: Quest[];
+  dailyLogs: DailyLog[];
+  todayLog: DailyLog;
   streak: number;
 
   init: (db: SQLiteDatabase) => Promise<void>;
   reload: () => Promise<void>;
 
   saveSetting: (key: SettingKey, value: string) => Promise<void>;
-
-  addGoal: (g: { title: string; category: GoalCategory; deadline: string | null }) => Promise<number>;
-  editGoal: (id: number, g: { title: string; category: GoalCategory; deadline: string | null }) => Promise<void>;
-  removeGoal: (id: number) => Promise<void>;
-
-  addAffirmation: (a: { text: string; tag: string | null; goal_id: number | null }) => Promise<void>;
-  editAffirmation: (id: number, text: string, tag: string | null) => Promise<void>;
-  toggleAffirmation: (id: number, active: boolean) => Promise<void>;
-  removeAffirmation: (id: number) => Promise<void>;
-
-  addPrinciple: (p: { source: string | null; text: string }) => Promise<void>;
-  editPrinciple: (id: number, p: { source: string | null; text: string }) => Promise<void>;
+  updateKpiCurrent: (id: number, current: number) => Promise<void>;
   togglePrinciple: (id: number, active: boolean) => Promise<void>;
-  removePrinciple: (id: number) => Promise<void>;
-  installPresets: (items: { source: string | null; text: string }[]) => Promise<void>;
+  toggleQuest: (id: number, done: boolean) => Promise<void>;
+  setTodayField: (field: DailyLogField, value: boolean) => Promise<void>;
 
-  markRitual: (field: 'declared' | 'principle' | 'journal') => Promise<void>;
-  saveJournal: (e: Omit<JournalEntry, 'date'>) => Promise<void>;
-
-  /** 朝の宣言通知と21時リマインドを現在の状態に合わせて再スケジュール */
+  /** 朝通知(起床時刻・本文=今日の指針)と日曜KPI催促を再スケジュール */
   refreshNotifications: () => Promise<void>;
 }
 
@@ -62,23 +51,25 @@ function db(): SQLiteDatabase {
   return _db;
 }
 
-const EMPTY_RITUAL: RitualDay = {
+const EMPTY_LOG: DailyLog = {
   date: '',
-  declared: 0,
+  theater: 0,
   principle: 0,
-  journal: 0,
-  completed_at: null,
+  body_meditation: 0,
+  body_diet: 0,
+  body_training: 0,
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
   ready: false,
   settings: {},
-  goals: [],
-  affirmations: [],
+  kpis: [],
   principles: [],
-  ritualDays: [],
-  todayRitual: EMPTY_RITUAL,
-  todayJournal: null,
+  affirmations: [],
+  scenes: [],
+  quests: [],
+  dailyLogs: [],
+  todayLog: EMPTY_LOG,
   streak: 0,
 
   init: async (database) => {
@@ -91,25 +82,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   reload: async () => {
     const d = db();
     const today = todayKey();
-    const [settings, goals, affirmations, principles, ritualDays, todayRitual, todayJournal] =
+    const [settings, kpis, principles, affirmations, scenes, quests, dailyLogs, todayLog] =
       await Promise.all([
         q.getAllSettings(d),
-        q.listGoals(d),
-        q.listAffirmations(d),
+        q.listKpis(d),
         q.listPrinciples(d),
-        q.listRitualDays(d),
-        q.getRitualDay(d, today),
-        q.getJournal(d, today),
+        q.listAffirmations(d),
+        q.listScenes(d),
+        q.listQuests(d),
+        q.listDailyLogs(d),
+        q.getDailyLog(d, today),
       ]);
     set({
       settings,
-      goals,
-      affirmations,
+      kpis,
       principles,
-      ritualDays,
-      todayRitual,
-      todayJournal,
-      streak: computeStreak(ritualDays),
+      affirmations,
+      scenes,
+      quests,
+      dailyLogs,
+      todayLog,
+      streak: computeStreak(dailyLogs),
     });
   },
 
@@ -118,111 +111,58 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ settings: { ...get().settings, [key]: value } });
   },
 
-  addGoal: async (g) => {
-    const id = await q.insertGoal(db(), g);
-    set({ goals: await q.listGoals(db()) });
-    return id;
-  },
-  editGoal: async (id, g) => {
-    await q.updateGoal(db(), id, g);
-    set({ goals: await q.listGoals(db()) });
-  },
-  removeGoal: async (id) => {
-    await q.archiveGoal(db(), id);
-    set({ goals: await q.listGoals(db()) });
+  updateKpiCurrent: async (id, current) => {
+    await q.updateKpiCurrent(db(), id, current);
+    set({ kpis: await q.listKpis(db()) });
   },
 
-  addAffirmation: async (a) => {
-    await q.insertAffirmation(db(), a);
-    set({ affirmations: await q.listAffirmations(db()) });
-  },
-  editAffirmation: async (id, text, tag) => {
-    await q.updateAffirmationText(db(), id, text, tag);
-    set({ affirmations: await q.listAffirmations(db()) });
-  },
-  toggleAffirmation: async (id, active) => {
-    await q.setAffirmationActive(db(), id, active);
-    set({ affirmations: await q.listAffirmations(db()) });
-  },
-  removeAffirmation: async (id) => {
-    await q.deleteAffirmation(db(), id);
-    set({ affirmations: await q.listAffirmations(db()) });
-  },
-
-  addPrinciple: async (p) => {
-    await q.insertPrinciple(db(), p);
-    set({ principles: await q.listPrinciples(db()) });
-  },
-  editPrinciple: async (id, p) => {
-    await q.updatePrinciple(db(), id, p);
-    set({ principles: await q.listPrinciples(db()) });
-  },
   togglePrinciple: async (id, active) => {
     await q.setPrincipleActive(db(), id, active);
     set({ principles: await q.listPrinciples(db()) });
   },
-  removePrinciple: async (id) => {
-    await q.deletePrinciple(db(), id);
-    set({ principles: await q.listPrinciples(db()) });
-  },
-  installPresets: async (items) => {
-    await q.insertPrinciplesBulk(db(), items);
-    set({ principles: await q.listPrinciples(db()) });
+
+  toggleQuest: async (id, done) => {
+    await q.setQuestDone(db(), id, done);
+    set({ quests: await q.listQuests(db()) });
   },
 
-  markRitual: async (field) => {
+  setTodayField: async (field, value) => {
     const today = todayKey();
-    const todayRitual = await q.markRitual(db(), today, field);
-    const ritualDays = await q.listRitualDays(db());
-    set({ todayRitual, ritualDays, streak: computeStreak(ritualDays) });
-    if (field === 'journal') {
-      await get().refreshNotifications();
-    }
-  },
-
-  saveJournal: async (e) => {
-    const today = todayKey();
-    const entry: JournalEntry = { date: today, ...e };
-    await q.upsertJournal(db(), entry);
-    set({ todayJournal: entry });
-    await get().markRitual('journal');
+    const todayLog = await q.setDailyLogField(db(), today, field, value);
+    const dailyLogs = await q.listDailyLogs(db());
+    set({ todayLog, dailyLogs, streak: computeStreak(dailyLogs) });
   },
 
   refreshNotifications: async () => {
-    const { settings, todayRitual } = get();
+    const { settings, principles } = get();
     try {
-      const morning = parseHHMM(settings.notify_morning ?? '');
-      if (morning) {
-        await scheduleMorningNotification(
-          morning.hour,
-          morning.minute,
-          todaysAffirmationText(get().affirmations)
-        );
-      }
-      const eveningEnabled = (settings.notify_evening_enabled ?? '1') === '1';
-      await refreshEveningReminder(eveningEnabled, todayRitual.journal === 1);
+      const wake = parseHHMM(settings.wake_time ?? '') ?? { hour: 6, minute: 0 };
+      await scheduleMorningNotification(wake.hour, wake.minute, todaysGuidanceText(principles));
+      await scheduleSundayKpiReminder((settings.notify_kpi_enabled ?? '1') === '1');
     } catch {
       // 通知権限なし等は無視(設定画面から再許可できる)
     }
   },
 }));
 
-// ---------- セレクタ/派生ヘルパ ----------
+// ---------- 派生ヘルパ ----------
 
-export function activeAffirmations(affirmations: Affirmation[]): Affirmation[] {
-  return affirmations.filter((a) => a.active === 1);
+/** 今日の戒め(3カ条から日替わり) */
+export function todaysCreed(): string {
+  return CREED[dayOfYear() % CREED.length];
 }
 
-/** 通知本文用: 今日の宣言文(アクティブな宣言からローテーション) */
-export function todaysAffirmationText(affirmations: Affirmation[]): string {
-  const active = activeAffirmations(affirmations);
-  if (active.length === 0) return 'なりたい自分として、今日を始めよう。';
-  return active[dayOfYear() % active.length].text;
-}
-
-/** 1日1心得: アクティブな心得から dayOfYear % count でローテーション */
+/** 今日の心得: activeな項目からカテゴリ横断で日替わり1件 */
 export function todaysPrinciple(principles: Principle[]): Principle | null {
   const active = principles.filter((p) => p.active === 1);
   if (active.length === 0) return null;
   return active[dayOfYear() % active.length];
+}
+
+/** 朝通知の本文: 戒め+心得を交互に(通知自体が刷り込み) */
+export function todaysGuidanceText(principles: Principle[]): string {
+  const p = todaysPrinciple(principles);
+  const creed = todaysCreed();
+  if (!p) return creed;
+  return dayOfYear() % 2 === 0 ? p.text : creed;
 }

@@ -1,4 +1,5 @@
 import {
+  Jost_400Regular,
   Jost_500Medium,
   Jost_600SemiBold,
   Jost_700Bold,
@@ -26,6 +27,7 @@ configureNotificationHandler();
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
+    Jost_400Regular,
     Jost_500Medium,
     Jost_600SemiBold,
     Jost_700Bold,
@@ -48,10 +50,9 @@ export default function RootLayout() {
           }}
         >
           <Stack.Screen name="index" />
-          <Stack.Screen name="(onboarding)" />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen
-            name="declare-mode"
+            name="theater"
             options={{ presentation: 'fullScreenModal', animation: 'fade' }}
           />
           <Stack.Screen name="settings" options={{ presentation: 'modal' }} />

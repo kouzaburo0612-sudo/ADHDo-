@@ -13,6 +13,8 @@ export const colors = {
   bluePale: '#E7F0F5',
   mist: '#8A94A3',
   line: '#E2E7ED',
+  /** 期限・残日数専用 */
+  red: '#C25450',
 } as const;
 
 /** フォントファミリー(app/_layout.tsx でロード) */
