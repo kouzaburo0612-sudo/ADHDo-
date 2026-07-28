@@ -1,0 +1,126 @@
+name: MH 5. Withings Callback Function
+
+# Withings OAuthの認可後リダイレクトを受けてアプリ(vyta://)へ戻す
+# Supabase Edge Function をデプロイする。PATは暗号化入力で受け取る。
+on:
+  workflow_dispatch:
+    inputs:
+      enc_pat:
+        description: '暗号化されたSupabaseアクセストークン(内部用)'
+        required: true
+      project_ref:
+        description: 'SupabaseプロジェクトRef'
+        required: false
+        default: 'wxqsvcsrbuidqqsmkqnx'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: master-health
+    steps:
+      - name: Checkout (master-healthブランチを固定でチェックアウト)
+        uses: actions/checkout@v4
+        with:
+          ref: claude/master-health-ios-06hrvw
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Decrypt Supabase access token
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          ENC_PAT: ${{ inputs.enc_pat }}
+        run: |
+          set -euo pipefail
+          strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
+          fetch_chunks() {
+            local name="$1" out="" i=0 raw val
+            while [ $i -lt 30 ]; do
+              raw=$(timeout 120 eas env:get --variable-name "${name}_${i}" --variable-environment production --format short --non-interactive </dev/null 2>/dev/null || true)
+              val=$(printf '%s' "$raw" | strip_ansi | tr -d '\r' | sed -n "s/^${name}_${i}=//p" | tr -d '\n')
+              [ -z "$val" ] && break
+              out="${out}${val}"
+              i=$((i+1))
+            done
+            [ -n "$out" ] || return 1
+            printf '%s' "$out"
+          }
+          PRIV_B64=$(fetch_chunks MH_BOOT_PRIV) || { echo "::error::bootstrap秘密鍵がありません"; exit 1; }
+          printf '%s' "$PRIV_B64" | base64 -d > /tmp/boot_priv.pem
+          printf '%s' "${ENC_PAT%%.*}" | base64 -d > /tmp/wrapped.bin
+          printf '%s' "${ENC_PAT#*.}" | base64 -d > /tmp/secret.enc
+          openssl pkeyutl -decrypt -inkey /tmp/boot_priv.pem -in /tmp/wrapped.bin -out /tmp/aes.pass -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
+          PAT=$(openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/tmp/aes.pass -in /tmp/secret.enc)
+          rm -f /tmp/boot_priv.pem /tmp/aes.pass /tmp/secret.enc /tmp/wrapped.bin
+          echo "::add-mask::$PAT"
+          printf '%s' "$PAT" > /tmp/sb_pat
+          chmod 600 /tmp/sb_pat
+          echo "アクセストークンを復号しました"
+
+      - name: Deploy withings-callback edge function
+        env:
+          PROJECT_REF: ${{ inputs.project_ref }}
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --break-system-packages requests 2>/dev/null || python3 -m pip install --quiet requests
+          python3 - << 'PYEOF'
+          import os, requests
+
+          ref = os.environ['PROJECT_REF']
+          pat = open('/tmp/sb_pat').read().strip()
+          H = {'Authorization': f'Bearer {pat}'}
+          B = 'https://api.supabase.com'
+
+          code = '''
+          // Withings OAuth callback: 認可コードをアプリ(vyta://)へ引き渡す
+          Deno.serve((req: Request) => {
+            const url = new URL(req.url);
+            const code = url.searchParams.get("code") ?? "";
+            const state = url.searchParams.get("state") ?? "";
+            const err = url.searchParams.get("error") ?? "";
+            const target = "vyta://withings-callback?code=" + encodeURIComponent(code)
+              + "&state=" + encodeURIComponent(state) + "&error=" + encodeURIComponent(err);
+            const html = `<!doctype html><html><head><meta charset="utf-8">
+          <meta http-equiv="refresh" content="0;url=${target}">
+          <title>VYTA</title></head>
+          <body style="background:#0B1220;color:#E6EDF3;font-family:-apple-system;text-align:center;padding-top:40vh">
+          <p>VYTAに戻っています…</p>
+          <p><a style="color:#40D9C4" href="${target}">自動で戻らない場合はタップ</a></p>
+          </body></html>`;
+            return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
+          });
+          '''
+
+          meta = '{"entrypoint_path":"index.ts","name":"withings-callback","verify_jwt":false}'
+          r = requests.post(
+              f'{B}/v1/projects/{ref}/functions/deploy?slug=withings-callback',
+              headers=H,
+              files={
+                  'metadata': (None, meta, 'application/json'),
+                  'file': ('index.ts', code, 'application/typescript'),
+              },
+              timeout=120,
+          )
+          print('deploy ->', r.status_code)
+          print(r.text[:600])
+          if r.status_code not in (200, 201):
+              raise SystemExit(1)
+
+          # 公開URLの疎通確認(verify_jwt=falseなので認証ヘッダなしで200が返るはず)
+          url = f'https://{ref}.supabase.co/functions/v1/withings-callback?code=test&state=test'
+          r2 = requests.get(url, timeout=60)
+          print('public check ->', r2.status_code)
+          print('WITHINGS CALLBACK URL: https://' + ref + '.supabase.co/functions/v1/withings-callback')
+          print('DEPLOY: OK' if r2.status_code == 200 else 'DEPLOY: WARN(要確認)')
+          PYEOF
