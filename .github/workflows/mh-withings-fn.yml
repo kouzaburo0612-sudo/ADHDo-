@@ -1,13 +1,19 @@
 name: MH 5. Withings Callback Function
 
-# Withings OAuthの認可後リダイレクトを受けてアプリ(vyta://)へ戻す
-# Supabase Edge Function をデプロイする。PATは暗号化入力で受け取る。
+# Withings OAuth連携のサーバ側一式:
+# - withings-callback: 認可後リダイレクトをアプリ(vyta://)へ引き渡す
+# - withings-token: 認可コード交換 / リフレッシュ(Client SecretはSupabase secretsに保持)
+# PAT・Withings資格情報はどちらも暗号化入力で受け取り、ログに出さない。
 on:
   workflow_dispatch:
     inputs:
       enc_pat:
         description: '暗号化されたSupabaseアクセストークン(内部用)'
         required: true
+      enc_withings:
+        description: '暗号化されたWithings client_id:client_secret(内部用・省略時はsecrets設定をスキップ)'
+        required: false
+        default: ''
       project_ref:
         description: 'SupabaseプロジェクトRef'
         required: false
@@ -37,10 +43,11 @@ jobs:
       - name: Install EAS CLI
         run: npm install -g eas-cli
 
-      - name: Decrypt Supabase access token
+      - name: Decrypt credentials
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           ENC_PAT: ${{ inputs.enc_pat }}
+          ENC_WITHINGS: ${{ inputs.enc_withings }}
         run: |
           set -euo pipefail
           strip_ansi() { sed 's/\x1b\[[0-9;]*m//g'; }
@@ -58,17 +65,54 @@ jobs:
           }
           PRIV_B64=$(fetch_chunks MH_BOOT_PRIV) || { echo "::error::bootstrap秘密鍵がありません"; exit 1; }
           printf '%s' "$PRIV_B64" | base64 -d > /tmp/boot_priv.pem
-          printf '%s' "${ENC_PAT%%.*}" | base64 -d > /tmp/wrapped.bin
-          printf '%s' "${ENC_PAT#*.}" | base64 -d > /tmp/secret.enc
-          openssl pkeyutl -decrypt -inkey /tmp/boot_priv.pem -in /tmp/wrapped.bin -out /tmp/aes.pass -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
-          PAT=$(openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/tmp/aes.pass -in /tmp/secret.enc)
-          rm -f /tmp/boot_priv.pem /tmp/aes.pass /tmp/secret.enc /tmp/wrapped.bin
-          echo "::add-mask::$PAT"
-          printf '%s' "$PAT" > /tmp/sb_pat
-          chmod 600 /tmp/sb_pat
-          echo "アクセストークンを復号しました"
+          decrypt_input() {
+            local enc="$1" outfile="$2"
+            printf '%s' "${enc%%.*}" | base64 -d > /tmp/wrapped.bin
+            printf '%s' "${enc#*.}" | base64 -d > /tmp/secret.enc
+            openssl pkeyutl -decrypt -inkey /tmp/boot_priv.pem -in /tmp/wrapped.bin -out /tmp/aes.pass -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
+            openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/tmp/aes.pass -in /tmp/secret.enc > "$outfile"
+            rm -f /tmp/aes.pass /tmp/secret.enc /tmp/wrapped.bin
+            chmod 600 "$outfile"
+          }
+          decrypt_input "$ENC_PAT" /tmp/sb_pat
+          echo "::add-mask::$(cat /tmp/sb_pat)"
+          if [ -n "$ENC_WITHINGS" ]; then
+            decrypt_input "$ENC_WITHINGS" /tmp/withings_creds
+            WID="${ENC_WITHINGS:0:0}$(cut -d: -f1 /tmp/withings_creds)"
+            WSEC="$(cut -d: -f2 /tmp/withings_creds)"
+            echo "::add-mask::$WID"
+            echo "::add-mask::$WSEC"
+          fi
+          rm -f /tmp/boot_priv.pem
+          echo "資格情報を復号しました"
 
-      - name: Deploy withings-callback edge function
+      - name: Set Withings secrets on Supabase
+        if: ${{ inputs.enc_withings != '' }}
+        env:
+          PROJECT_REF: ${{ inputs.project_ref }}
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --break-system-packages requests 2>/dev/null || python3 -m pip install --quiet requests
+          python3 - << 'PYEOF'
+          import os, requests
+          ref = os.environ['PROJECT_REF']
+          pat = open('/tmp/sb_pat').read().strip()
+          wid, wsec = open('/tmp/withings_creds').read().strip().split(':', 1)
+          r = requests.post(
+              f'https://api.supabase.com/v1/projects/{ref}/secrets',
+              headers={'Authorization': f'Bearer {pat}'},
+              json=[{'name': 'WITHINGS_CLIENT_ID', 'value': wid},
+                    {'name': 'WITHINGS_CLIENT_SECRET', 'value': wsec}],
+              timeout=60,
+          )
+          print('secrets ->', r.status_code)
+          if r.status_code not in (200, 201):
+              print(r.text[:300])
+              raise SystemExit(1)
+          print('SECRETS: OK')
+          PYEOF
+
+      - name: Deploy edge functions
         env:
           PROJECT_REF: ${{ inputs.project_ref }}
         run: |
@@ -82,7 +126,7 @@ jobs:
           H = {'Authorization': f'Bearer {pat}'}
           B = 'https://api.supabase.com'
 
-          code = '''
+          callback_code = '''
           // Withings OAuth callback: 認可コードをアプリ(vyta://)へ引き渡す
           Deno.serve((req: Request) => {
             const url = new URL(req.url);
@@ -102,25 +146,59 @@ jobs:
           });
           '''
 
-          meta = '{"entrypoint_path":"index.ts","name":"withings-callback","verify_jwt":false}'
-          r = requests.post(
-              f'{B}/v1/projects/{ref}/functions/deploy?slug=withings-callback',
-              headers=H,
-              files={
-                  'metadata': (None, meta, 'application/json'),
-                  'file': ('index.ts', code, 'application/typescript'),
-              },
-              timeout=120,
-          )
-          print('deploy ->', r.status_code)
-          print(r.text[:600])
-          if r.status_code not in (200, 201):
-              raise SystemExit(1)
+          token_code = '''
+          // Withings token交換/リフレッシュ。Client Secretはここ(サーバ側)にのみ存在する
+          Deno.serve(async (req: Request) => {
+            if (req.method !== "POST") return new Response("POST only", { status: 405 });
+            let body: { action?: string; code?: string; refresh_token?: string };
+            try { body = await req.json(); } catch { return new Response("bad json", { status: 400 }); }
+            const id = Deno.env.get("WITHINGS_CLIENT_ID") ?? "";
+            const secret = Deno.env.get("WITHINGS_CLIENT_SECRET") ?? "";
+            if (!id || !secret) return new Response(JSON.stringify({ error: "server not configured" }), { status: 500 });
+            const p = new URLSearchParams({ action: "requesttoken", client_id: id, client_secret: secret });
+            if (body.action === "exchange") {
+              p.set("grant_type", "authorization_code");
+              p.set("code", body.code ?? "");
+              p.set("redirect_uri", "https://wxqsvcsrbuidqqsmkqnx.supabase.co/functions/v1/withings-callback");
+            } else if (body.action === "refresh") {
+              p.set("grant_type", "refresh_token");
+              p.set("refresh_token", body.refresh_token ?? "");
+            } else {
+              return new Response(JSON.stringify({ error: "bad action" }), { status: 400 });
+            }
+            const r = await fetch("https://wbsapi.withings.net/v2/oauth2", {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: p.toString(),
+            });
+            const j = await r.text();
+            return new Response(j, { status: 200, headers: { "Content-Type": "application/json" } });
+          });
+          '''
 
-          # 公開URLの疎通確認(verify_jwt=falseなので認証ヘッダなしで200が返るはず)
-          url = f'https://{ref}.supabase.co/functions/v1/withings-callback?code=test&state=test'
-          r2 = requests.get(url, timeout=60)
-          print('public check ->', r2.status_code)
-          print('WITHINGS CALLBACK URL: https://' + ref + '.supabase.co/functions/v1/withings-callback')
-          print('DEPLOY: OK' if r2.status_code == 200 else 'DEPLOY: WARN(要確認)')
+          def deploy(slug, code):
+              meta = '{"entrypoint_path":"index.ts","name":"%s","verify_jwt":false}' % slug
+              r = requests.post(
+                  f'{B}/v1/projects/{ref}/functions/deploy?slug={slug}',
+                  headers=H,
+                  files={
+                      'metadata': (None, meta, 'application/json'),
+                      'file': ('index.ts', code, 'application/typescript'),
+                  },
+                  timeout=120,
+              )
+              print(f'deploy {slug} ->', r.status_code)
+              if r.status_code not in (200, 201):
+                  print(r.text[:400])
+                  raise SystemExit(1)
+
+          deploy('withings-callback', callback_code)
+          deploy('withings-token', token_code)
+
+          r2 = requests.get(f'https://{ref}.supabase.co/functions/v1/withings-callback?code=test&state=test', timeout=60)
+          print('callback check ->', r2.status_code)
+          r3 = requests.post(f'https://{ref}.supabase.co/functions/v1/withings-token',
+                             json={'action': 'refresh', 'refresh_token': 'dummy'}, timeout=60)
+          print('token fn check ->', r3.status_code, r3.text[:200])
+          print('DEPLOY: OK' if r2.status_code == 200 and r3.status_code == 200 else 'DEPLOY: WARN(要確認)')
           PYEOF
