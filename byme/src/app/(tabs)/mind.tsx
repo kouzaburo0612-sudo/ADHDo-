@@ -12,10 +12,7 @@ import { colors, enLabel, fonts, spacing } from '../../theme/tokens';
  */
 export default function Mind() {
   const principles = useAppStore((s) => s.principles);
-  const affirmations = useAppStore((s) => s.affirmations);
   const readsToday = useAppStore((s) => s.readsToday);
-
-  const affReadCount = affirmations.filter((a) => readsToday.affirmation.includes(a.id)).length;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -29,24 +26,6 @@ export default function Mind() {
             </Text>
           ))}
         </View>
-
-        {/* アファメーション入口 */}
-        <Pressable style={styles.affCard} onPress={() => router.push('/affirmations')}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.affEn}>AFFIRMATIONS</Text>
-            <Text style={styles.affJp}>アファメーション {affirmations.length}篇</Text>
-          </View>
-          <Text style={styles.affCount}>
-            今日 {affReadCount}/{affirmations.length}
-          </Text>
-          <Text style={styles.chev}>▸</Text>
-        </Pressable>
-
-        {/* 唱和モード */}
-        <Pressable style={styles.reciteBtn} onPress={() => router.push('/recite')}>
-          <View style={styles.playTri} />
-          <Text style={styles.reciteText}>アファメーションを唱える — 全画面</Text>
-        </Pressable>
 
         {/* 心得ライブラリ(カテゴリ一覧) */}
         <Text style={styles.secLabel}>LIBRARY — 心得ライブラリ</Text>
@@ -106,64 +85,9 @@ const styles = StyleSheet.create({
     lineHeight: 30,
     color: colors.white,
   },
-  affCard: {
-    marginHorizontal: spacing.screenX,
-    marginTop: 14,
-    backgroundColor: colors.white,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
-    borderRadius: 14,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  affEn: {
-    ...enLabel,
-    fontSize: 12,
-    color: colors.blue,
-  },
-  affJp: {
-    fontFamily: fonts.jpMedium,
-    fontSize: 12,
-    color: colors.inkSoft,
-    marginTop: 3,
-  },
-  affCount: {
-    fontFamily: fonts.en,
-    fontSize: 12,
-    color: colors.mist,
-  },
   chev: {
     color: colors.blue,
     fontSize: 15,
-  },
-  reciteBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    marginHorizontal: spacing.screenX,
-    marginTop: 10,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: colors.blueDeep,
-  },
-  playTri: {
-    width: 0,
-    height: 0,
-    borderTopWidth: 6,
-    borderBottomWidth: 6,
-    borderLeftWidth: 9,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderLeftColor: colors.white,
-  },
-  reciteText: {
-    fontFamily: fonts.jpBold,
-    fontSize: 13,
-    letterSpacing: 1,
-    color: colors.white,
   },
   secLabel: {
     ...enLabel,

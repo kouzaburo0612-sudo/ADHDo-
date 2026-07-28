@@ -10,13 +10,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Field, GhostButton, PrimaryButton } from '../components/ui';
-import { useAppStore } from '../store/useAppStore';
-import { colors, enLabel, fonts, spacing } from '../theme/tokens';
+import { Field, GhostButton, PrimaryButton } from '../../components/ui';
+import { useAppStore } from '../../store/useAppStore';
+import { colors, enLabel, fonts, spacing } from '../../theme/tokens';
 
 /**
- * アファメーション一覧。
- * 各篇に「唱えた」(日次)・編集・削除。新規追加と全画面唱和モードへの導線。
+ * BE = アファメーションタブ。
+ * 1篇ずつ全画面で唱える唱和モードが主役。各篇に「唱えた」(日次)・編集・削除・追加。
  */
 export default function Affirmations() {
   const affirmations = useAppStore((s) => s.affirmations);
@@ -37,7 +37,7 @@ export default function Affirmations() {
     const body = draftBody.trim();
     if (!body) return;
     if (editingId === 'new') {
-      await addAffirmation(title || `⑥ 追加`, body);
+      await addAffirmation(title || '追加', body);
     } else if (typeof editingId === 'number') {
       await editAffirmation(editingId, title, body);
     }
@@ -49,18 +49,15 @@ export default function Affirmations() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.header}>
-            <Pressable onPress={() => router.back()} hitSlop={10}>
-              <Text style={styles.back}>‹ MIND</Text>
-            </Pressable>
+            <Text style={styles.title}>AFFIRMATIONS</Text>
             <Text style={styles.readCount}>
               今日 {readCount}/{affirmations.length}
             </Text>
           </View>
-          <Text style={styles.title}>AFFIRMATIONS</Text>
 
           <Pressable style={styles.reciteBtn} onPress={() => router.push('/recite')}>
             <View style={styles.playTri} />
-            <Text style={styles.reciteText}>1篇ずつ全画面で唱える</Text>
+            <Text style={styles.reciteText}>唱える — 1篇ずつ全画面</Text>
           </Pressable>
 
           {affirmations.map((a) => {
@@ -152,32 +149,25 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'baseline',
+    marginBottom: 12,
   },
-  back: {
-    fontFamily: fonts.enSemi,
-    fontSize: 14,
-    letterSpacing: 1.5,
-    color: colors.blue,
+  title: {
+    ...enLabel,
+    fontSize: 20,
+    color: colors.ink,
   },
   readCount: {
     fontFamily: fonts.en,
     fontSize: 12,
     color: colors.mist,
   },
-  title: {
-    ...enLabel,
-    fontSize: 20,
-    color: colors.ink,
-    marginTop: 12,
-    marginBottom: 12,
-  },
   reciteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    paddingVertical: 15,
+    paddingVertical: 16,
     borderRadius: 12,
     backgroundColor: colors.blueDeep,
     marginBottom: 14,

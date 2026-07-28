@@ -83,7 +83,7 @@ export default function Cockpit() {
           <View style={styles.weekly}>
             <Text style={styles.weeklyLabel}>SUNDAY — 今週の更新</Text>
             <Text style={styles.weeklyText}>KPI現在値を更新し、クエストをチェックせよ。</Text>
-            <Pressable onPress={() => router.push('/(tabs)/quest')} hitSlop={8}>
+            <Pressable onPress={() => router.push('/(tabs)/vision')} hitSlop={8}>
               <Text style={styles.weeklyLink}>▸ クエストを開く</Text>
             </Pressable>
           </View>
