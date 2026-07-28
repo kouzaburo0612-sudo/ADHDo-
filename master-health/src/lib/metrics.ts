@@ -28,7 +28,13 @@ export type MetricKey =
   | 'oura_readiness'
   | 'oura_sleep_score'
   | 'oura_activity_score'
-  | 'temp_deviation';
+  | 'temp_deviation'
+  // Withings API直接連携(OAuth)で取得。HealthKitには流れてこない指標
+  | 'bone_mass'
+  | 'body_water'
+  | 'bp_sys'
+  | 'bp_dia'
+  | 'pwv';
 
 export interface MetricDef {
   key: MetricKey;
@@ -71,11 +77,17 @@ export const METRICS: Record<MetricKey, MetricDef> = {
   oura_sleep_score:    { key: 'oura_sleep_score',    label: '睡眠スコア(Oura)',     unit: '',   decimals: 0, higherIsBetter: true, aggregation: 'last' },
   oura_activity_score: { key: 'oura_activity_score', label: 'アクティビティスコア', unit: '',   decimals: 0, higherIsBetter: true, aggregation: 'last' },
   temp_deviation:      { key: 'temp_deviation',      label: '体表温偏差(Oura)',     unit: '°C', decimals: 2, higherIsBetter: null, aggregation: 'last' },
+  bone_mass:  { key: 'bone_mass',  label: '骨量',           unit: 'kg',   decimals: 2, higherIsBetter: true,  aggregation: 'last' },
+  body_water: { key: 'body_water', label: '体水分',         unit: 'kg',   decimals: 1, higherIsBetter: null,  aggregation: 'last' },
+  bp_sys:     { key: 'bp_sys',     label: '血圧(収縮期)',   unit: 'mmHg', decimals: 0, higherIsBetter: false, aggregation: 'last' },
+  bp_dia:     { key: 'bp_dia',     label: '血圧(拡張期)',   unit: 'mmHg', decimals: 0, higherIsBetter: false, aggregation: 'last' },
+  pwv:        { key: 'pwv',        label: '脈波伝播速度',   unit: 'm/s',  decimals: 1, higherIsBetter: false, aggregation: 'last' },
 };
 
 /** トレンド画面での表示順 */
 export const METRIC_ORDER: MetricKey[] = [
-  'body_fat', 'weight', 'lean_mass', 'bmi',
+  'body_fat', 'weight', 'lean_mass', 'bmi', 'bone_mass', 'body_water',
+  'bp_sys', 'bp_dia', 'pwv',
   'sleep_total', 'sleep_deep', 'sleep_rem', 'sleep_core', 'oura_sleep_score',
   'hrv', 'rhr', 'heart_rate', 'walking_hr', 'spo2', 'vo2max', 'wrist_temp', 'resp_rate',
   'oura_readiness', 'oura_activity_score', 'temp_deviation',

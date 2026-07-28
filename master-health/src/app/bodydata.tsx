@@ -25,8 +25,8 @@ import { syncHealthData } from '@/lib/sync';
 
 /** 系統別カテゴリ定義。順序は指示どおり 体組成→心血管→睡眠→活動→リカバリー */
 const CATEGORIES: { emoji: string; title: string; metrics: MetricKey[] }[] = [
-  { emoji: '🏋️', title: '体組成', metrics: ['weight', 'body_fat', 'lean_mass', 'bmi'] },
-  { emoji: '❤️', title: '心血管', metrics: ['rhr', 'hrv', 'heart_rate', 'walking_hr', 'vo2max'] },
+  { emoji: '🏋️', title: '体組成', metrics: ['weight', 'body_fat', 'lean_mass', 'bone_mass', 'body_water', 'bmi'] },
+  { emoji: '❤️', title: '心血管', metrics: ['rhr', 'hrv', 'bp_sys', 'bp_dia', 'pwv', 'heart_rate', 'walking_hr', 'vo2max'] },
   { emoji: '😴', title: '睡眠', metrics: ['oura_sleep_score', 'sleep_total', 'sleep_deep', 'sleep_rem', 'sleep_core'] },
   { emoji: '🔥', title: '活動', metrics: ['oura_activity_score', 'steps', 'active_energy', 'workout_energy', 'exercise_time', 'distance', 'flights'] },
   { emoji: '🧠', title: 'リカバリー', metrics: ['oura_readiness', 'temp_deviation', 'wrist_temp', 'resp_rate', 'spo2', 'basal_energy'] },
@@ -34,6 +34,8 @@ const CATEGORIES: { emoji: string; title: string; metrics: MetricKey[] }[] = [
 
 /** Oura API直接取得の指標(ソースバッジ表示用) */
 const OURA_METRICS = new Set<MetricKey>(['oura_readiness', 'oura_sleep_score', 'oura_activity_score', 'temp_deviation']);
+/** Withings API直接取得の指標(ソースバッジ表示用) */
+const WITHINGS_METRICS = new Set<MetricKey>(['bone_mass', 'body_water', 'bp_sys', 'bp_dia', 'pwv']);
 
 const MODES: { value: RangeMode; label: string }[] = [
   { value: 'day', label: '月' },
@@ -187,6 +189,9 @@ function MetricCard({ metric, rows, onPress }: { metric: MetricKey; rows: Metric
             <Text style={styles.metricLabel}>{def.label}</Text>
             {OURA_METRICS.has(metric) && (
               <View style={styles.srcBadge}><Text style={styles.srcBadgeText}>Oura</Text></View>
+            )}
+            {WITHINGS_METRICS.has(metric) && (
+              <View style={styles.srcBadge}><Text style={styles.srcBadgeText}>Withings</Text></View>
             )}
           </View>
           <Text style={styles.metricValue}>

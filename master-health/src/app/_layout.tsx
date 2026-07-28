@@ -1,12 +1,13 @@
 import {
   Montserrat_500Medium, Montserrat_600SemiBold, Montserrat_700Bold, useFonts,
 } from '@expo-google-fonts/montserrat';
+import * as ExpoLinking from 'expo-linking';
 import * as Notifications from 'expo-notifications';
 import { DarkTheme, ThemeProvider, useRouter } from 'expo-router';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { AppState } from 'react-native';
+import { Alert, AppState, Linking } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { Onboarding } from '@/components/Onboarding';
@@ -49,7 +50,22 @@ export default function RootLayout() {
         setTimeout(() => router.push(url as never), 300); // ナビゲーション初期化待ち
       }
     });
-    return () => { sub.remove(); notifSub.remove(); };
+    // Withings OAuthの戻り(vyta://withings-callback?code=...)をトークン交換につなぐ
+    const handleDeepLink = (url: string) => {
+      if (!url.includes('withings-callback')) return;
+      const { queryParams } = ExpoLinking.parse(url);
+      const code = String(queryParams?.code ?? '');
+      const state = String(queryParams?.state ?? '');
+      const err = String(queryParams?.error ?? '');
+      if (err) { Alert.alert('Withings連携', `認可がキャンセルされました(${err})`); return; }
+      import('@/lib/withings')
+        .then((m) => m.completeWithingsAuth(code, state))
+        .then((r) => Alert.alert('Withings連携完了 ⚖️', `過去1年分のデータ(${r.synced}件)を取り込みました。Body Dataタブで確認できます。`))
+        .catch((e) => Alert.alert('Withings連携に失敗しました', e instanceof Error ? e.message : String(e)));
+    };
+    Linking.getInitialURL().then((u) => { if (u) handleDeepLink(u); }).catch(() => {});
+    const linkSub = Linking.addEventListener('url', (e) => handleDeepLink(e.url));
+    return () => { sub.remove(); notifSub.remove(); linkSub.remove(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

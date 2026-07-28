@@ -49,6 +49,11 @@ export async function syncHealthData(force = false): Promise<{ synced: number }>
 
   // Ouraスコア(トークン設定時のみ)。失敗してもHK同期は成立させる
   try { await syncOura(!last || force ? 90 : 14); } catch { /* 次回リトライ */ }
+  // Withings独自データ(連携済みのときのみ)
+  try {
+    const { syncWithings } = await import('@/lib/withings');
+    await syncWithings(!last || force ? 365 : 14);
+  } catch { /* 次回リトライ */ }
 
   return { synced: rows.length };
 }

@@ -15,6 +15,7 @@ import { useHealthAuth } from '@/hooks/useHealthData';
 import { kvSet } from '@/lib/db';
 import { rescheduleReminders } from '@/lib/notifications';
 import { getOuraToken, setOuraToken, syncOura } from '@/lib/oura';
+import { disconnectWithings, isWithingsConnected, startWithingsAuth, syncWithings } from '@/lib/withings';
 import { lastSyncDate, syncHealthData } from '@/lib/sync';
 import {
   DEFAULT_SETTINGS, getApiKey, loadSettings, saveSettings, setApiKey,
@@ -34,6 +35,8 @@ export function SettingsBody() {
   const [ouraInput, setOuraInput] = useState('');
   const [ouraSet, setOuraSet] = useState(false);
   const [ouraBusy, setOuraBusy] = useState(false);
+  const [withingsOn, setWithingsOn] = useState(false);
+  const [withingsBusy, setWithingsBusy] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [avgTdee, setAvgTdee] = useState<number | null>(null);
@@ -45,6 +48,7 @@ export function SettingsBody() {
     getProfile().then(setProfile);
     getApiKey().then((k) => setKeySet(k != null));
     getOuraToken().then((t) => setOuraSet(t != null)).catch(() => {});
+    isWithingsConnected().then(setWithingsOn).catch(() => {});
     lastSyncDate().then(setLastSync);
     // 直近7日の平均TDEE(消費)と内訳
     balanceSeries(7).then((s) => {
@@ -266,6 +270,47 @@ export function SettingsBody() {
             <Text style={styles.hint}>
               睡眠時間・HRVなどの基本データはこれまで通りヘルスケア経由です。複数デバイスで同じ指標がある場合の優先順位は、iOSヘルスケアアプリ → データソースの設定に従います
             </Text>
+          </Card>
+
+          <SectionHead emoji="⚖️" title="Withings連携(骨量・体水分・血圧・血管指標)" />
+          <Card>
+            <Text style={styles.hint}>
+              {withingsOn
+                ? '連携済み。骨量・体水分・血圧・脈波伝播速度を同期しています(Body Dataタブに表示)。'
+                : 'ヘルスケア経由では取れないWithings独自データ(骨量・体水分・血圧・脈波伝播速度)をAPIから直接取得します。ボタンを押すとWithingsのログイン画面が開き、許可後に自動でVYTAへ戻ります。'}
+            </Text>
+            {withingsOn ? (
+              <View style={styles.btnRow}>
+                <Pressable
+                  style={styles.btnGhost}
+                  disabled={withingsBusy}
+                  onPress={async () => {
+                    setWithingsBusy(true);
+                    try {
+                      const r = await syncWithings(90);
+                      Alert.alert('同期完了', `${r?.synced ?? 0}件を取り込みました。`);
+                    } catch {
+                      Alert.alert('同期に失敗しました', '通信環境を確認して再試行してください。');
+                    } finally { setWithingsBusy(false); }
+                  }}
+                >
+                  <Text style={styles.btnGhostText}>{withingsBusy ? '同期中…' : '今すぐ同期'}</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.btnGhost}
+                  onPress={() => Alert.alert('連携を解除', 'Withingsのデータ同期を停止します(取得済みデータは残ります)。', [
+                    { text: 'キャンセル', style: 'cancel' },
+                    { text: '解除する', style: 'destructive', onPress: async () => { await disconnectWithings(); setWithingsOn(false); } },
+                  ])}
+                >
+                  <Text style={styles.btnGhostText}>連携解除</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable style={styles.btn} onPress={() => { startWithingsAuth().catch(() => Alert.alert('ブラウザを開けませんでした')); }}>
+                <Text style={styles.btnText}>Withingsと連携する</Text>
+              </Pressable>
+            )}
           </Card>
 
           <SectionHead emoji="🔑" title="AI(Anthropic APIキー)" />
