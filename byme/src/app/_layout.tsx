@@ -16,8 +16,8 @@ import { router, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { SQLiteProvider, useSQLiteContext } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, type ReactNode } from 'react';
-import { View } from 'react-native';
+import { Component, useEffect, type ReactNode } from 'react';
+import { ScrollView, Text, View } from 'react-native';
 import { migrateDbIfNeeded } from '../db/schema';
 import { configureNotificationHandler } from '../lib/notifications';
 import { useAppStore } from '../store/useAppStore';
@@ -49,8 +49,9 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
-    <SQLiteProvider databaseName="byme.db" onInit={migrateDbIfNeeded}>
-      <Bootstrap>
+    <RootErrorBoundary>
+      <SQLiteProvider databaseName="byme.db" onInit={migrateDbIfNeeded}>
+        <Bootstrap>
         <StatusBar style="dark" />
         <Stack
           screenOptions={{
@@ -67,9 +68,50 @@ export default function RootLayout() {
           <Stack.Screen name="master/[type]" />
           <Stack.Screen name="master/item/[id]" options={{ presentation: 'modal' }} />
         </Stack>
-      </Bootstrap>
-    </SQLiteProvider>
+        </Bootstrap>
+      </SQLiteProvider>
+    </RootErrorBoundary>
   );
+}
+
+/**
+ * 最後の砦: 起動時・描画時の例外をクラッシュ(白画面/強制終了)にせず、
+ * エラー内容を画面に表示する。スクリーンショットで原因を特定できる。
+ */
+class RootErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(): void {
+    SplashScreen.hideAsync().catch(() => {});
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <View style={{ flex: 1, backgroundColor: '#0A101B' }}>
+          <ScrollView contentContainerStyle={{ padding: 24, paddingTop: 80 }}>
+            <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '700', marginBottom: 12 }}>
+              エラーが発生しました
+            </Text>
+            <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, lineHeight: 20, marginBottom: 16 }}>
+              この画面のスクリーンショットを送ってください。データは失われていません。
+            </Text>
+            <Text style={{ color: '#E88A85', fontSize: 12, lineHeight: 18 }}>
+              {this.state.error.message}
+            </Text>
+            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, lineHeight: 15, marginTop: 12 }}>
+              {this.state.error.stack?.slice(0, 1500)}
+            </Text>
+          </ScrollView>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 function Bootstrap({ children }: { children: ReactNode }) {

@@ -22,8 +22,9 @@ export interface DuplicateDetector {
 
 /** 比較用の正規化: NFKC→小文字→空白・句読点・記号の除去 */
 export function normalizeText(s: string): string {
-  return s
-    .normalize('NFKC')
+  // String.prototype.normalize が無いJSエンジンでも落とさない
+  const nfkc = typeof s.normalize === 'function' ? s.normalize('NFKC') : s;
+  return nfkc
     .toLowerCase()
     .replace(/[\s。、．，.,!?!?・:;:;「」『』()()\[\]【】\-—–…‥"'"']/g, '');
 }

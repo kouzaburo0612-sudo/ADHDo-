@@ -1,10 +1,17 @@
 import * as Haptics from 'expo-haptics';
-import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import * as Speech from 'expo-speech';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+
+// 音声読み上げ(OS標準)。ネイティブモジュール欠落時もアプリを落とさない
+let Speech: { speak: (text: string, opts?: object) => void; stop: () => void } | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  Speech = require('expo-speech');
+} catch {
+  Speech = null;
+}
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Tri } from '../components/tri';
 import type {
@@ -99,11 +106,11 @@ export default function Ritual() {
   }, [step, segIdx, splitMode]);
 
   useEffect(() => {
-    if (!ttsEnabled || !speakText) return;
+    if (!ttsEnabled || !speakText || !Speech) return;
     Speech.stop();
     Speech.speak(speakText, { language: 'ja-JP', rate: 0.95 });
     return () => {
-      Speech.stop();
+      Speech?.stop();
     };
   }, [speakText, ttsEnabled]);
 
@@ -156,7 +163,7 @@ export default function Ritual() {
   // 離脱時に現在位置を保存(閉じても同日なら続きから再開できる)
   useEffect(() => {
     return () => {
-      Speech.stop();
+      Speech?.stop();
       const s = sessionRef.current;
       if (s && !viewOnly && !finishedRef.current && s.status === 'IN_PROGRESS') {
         saveProgress(s.id, Math.min(idxRef.current, steps.length - 1), baseElapsedRef.current);
@@ -210,7 +217,7 @@ export default function Ritual() {
     <LinearGradient colors={gradient} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={styles.fill}>
       {imaging?.imageUrl ? (
         <>
-          <Image source={{ uri: imaging.imageUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
+          <Image source={{ uri: imaging.imageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: `rgba(0,0,0,${imageDim})` }]} />
         </>
       ) : null}
