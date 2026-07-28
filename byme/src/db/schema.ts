@@ -18,8 +18,10 @@ import {
  * v3: マスターコンテンツ更新に伴う体験クエストの全28件化。
  *     タイトル一致(改名マッピング込み)でチェック状態を維持したままupsertする。
  * v4: 項目ごとの日次読了記録(reads)を追加。
+ * v5: 元メモから漏れていた心得を追補(成功の習慣9項目・八正道の正見/正思惟/正業/正定)。
+ *     カテゴリ+本文の一致でupsertし、既存のオンオフ・カスタム項目は維持する。
  */
-const LATEST_VERSION = 4;
+const LATEST_VERSION = 5;
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
@@ -38,6 +40,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
       );
     `);
   }
+  if (current < 5) await upsertSeedPrinciples(db);
   await db.execAsync(`PRAGMA user_version = ${LATEST_VERSION}`);
 }
 
@@ -133,6 +136,34 @@ const TAIKEN_RENAMES: [string, string][] = [
   ['バリ再訪', 'バリ島再訪'],
   ['海外ポーカー100万勝つ', '海外のポーカーで100万勝つ'],
 ];
+
+/**
+ * 心得シードをカテゴリ+本文の一致でupsertする。
+ * 既存項目は表示順だけシード順に揃え(オンオフは維持)、無い項目を追加する。
+ * ユーザーが追加したカスタム項目には触れない。
+ */
+async function upsertSeedPrinciples(db: SQLiteDatabase): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    for (let i = 0; i < PRINCIPLES.length; i++) {
+      const p = PRINCIPLES[i];
+      const row = await db.getFirstAsync<{ id: number }>(
+        'SELECT id FROM principles WHERE category = ? AND text = ?',
+        p.category,
+        p.text
+      );
+      if (row) {
+        await db.runAsync('UPDATE principles SET sort_order = ? WHERE id = ?', i, row.id);
+      } else {
+        await db.runAsync(
+          'INSERT INTO principles (category, text, sort_order) VALUES (?, ?, ?)',
+          p.category,
+          p.text,
+          i
+        );
+      }
+    }
+  });
+}
 
 /**
  * 体験カテゴリをマスターコンテンツの全28件に揃える。
