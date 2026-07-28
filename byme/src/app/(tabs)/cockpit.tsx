@@ -13,6 +13,7 @@ import {
   SLEEP_RULES,
 } from '../../data/master';
 import { daysUntil } from '../../lib/dates';
+import { isDayComplete } from '../../lib/streak';
 import { todaysCreed, todaysPrinciple, useAppStore } from '../../store/useAppStore';
 import { colors, enLabel, fonts, spacing } from '../../theme/tokens';
 
@@ -37,6 +38,8 @@ export default function Cockpit() {
   const dIpo = daysUntil(DEADLINE_IPO);
   const isSunday = new Date().getDay() === 0;
   const [bodyRefOpen, setBodyRefOpen] = useState(false);
+  const ritualDone = todayLog.theater === 1 && todayLog.principle === 1;
+  const dayComplete = isDayComplete(todayLog);
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
@@ -108,15 +111,25 @@ export default function Cockpit() {
           </View>
         </View>
 
-        {/* 上映ボタン */}
+        {/* 朝の儀式(オートパイロット) */}
         <Pressable
-          style={[styles.playBtn, todayLog.theater === 1 && styles.playBtnDone]}
-          onPress={() => router.push('/theater')}
+          style={[styles.playBtn, ritualDone && styles.playBtnDone]}
+          onPress={() => router.push('/ritual')}
         >
           <View style={styles.playTri} />
           <Text style={styles.playText}>
-            {todayLog.theater === 1 ? 'もう一度、未来を観る' : '今日の上映を始める — 3分'}
+            {ritualDone ? 'もう一度、儀式をする' : '今日の儀式を始める — 3分'}
           </Text>
+        </Pressable>
+        {!dayComplete ? (
+          <Text style={styles.streakWarn}>
+            {streak > 0
+              ? `▼ ${streak}日連続が、今夜0時に消える。`
+              : '▼ 今日を1日目にせよ。'}
+          </Text>
+        ) : null}
+        <Pressable onPress={() => router.push('/theater')} hitSlop={6}>
+          <Text style={styles.theaterLink}>上映だけ観る ▸</Text>
         </Pressable>
 
         {/* THE NUMBERS */}
@@ -370,6 +383,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     letterSpacing: 2,
     color: colors.white,
+  },
+  streakWarn: {
+    fontFamily: fonts.jpBold,
+    fontSize: 12,
+    color: colors.red,
+    textAlign: 'center',
+    marginTop: 10,
+    paddingHorizontal: spacing.screenX,
+  },
+  theaterLink: {
+    fontFamily: fonts.jp,
+    fontSize: 11,
+    color: colors.mist,
+    textAlign: 'center',
+    marginTop: 6,
   },
   section: {
     paddingHorizontal: spacing.screenX,

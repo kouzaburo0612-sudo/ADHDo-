@@ -12,10 +12,12 @@ import type {
   Scene,
   SettingKey,
 } from '../db/types';
-import { CREED } from '../data/master';
-import { dayOfYear, parseHHMM, todayKey } from '../lib/dates';
-import { computeStreak } from '../lib/streak';
+import { CREED, DEADLINE_2026 } from '../data/master';
+import { dayOfYear, daysUntil, parseHHMM, todayKey } from '../lib/dates';
+import { computeStreak, isDayComplete } from '../lib/streak';
 import {
+  refreshStreakGuard,
+  scheduleExtraNotifications,
   scheduleMorningNotification,
   scheduleSundayKpiReminder,
 } from '../lib/notifications';
@@ -190,13 +192,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     const todayLog = await q.setDailyLogField(db(), today, field, value);
     const dailyLogs = await q.listDailyLogs(db());
     set({ todayLog, dailyLogs, streak: computeStreak(dailyLogs) });
+    // 完了状態が変わったらストリーク防衛通知を組み直す
+    await get().refreshNotifications();
   },
 
   refreshNotifications: async () => {
-    const { settings, principles } = get();
+    const { settings, principles, affirmations, todayLog, streak } = get();
     try {
       const wake = parseHHMM(settings.wake_time ?? '') ?? { hour: 6, minute: 0 };
       await scheduleMorningNotification(wake.hour, wake.minute, todaysGuidanceText(principles));
+      await scheduleExtraNotifications(
+        (settings.notify_extra_enabled ?? '1') === '1',
+        noonBodyText(principles),
+        eveningBodyText(affirmations.map((a) => a.body))
+      );
+      await refreshStreakGuard(
+        (settings.notify_streak_enabled ?? '1') === '1',
+        isDayComplete(todayLog),
+        streak
+      );
       await scheduleSundayKpiReminder((settings.notify_kpi_enabled ?? '1') === '1');
     } catch {
       // 通知権限なし等は無視(設定画面から再許可できる)
@@ -224,4 +238,20 @@ export function todaysGuidanceText(principles: Principle[]): string {
   const creed = todaysCreed();
   if (!p) return creed;
   return dayOfYear() % 2 === 0 ? p.text : creed;
+}
+
+/** 昼通知の本文: 残り日数+朝とは別の心得(慣れ防止に7項ずらす) */
+export function noonBodyText(principles: Principle[]): string {
+  const days = daysUntil(DEADLINE_2026);
+  const active = principles.filter((p) => p.active === 1);
+  const prefix = `2026年末まで残り${days}日。`;
+  if (active.length === 0) return `${prefix}1日も、1円も、ごまかせない。`;
+  const p = active[(dayOfYear() + 7) % active.length];
+  return `${prefix}${p.text}`;
+}
+
+/** 夕通知の本文: アファメーション本文をローテーション */
+export function eveningBodyText(bodies: string[]): string {
+  if (bodies.length === 0) return 'なりたい自分として、今日を締めくくれ。';
+  return bodies[dayOfYear() % bodies.length];
 }

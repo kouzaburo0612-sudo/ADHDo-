@@ -72,4 +72,6 @@ export type SettingKey =
   | 'mvv_values_company'
   | 'theme_2026'
   | 'wake_time' // "HH:MM"(起床時刻=朝通知時刻。恒久ルール)
-  | 'notify_kpi_enabled'; // "1" | "0"(日曜のKPI更新催促)
+  | 'notify_kpi_enabled' // "1" | "0"(日曜のKPI更新催促)
+  | 'notify_extra_enabled' // "1" | "0"(昼・夕の刷り込み通知)
+  | 'notify_streak_enabled'; // "1" | "0"(夜のストリーク防衛通知)

@@ -19,6 +19,8 @@ export default function Settings() {
 
   const wake = parseHHMM(settings.wake_time ?? '') ?? { hour: 6, minute: 0 };
   const kpiEnabled = (settings.notify_kpi_enabled ?? '1') === '1';
+  const extraEnabled = (settings.notify_extra_enabled ?? '1') === '1';
+  const streakEnabled = (settings.notify_streak_enabled ?? '1') === '1';
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
@@ -41,7 +43,35 @@ export default function Settings() {
           />
         </Card>
 
-        <Card style={{ gap: 10, marginBottom: 14 }}>
+        <Card style={{ gap: 14, marginBottom: 14 }}>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.switchTitle}>昼・夕の刷り込み通知</Text>
+              <Text style={styles.switchDesc}>12:30 残り日数+指針 / 17:30 アファメーション</Text>
+            </View>
+            <Switch
+              value={extraEnabled}
+              onValueChange={async (v) => {
+                await saveSetting('notify_extra_enabled', v ? '1' : '0');
+                await refreshNotifications();
+              }}
+              trackColor={{ true: colors.blue, false: colors.line }}
+            />
+          </View>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.switchTitle}>夜のストリーク防衛通知</Text>
+              <Text style={styles.switchDesc}>未完了の日だけ21:30「◯日連続が今夜消える」</Text>
+            </View>
+            <Switch
+              value={streakEnabled}
+              onValueChange={async (v) => {
+                await saveSetting('notify_streak_enabled', v ? '1' : '0');
+                await refreshNotifications();
+              }}
+              trackColor={{ true: colors.blue, false: colors.line }}
+            />
+          </View>
           <View style={styles.switchRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.switchTitle}>日曜夕のKPI更新催促</Text>
