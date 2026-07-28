@@ -15,6 +15,7 @@ type EventInfo = {
   title: string;
   durationMinutes: number | null;
   deadline: string | null;
+  memo: string | null;
   status: string;
   confirmedSlotId: string | null;
 };
@@ -269,6 +270,12 @@ export default function RespondPage() {
         ○△×で回答してください(登録不要)
         {event.deadline && ` — 締切: ${event.deadline}`}
       </p>
+
+      {event.memo && (
+        <div className="info-box mt-2" style={{ whiteSpace: "pre-line" }}>
+          {event.memo}
+        </div>
+      )}
 
       <div className="card mt-2">
         <div className="chip-row">

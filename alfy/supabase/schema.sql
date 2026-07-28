@@ -13,6 +13,7 @@ create table events (
   time_from time,                       -- 時間帯フィルタ(任意)
   time_to time,
   ng_weekdays int[],                    -- NG曜日 0=日〜6=土(任意)
+  memo text,                            -- 参加者に表示するメモ(任意)
   status text not null default 'open',  -- open / confirmed / expired
   confirmed_slot_id uuid,
   delete_at timestamptz not null,       -- 確定or締切から30日後

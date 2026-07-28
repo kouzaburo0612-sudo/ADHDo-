@@ -77,6 +77,7 @@ export async function generateCandidates(params: {
   maxCandidates: number | null; // null = できるだけ
   periodFrom: string | null;
   periodTo: string | null;
+  candidateDates: string[]; // カレンダーで選んだ候補日(空 = 制限なし)
   timeFrom: string | null;
   timeTo: string | null;
   ngWeekdays: number[]; // 0=日〜6=土(要件A)
@@ -93,7 +94,11 @@ export async function generateCandidates(params: {
     `ユーザーが書いた空き時間の範囲内でのみ候補を作ってください(勝手に空きを追加しない)。`,
     ...imageRules(params.images, params.freeText),
   ];
-  if (params.periodFrom || params.periodTo) {
+  if (params.candidateDates.length > 0) {
+    rules.push(
+      `候補は次の日付の中からのみ作成してください: ${params.candidateDates.join(", ")}`
+    );
+  } else if (params.periodFrom || params.periodTo) {
     rules.push(
       `候補期間: ${params.periodFrom ?? "指定なし"} 〜 ${params.periodTo ?? "指定なし"}。範囲外の日付は除外してください。`
     );
@@ -155,9 +160,14 @@ ${rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}`;
     });
   }
 
-  // NG曜日はAI任せにせず、サーバー側でも二重にフィルタして保証する(要件A-3)
+  // NG曜日・候補日はAI任せにせず、サーバー側でも二重にフィルタして保証する
   const ngSet = new Set(params.ngWeekdays);
-  return candidates.filter((c) => !ngSet.has(weekdayOf(c.date)));
+  const dateSet = new Set(params.candidateDates);
+  return candidates.filter(
+    (c) =>
+      !ngSet.has(weekdayOf(c.date)) &&
+      (dateSet.size === 0 || dateSet.has(c.date))
+  );
 }
 
 // §5b 自動回答: 空き情報 → 候補ごとの yes/maybe/no

@@ -258,6 +258,55 @@ tr.all-yes td, tr.all-yes th { background: #e7f3ec; }
 .mark-maybe { color: var(--maybe); font-weight: 700; }
 .mark-no { color: var(--ng); font-weight: 700; }
 
+/* カレンダー(候補日の複数選択) */
+.cal {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+}
+.cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.cal-title { font-size: 16px; }
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.cal-head-row { margin-bottom: 4px; }
+.cal-head {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 2px 0;
+}
+.cal-day {
+  aspect-ratio: 1;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 15px;
+  font-family: var(--font-sans);
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+}
+.cal-day:disabled {
+  color: #c9c4b8;
+  background: #f4f1ea;
+  cursor: default;
+}
+.cal-day.selected {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+  font-weight: 700;
+}
+
 /* 通知・メッセージ */
 .error-box {
   background: #fdecea;

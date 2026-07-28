@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
     timeFrom?: string | null;
     timeTo?: string | null;
     ngWeekdays?: unknown;
+    candidateDates?: unknown;
   };
   try {
     body = await req.json();
@@ -49,6 +50,12 @@ export async function POST(req: NextRequest) {
   const ngWeekdays = Array.isArray(body.ngWeekdays)
     ? body.ngWeekdays.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6)
     : [];
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  const candidateDates = Array.isArray(body.candidateDates)
+    ? body.candidateDates
+        .filter((d): d is string => typeof d === "string" && dateRe.test(d))
+        .slice(0, 62)
+    : [];
 
   try {
     const candidates = await generateCandidates({
@@ -58,6 +65,7 @@ export async function POST(req: NextRequest) {
       maxCandidates: body.maxCandidates ?? null,
       periodFrom: body.periodFrom ?? null,
       periodTo: body.periodTo ?? null,
+      candidateDates,
       timeFrom: body.timeFrom ?? null,
       timeTo: body.timeTo ?? null,
       ngWeekdays,

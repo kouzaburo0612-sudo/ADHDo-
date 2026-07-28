@@ -11,11 +11,10 @@ export async function GET(
   const db = supabaseAdmin();
   const token = req.nextUrl.searchParams.get("token");
 
+  // select("*") にしておくと、マイグレーション未適用(列がまだ無い)でも動く
   const { data: event, error } = await db
     .from("events")
-    .select(
-      "id, code, admin_token, title, duration_minutes, deadline, period_from, period_to, time_from, time_to, status, confirmed_slot_id, created_at"
-    )
+    .select("*")
     .eq("code", params.code)
     .single();
 
@@ -56,6 +55,7 @@ export async function GET(
       title: event.title,
       durationMinutes: event.duration_minutes,
       deadline: event.deadline,
+      memo: event.memo ?? null,
       status: event.status,
       confirmedSlotId: event.confirmed_slot_id,
       isAdmin,

@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
     timeFrom?: string | null;
     timeTo?: string | null;
     ngWeekdays?: unknown;
+    memo?: string;
     slots?: SlotInput[];
   };
   try {
@@ -69,8 +70,11 @@ export async function POST(req: NextRequest) {
       period_to: body.periodTo || null,
       time_from: body.timeFrom || null,
       time_to: body.timeTo || null,
-      // マイグレーション未適用のDBでも作成が失敗しないよう、選択時のみ送る
+      // マイグレーション未適用のDBでも作成が失敗しないよう、値がある時のみ送る
       ...(ngWeekdays.length > 0 ? { ng_weekdays: ngWeekdays } : {}),
+      ...((body.memo ?? "").trim()
+        ? { memo: (body.memo ?? "").trim().slice(0, 1000) }
+        : {}),
       delete_at: deleteAt,
     })
     .select("id, code")
