@@ -4,10 +4,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, enLabel, fonts } from '../../theme/tokens';
 
 const TAB_LABELS: Record<string, { en: string; jp: string }> = {
-  mind: { en: 'MIND', jp: '心' },
-  cockpit: { en: 'COCKPIT', jp: '数字と期限' },
-  affirmations: { en: 'BE', jp: 'アファメーション' },
-  vision: { en: 'VISION', jp: '未来とクエスト' },
+  today: { en: 'TODAY', jp: '今日' },
+  master: { en: 'MASTER', jp: '正本' },
+  history: { en: 'HISTORY', jp: '記録' },
+  settings: { en: 'SETTINGS', jp: '設定' },
 };
 
 /** 英字ラベル+日本語サブラベル、アクティブ時はブルーの下線 */
@@ -23,6 +23,7 @@ function BymeTabBar({ state, navigation }: BottomTabBarProps) {
             key={route.key}
             accessibilityRole="tab"
             accessibilityState={{ selected: focused }}
+            accessibilityLabel={`${label.en} ${label.jp}`}
             onPress={() => {
               const event = navigation.emit({
                 type: 'tabPress',
@@ -48,17 +49,17 @@ function BymeTabBar({ state, navigation }: BottomTabBarProps) {
 export default function TabsLayout() {
   return (
     <Tabs
-      initialRouteName="cockpit"
+      initialRouteName="today"
       screenOptions={{
         headerShown: false,
         sceneStyle: { backgroundColor: colors.paper },
       }}
       tabBar={(props) => <BymeTabBar {...props} />}
     >
-      <Tabs.Screen name="mind" />
-      <Tabs.Screen name="cockpit" />
-      <Tabs.Screen name="affirmations" />
-      <Tabs.Screen name="vision" />
+      <Tabs.Screen name="today" />
+      <Tabs.Screen name="master" />
+      <Tabs.Screen name="history" />
+      <Tabs.Screen name="settings" />
     </Tabs>
   );
 }

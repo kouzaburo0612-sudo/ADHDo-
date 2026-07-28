@@ -2,58 +2,54 @@ import { create } from 'zustand';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import * as q from '../db/queries';
 import type {
-  Affirmation,
-  DailyLog,
-  DailyLogField,
-  Kpi,
-  Principle,
-  Quest,
-  ReadKind,
-  Scene,
+  ContentItem,
+  ContentType,
+  MergeLogRow,
+  RitualMode,
+  RitualSession,
   SettingKey,
 } from '../db/types';
-import { CREED, DEADLINE_2026 } from '../data/master';
-import { dayOfYear, daysUntil, parseHHMM, todayKey } from '../lib/dates';
-import { computeStreak, isDayComplete } from '../lib/streak';
-import {
-  refreshStreakGuard,
-  scheduleExtraNotifications,
-  scheduleMorningNotification,
-  scheduleSundayKpiReminder,
-} from '../lib/notifications';
+import { parseHHMM, todayKey } from '../lib/dates';
+import { duplicateDetector, type DuplicateMatch } from '../lib/duplicates';
+import { rescheduleAll } from '../lib/notifications';
+import { buildPlaylist } from '../lib/playlist';
+import { computeStats, type HabitStats } from '../lib/stats';
 
 interface AppState {
   ready: boolean;
   settings: Record<string, string>;
-  kpis: Kpi[];
-  principles: Principle[];
-  affirmations: Affirmation[];
-  scenes: Scene[];
-  quests: Quest[];
-  dailyLogs: DailyLog[];
-  todayLog: DailyLog;
-  streak: number;
-  /** 今日読了した項目ID(日次リセット) */
-  readsToday: { principle: number[]; affirmation: number[] };
+  items: ContentItem[];
+  sessions: RitualSession[];
+  mergeLog: MergeLogRow[];
+  stats: HabitStats;
 
   init: (db: SQLiteDatabase) => Promise<void>;
   reload: () => Promise<void>;
-
   saveSetting: (key: SettingKey, value: string) => Promise<void>;
-  updateKpiCurrent: (id: number, current: number) => Promise<void>;
-  togglePrinciple: (id: number, active: boolean) => Promise<void>;
-  addPrinciple: (category: string, text: string) => Promise<void>;
-  editPrinciple: (id: number, text: string) => Promise<void>;
-  removePrinciple: (id: number) => Promise<void>;
-  addAffirmation: (title: string, body: string) => Promise<void>;
-  editAffirmation: (id: number, title: string, body: string) => Promise<void>;
-  removeAffirmation: (id: number) => Promise<void>;
-  /** 項目ごとの「読んだ」トグル(今日) */
-  markRead: (kind: ReadKind, itemId: number, read: boolean) => Promise<void>;
-  toggleQuest: (id: number, done: boolean) => Promise<void>;
-  setTodayField: (field: DailyLogField, value: boolean) => Promise<void>;
 
-  /** 朝通知(起床時刻・本文=今日の指針)と日曜KPI催促を再スケジュール */
+  // 儀式セッション
+  /** 今日の未完了セッション(続きから再開の対象) */
+  todayInProgress: () => RitualSession | null;
+  /** 今日の完了セッション(再閲覧の対象) */
+  todayCompleted: () => RitualSession | null;
+  /** セッションを開始 or 再開して返す */
+  startOrResumeSession: (mode: RitualMode) => Promise<RitualSession>;
+  /** 明示的な最初からやり直し(既存の途中セッションは離脱扱い) */
+  restartSession: (mode: RitualMode) => Promise<RitualSession>;
+  saveProgress: (sessionId: number, index: number, elapsed: number) => Promise<void>;
+  finishSession: (session: RitualSession, elapsed: number) => Promise<void>;
+
+  // MASTER CRUD
+  addItem: (input: q.NewItemInput) => Promise<number>;
+  editItem: (id: number, patch: q.ItemPatch) => Promise<void>;
+  archive: (id: number) => Promise<void>;
+  restore: (id: number) => Promise<void>;
+  moveItem: (id: number, dir: -1 | 1) => Promise<void>;
+  merge: (canonicalId: number, mergedId: number, reason: string) => Promise<void>;
+  markIndependent: (id: number) => Promise<void>;
+  /** 追加・編集時の類似チェック(同typeの有効項目と比較) */
+  findSimilar: (type: ContentType, text: string, excludeId?: number) => Promise<DuplicateMatch<ContentItem>[]>;
+
   refreshNotifications: () => Promise<void>;
 }
 
@@ -64,27 +60,26 @@ function db(): SQLiteDatabase {
   return _db;
 }
 
-const EMPTY_LOG: DailyLog = {
-  date: '',
-  theater: 0,
-  principle: 0,
-  body_meditation: 0,
-  body_diet: 0,
-  body_training: 0,
+const EMPTY_STATS: HabitStats = {
+  todayDone: false,
+  streak: 0,
+  longestStreak: 0,
+  monthDone: 0,
+  monthDays: 1,
+  rate30: 0,
+  totalDays: 0,
+  modeBreakdown: {},
+  abandonedCount: 0,
+  resumedCompletedCount: 0,
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
   ready: false,
   settings: {},
-  kpis: [],
-  principles: [],
-  affirmations: [],
-  scenes: [],
-  quests: [],
-  dailyLogs: [],
-  todayLog: EMPTY_LOG,
-  streak: 0,
-  readsToday: { principle: [], affirmation: [] },
+  items: [],
+  sessions: [],
+  mergeLog: [],
+  stats: EMPTY_STATS,
 
   init: async (database) => {
     _db = database;
@@ -95,34 +90,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   reload: async () => {
     const d = db();
-    const today = todayKey();
-    const [settings, kpis, principles, affirmations, scenes, quests, dailyLogs, todayLog, reads] =
-      await Promise.all([
-        q.getAllSettings(d),
-        q.listKpis(d),
-        q.listPrinciples(d),
-        q.listAffirmations(d),
-        q.listScenes(d),
-        q.listQuests(d),
-        q.listDailyLogs(d),
-        q.getDailyLog(d, today),
-        q.listReadsForDate(d, today),
-      ]);
-    set({
-      settings,
-      kpis,
-      principles,
-      affirmations,
-      scenes,
-      quests,
-      dailyLogs,
-      todayLog,
-      streak: computeStreak(dailyLogs),
-      readsToday: {
-        principle: reads.filter((r) => r.kind === 'principle').map((r) => r.item_id),
-        affirmation: reads.filter((r) => r.kind === 'affirmation').map((r) => r.item_id),
-      },
-    });
+    const [settings, items, sessions, mergeLog] = await Promise.all([
+      q.getAllSettings(d),
+      q.listItems(d),
+      q.listSessions(d),
+      q.listMergeLog(d),
+    ]);
+    set({ settings, items, sessions, mergeLog, stats: computeStats(sessions) });
   },
 
   saveSetting: async (key, value) => {
@@ -130,128 +104,154 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ settings: { ...get().settings, [key]: value } });
   },
 
-  updateKpiCurrent: async (id, current) => {
-    await q.updateKpiCurrent(db(), id, current);
-    set({ kpis: await q.listKpis(db()) });
-  },
-
-  togglePrinciple: async (id, active) => {
-    await q.setPrincipleActive(db(), id, active);
-    set({ principles: await q.listPrinciples(db()) });
-  },
-
-  addPrinciple: async (category, text) => {
-    await q.insertPrinciple(db(), category, text);
-    set({ principles: await q.listPrinciples(db()) });
-  },
-
-  editPrinciple: async (id, text) => {
-    await q.updatePrincipleText(db(), id, text);
-    set({ principles: await q.listPrinciples(db()) });
-  },
-
-  removePrinciple: async (id) => {
-    await q.deletePrinciple(db(), id);
-    set({ principles: await q.listPrinciples(db()) });
-  },
-
-  addAffirmation: async (title, body) => {
-    await q.insertAffirmation(db(), title, body);
-    set({ affirmations: await q.listAffirmations(db()) });
-  },
-
-  editAffirmation: async (id, title, body) => {
-    await q.updateAffirmation(db(), id, title, body);
-    set({ affirmations: await q.listAffirmations(db()) });
-  },
-
-  removeAffirmation: async (id) => {
-    await q.deleteAffirmation(db(), id);
-    set({ affirmations: await q.listAffirmations(db()) });
-  },
-
-  markRead: async (kind, itemId, read) => {
+  todayInProgress: () => {
     const today = todayKey();
-    await q.setRead(db(), today, kind, itemId, read);
-    const reads = await q.listReadsForDate(db(), today);
+    return (
+      get().sessions.find((s) => s.date === today && s.status === 'IN_PROGRESS') ?? null
+    );
+  },
+
+  todayCompleted: () => {
+    const today = todayKey();
+    return get().sessions.find((s) => s.date === today && s.status === 'COMPLETED') ?? null;
+  },
+
+  startOrResumeSession: async (mode) => {
+    const existing = get().todayInProgress();
+    if (existing && existing.mode === mode && existing.current_index > 0) {
+      await q.markSessionResumed(db(), existing.id);
+      const sessions = await q.listSessions(db());
+      set({ sessions, stats: computeStats(sessions) });
+      return sessions.find((s) => s.id === existing.id) ?? existing;
+    }
+    if (existing && existing.mode === mode) return existing;
+    // モード違いの途中セッションが残っていたら離脱として畳む(途中でモード変更はしない)
+    if (existing) await q.abandonSession(db(), existing.id);
+    const { items, settings } = get();
+    const playlist = buildPlaylist(items, mode, new Date(), {
+      fullMaxItems: Number(settings.full_max_items ?? '40') || 40,
+    });
+    const session = await q.createSession(db(), todayKey(), mode, playlist);
+    const sessions = await q.listSessions(db());
+    set({ sessions, stats: computeStats(sessions) });
+    return session;
+  },
+
+  restartSession: async (mode) => {
+    const existing = get().todayInProgress();
+    if (existing) await q.abandonSession(db(), existing.id);
+    const { items, settings } = get();
+    const playlist = buildPlaylist(items, mode, new Date(), {
+      fullMaxItems: Number(settings.full_max_items ?? '40') || 40,
+    });
+    const session = await q.createSession(db(), todayKey(), mode, playlist);
+    const sessions = await q.listSessions(db());
+    set({ sessions, stats: computeStats(sessions) });
+    return session;
+  },
+
+  saveProgress: async (sessionId, index, elapsed) => {
+    await q.updateSessionProgress(db(), sessionId, index, elapsed);
+    // 高頻度呼び出しのためローカルstateのみ軽く更新
     set({
-      readsToday: {
-        principle: reads.filter((r) => r.kind === 'principle').map((r) => r.item_id),
-        affirmation: reads.filter((r) => r.kind === 'affirmation').map((r) => r.item_id),
-      },
+      sessions: get().sessions.map((s) =>
+        s.id === sessionId ? { ...s, current_index: index, elapsed_seconds: elapsed } : s
+      ),
     });
   },
 
-  toggleQuest: async (id, done) => {
-    await q.setQuestDone(db(), id, done);
-    set({ quests: await q.listQuests(db()) });
-  },
-
-  setTodayField: async (field, value) => {
-    const today = todayKey();
-    const todayLog = await q.setDailyLogField(db(), today, field, value);
-    const dailyLogs = await q.listDailyLogs(db());
-    set({ todayLog, dailyLogs, streak: computeStreak(dailyLogs) });
-    // 完了状態が変わったらストリーク防衛通知を組み直す
+  finishSession: async (session, elapsed) => {
+    const d = db();
+    await q.completeSession(d, session.id, elapsed);
+    // 表示された項目を実施済みとして記録(項目ごとのボタンは押させない)
+    try {
+      const ids: number[] = JSON.parse(session.playlist);
+      await q.markItemsShown(d, ids, new Date().toISOString());
+    } catch {
+      // playlist破損時も完了自体は成立させる
+    }
+    await get().reload();
     await get().refreshNotifications();
   },
 
+  addItem: async (input) => {
+    const id = await q.insertItem(db(), input);
+    await get().reload();
+    return id;
+  },
+
+  editItem: async (id, patch) => {
+    await q.updateItem(db(), id, patch);
+    await get().reload();
+  },
+
+  archive: async (id) => {
+    await q.archiveItem(db(), id);
+    await get().reload();
+  },
+
+  restore: async (id) => {
+    await q.restoreItem(db(), id);
+    await get().reload();
+  },
+
+  moveItem: async (id, dir) => {
+    const items = get().items;
+    const item = items.find((i) => i.id === id);
+    if (!item) return;
+    const siblings = items
+      .filter((i) => i.type === item.type && i.archived_at === null)
+      .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
+    const idx = siblings.findIndex((i) => i.id === id);
+    const swap = siblings[idx + dir];
+    if (!swap) return;
+    await q.updateItem(db(), item.id, { sort_order: swap.sort_order });
+    await q.updateItem(db(), swap.id, { sort_order: item.sort_order });
+    await get().reload();
+  },
+
+  merge: async (canonicalId, mergedId, reason) => {
+    await q.mergeItems(db(), canonicalId, mergedId, reason);
+    await get().reload();
+  },
+
+  markIndependent: async (id) => {
+    await q.updateItem(db(), id, { duplicate_status: 'independent', canonical_item_id: null });
+    await get().reload();
+  },
+
+  findSimilar: async (type, text, excludeId) => {
+    const candidates = get().items.filter(
+      (i) =>
+        i.type === type &&
+        i.archived_at === null &&
+        i.duplicate_status !== 'merged' &&
+        i.id !== excludeId
+    );
+    return duplicateDetector.find(text, candidates);
+  },
+
   refreshNotifications: async () => {
-    const { settings, principles, affirmations, todayLog, streak } = get();
+    const { settings, stats } = get();
     try {
-      const wake = parseHHMM(settings.wake_time ?? '') ?? { hour: 6, minute: 0 };
-      await scheduleMorningNotification(wake.hour, wake.minute, todaysGuidanceText(principles));
-      await scheduleExtraNotifications(
-        (settings.notify_extra_enabled ?? '1') === '1',
-        noonBodyText(principles),
-        eveningBodyText(affirmations.map((a) => a.body))
-      );
-      await refreshStreakGuard(
-        (settings.notify_streak_enabled ?? '1') === '1',
-        isDayComplete(todayLog),
-        streak
-      );
-      await scheduleSundayKpiReminder((settings.notify_kpi_enabled ?? '1') === '1');
+      const days = (settings.notify_days ?? '0,1,2,3,4,5,6')
+        .split(',')
+        .map(Number)
+        .filter((n) => n >= 0 && n <= 6);
+      await rescheduleAll({
+        wake: parseHHMM(settings.wake_time ?? '') ?? { hour: 6, minute: 0 },
+        noon: parseHHMM(settings.noon_time ?? '') ?? { hour: 12, minute: 30 },
+        evening: parseHHMM(settings.evening_time ?? '') ?? { hour: 17, minute: 30 },
+        night: parseHHMM(settings.night_time ?? '') ?? { hour: 21, minute: 30 },
+        morningEnabled: (settings.notify_morning_enabled ?? '1') === '1',
+        noonEnabled: (settings.notify_noon_enabled ?? '1') === '1',
+        eveningEnabled: (settings.notify_evening_enabled ?? '1') === '1',
+        nightEnabled: (settings.notify_night_enabled ?? '1') === '1',
+        days,
+        todayComplete: stats.todayDone,
+      });
     } catch {
       // 通知権限なし等は無視(設定画面から再許可できる)
     }
   },
 }));
-
-// ---------- 派生ヘルパ ----------
-
-/** 今日の戒め(3カ条から日替わり) */
-export function todaysCreed(): string {
-  return CREED[dayOfYear() % CREED.length];
-}
-
-/** 今日の心得: activeな項目からカテゴリ横断で日替わり1件 */
-export function todaysPrinciple(principles: Principle[]): Principle | null {
-  const active = principles.filter((p) => p.active === 1);
-  if (active.length === 0) return null;
-  return active[dayOfYear() % active.length];
-}
-
-/** 朝通知の本文: 戒め+心得を交互に(通知自体が刷り込み) */
-export function todaysGuidanceText(principles: Principle[]): string {
-  const p = todaysPrinciple(principles);
-  const creed = todaysCreed();
-  if (!p) return creed;
-  return dayOfYear() % 2 === 0 ? p.text : creed;
-}
-
-/** 昼通知の本文: 残り日数+朝とは別の心得(慣れ防止に7項ずらす) */
-export function noonBodyText(principles: Principle[]): string {
-  const days = daysUntil(DEADLINE_2026);
-  const active = principles.filter((p) => p.active === 1);
-  const prefix = `2026年末まで残り${days}日。`;
-  if (active.length === 0) return `${prefix}1日も、1円も、ごまかせない。`;
-  const p = active[(dayOfYear() + 7) % active.length];
-  return `${prefix}${p.text}`;
-}
-
-/** 夕通知の本文: アファメーション本文をローテーション */
-export function eveningBodyText(bodies: string[]): string {
-  if (bodies.length === 0) return 'なりたい自分として、今日を締めくくれ。';
-  return bodies[dayOfYear() % bodies.length];
-}

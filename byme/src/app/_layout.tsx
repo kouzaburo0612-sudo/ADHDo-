@@ -11,7 +11,8 @@ import {
   ZenKakuGothicNew_900Black,
 } from '@expo-google-fonts/zen-kaku-gothic-new';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import * as Notifications from 'expo-notifications';
+import { router, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { SQLiteProvider, useSQLiteContext } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
@@ -37,6 +38,14 @@ export default function RootLayout() {
     ZenKakuGothicNew_900Black,
   });
 
+  // 通知タップ → TODAY(途中セッションがあればTODAYが「続きから再開」を出す)
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(() => {
+      router.navigate('/(tabs)/today');
+    });
+    return () => sub.remove();
+  }, []);
+
   if (!fontsLoaded) return null;
 
   return (
@@ -52,19 +61,11 @@ export default function RootLayout() {
           <Stack.Screen name="index" />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen
-            name="theater"
-            options={{ presentation: 'fullScreenModal', animation: 'fade' }}
-          />
-          <Stack.Screen
-            name="recite"
-            options={{ presentation: 'fullScreenModal', animation: 'fade' }}
-          />
-          <Stack.Screen
             name="ritual"
-            options={{ presentation: 'fullScreenModal', animation: 'fade' }}
+            options={{ presentation: 'fullScreenModal', animation: 'fade', gestureEnabled: false }}
           />
-          <Stack.Screen name="library/[category]" />
-          <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="master/[type]" />
+          <Stack.Screen name="master/item/[id]" options={{ presentation: 'modal' }} />
         </Stack>
       </Bootstrap>
     </SQLiteProvider>

@@ -1,67 +1,105 @@
 # BYME — Life, by me.
 
-目標を「見る」アプリではなく「唱える」アプリ。
-毎朝3ステップの儀式(宣言 → 心得 → 日記)で、なりたい自分を現在進行形で潜在意識に刷り込む。
+**「忘れないために、毎日自分を刷り込む。」**
+
+アファメーション・成功後のイメージング・短期/中期/長期目標・目標数字・成功法則や戒めを一元管理し、
+ADHDでも毎日確実に反復・想起・習慣化できる自己刷り込みアプリ(v3)。
+
+新しい目標を提案するアプリではない。すでに自分で決めた重要事項を、
+**重複なく整理し、毎日必ず見せ、声に出して唱えさせ、成功後の場面をイメージさせ、長期的に反復させる**ことに特化する。
 
 - Expo SDK 57 / TypeScript strict / expo-router
-- ローカルファースト(expo-sqlite)・状態管理は Zustand
-- AI変換(目標→宣言文、なりたい自分→アイデンティティ/MVV)は Supabase Edge Function `byme-ai` 経由で Anthropic API(claude-sonnet-4-6)を呼ぶ。APIキーはクライアントに置かない
-- AI未接続でもローカルのルールベース変換でオンボーディングが完結する(全文編集可)
+- 完全ローカル(expo-sqlite)。Phase 1はネットワーク不使用
+- 状態管理は Zustand、通知はローカル通知のみ
 
-## 構成
+## 画面構成(v3)
 
 ```
-src/app/                 expo-router 画面
-  (onboarding)/          welcome → identity-mvv → goals-input → ai-convert
-                         → principles-pick → notification-setup
-  (tabs)/                today / vision / mind / log
-  declare-mode.tsx       宣言モード(全画面・タップで次へ)
-  settings.tsx           通知時刻・宣言文管理・データ書き出し・AI設定
-src/db/                  SQLiteスキーマ(PRAGMA user_versionマイグレーション)+クエリ
-src/store/               Zustandストア(アプリ状態+通知の再スケジュール)
-src/lib/                 dates / streak / ai(+ローカルフォールバック)/ notifications / progate
-src/data/presets.ts      心得プリセット(経営者テンプレート約30項目ほか)
-supabase/functions/byme-ai/  AI変換 Edge Function(Deno)
-plugins/                 aps-environmentエンタイトルメント除去(ローカル通知のみ使用)
+TODAY    … 主役。起動時に必ず表示。「今日のBYMEを始める」1タップで儀式へ
+MASTER   … 全コンテンツの正本。一覧・検索・追加・編集・並べ替え・アーカイブ・重複整理
+HISTORY  … カレンダー・ストリーク・今月実施日数・直近30日実施率・モード内訳
+SETTINGS … 儀式モード・自動送り・音声読み上げ・通知4種・曜日・データ入出力
+RITUAL   … 全画面没入プレイヤー(タブ非表示)。1画面1メッセージ
 ```
 
-## TestFlight 配信(GitHub Actionsのみで完結・PC不要)
+## 儀式(RITUAL)
 
-ワークフローは `main` ブランチ上に置かれ、常に `claude/app-dev-instructions-xpncjc` ブランチのコードをビルドする(Master Healthと同方式)。
+順番は固定: **AFFIRMATION → IMAGING → GOALS → NUMBERS → PRINCIPLES → COMPLETE**
 
-初回のみ、Actionsタブから順に実行:
+| モード | 目安 | 内容 |
+|---|---|---|
+| QUICK | 60秒 | 最重要アファ1・イメージング1・短中長期目標・最重要数字・最重要原則1 |
+| STANDARD | 3分 | アファ〜5・イメージング〜3・目標3階層・主要数字・CORE原則+日替わり1 |
+| FULL | 5〜10分 | FULL対象の全項目(設定の最大件数で制限可) |
 
-1. **BYME 0. EAS Project Init** — EASプロジェクトを作成し projectId をコミット
-2. **BYME 9. KeySetup** — クレデンシャル受け渡し用のブートストラップ鍵を発行(ログに公開鍵が出る)
-3. **BYME 3. Supabase AI Function Deploy** — `enc_pat`(暗号化Supabaseトークン)と `enc_anthropic`(暗号化Anthropicキー)を入力して byme-ai をデプロイ
-4. **BYME 1. EAS Build & TestFlight** — ビルド&TestFlight自動提出
-   - ASCクレデンシャルはEAS保管庫 → GitHub Secrets(MHと共通)→ `enc_creds` 入力の順で解決
-   - App Store Connect に「BYME」(bundle: `com.nash.byme`)のアプリレコードが無い場合はビルドのみ実行される。App Store Connect(iPhoneのブラウザでも可)でアプリを作成してから再実行すると提出まで自動化される
+- プレイリストは登録コンテンツから毎回動的生成(`src/lib/playlist.ts`)。固定15画面は廃止
+- ROTATING原則は 重要度/最終表示からの経過/表示回数/新規追加/重点反復 のスコアで日替わり選出。全項目が一定期間内に必ず一巡する
+- アファメーションは文単位で1画面1メッセージ表示(設定で全文表示に切替可)
+- 進捗は1ステップごとにSQLiteへ保存。**アプリを閉じても同日なら続きから再開**
+- 完了時に表示項目をまとめて実施済み記録(項目ごとの「唱えた」ボタンは廃止)
+- 同日の重複完了は実施日数に二重計上されない
 
-2回目以降は **BYME 1** を実行するだけ。状況確認は **BYME 2. EAS Status**。
+## NUMBERS の二層構造
 
-## Phase 1 動作確認手順
+正式目標(OFFICIAL TARGET)と唱えるストレッチ数字(IMAGING TARGET)は**別フィールド**で管理し、
+儀式でも別画面で表示する。現在値はMASTERで更新。
 
-1. TestFlightからインストール → 初回起動でオンボーディングが始まる
-2. welcome 3枚 → なりたい自分を入力 → AI生成(オフライン時は自動変換)→ 編集して確定
-3. 目標を2〜3件入力 → 宣言文への変換結果を編集して確定 → 心得テンプレート選択(経営者)→ 通知時刻を設定して完了
-4. TODAYタブ: 最上部にアイデンティティ宣言文(タップで編集)。「DECLARE」で宣言モードへ → 全件唱えて完了 → BEに✓
-5. 「胸に刻んだ」で心得✓ → 日記3行を保存 → 「TODAY COMPLETE」表示+ストリークが1に
-6. VISIONタブ: MVV3カード編集、目標のアコーディオン(残日数表示)、「宣言に」で宣言文追加
-7. MINDタブ: 心得の追加/編集/オンオフ。LOGタブ: ヒートマップと日記履歴
-8. 翌朝、設定時刻に宣言文が通知で届く。21時に日記未記入ならリマインド
+## データモデル(スキーマv6)
 
-## 開発(PC/Mac がある場合のみ)
+```
+content_items    … 全コンテンツ統合(type: AFFIRMATION/IMAGING/GOAL/NUMBER/PRINCIPLE/OPTIONAL)
+                   priority / cadence / modes / emphasis / last_shown_at / show_count
+                   archived_at(削除ではなくアーカイブ)/ canonical_item_id / duplicate_status
+ritual_sessions  … 儀式セッション(date/mode/playlist/current_index/status/resumed)
+merge_log        … 統合の履歴(原文保全・復元可能)
+settings         … キーバリュー設定
+旧テーブル(kpis/principles/affirmations/scenes/quests/daily_log/reads)は原本として残置
+```
+
+v6マイグレーション(`src/db/schema.ts` + `src/db/migrateV6Data.ts`):
+- BE→AFFIRMATION / THEATER→IMAGING / ロードマップ→GOAL / KPI→NUMBER / MIND→PRINCIPLE(戒め3カ条はCORE)/ クエスト・BODY・睡眠→OPTIONAL
+- 文章は原文のまま移行(要約・改変なし)。完全一致は重複「候補」としてマークのみ
+- 旧daily_logの完了日はCOMPLETEDセッションとして引き継ぎ(ストリーク・累計保全)
+- トランザクション内で実行。旧テーブルは削除しないためロールバック可能
+
+## 重複検出(`src/lib/duplicates.ts`)
+
+正規化(NFKC・句読点/空白除去)→ 完全一致 / 包含 / 文字bigramのJaccard+overlap係数。
+閾値以上で「似た内容がすでにあります」→ 統合 / 別項目として残す / 今回は無視 を選択。
+統合しても `merge_log` に原文を保全し、アーカイブから復元できる。
+`DuplicateDetector` インターフェースで分離してあり、将来LLM APIに差し替え可能(偽AI実装はしない)。
+
+## 通知(`src/lib/notifications.ts`)
+
+| 時刻 | 文言 | 条件 |
+|---|---|---|
+| 起床時刻 | 自分の人生を思い出す時間です。 | 曜日設定に従う |
+| 12:30 | 今日のBYMEは、まだ完了していません。 | 未完了の日だけ |
+| 17:30 | 3分あれば、今日の自分に戻れます。 | 未完了の日だけ |
+| 21:30 | 60秒のQUICKだけでも、今日をゼロにしない。 | 未完了の日だけ |
+
+昼・夕・夜は7日先までDATEトリガーで組み、完了・設定変更時に組み直す。タップでTODAYへ。
+
+## 開発
 
 ```bash
+cd byme
 npm install
-npx expo start
+npm run typecheck   # tsc --noEmit
+npm test            # vitest(playlist/duplicates/stats/sentences/migration)
+npx expo start      # 開発サーバー
 ```
 
-型検査: `npx tsc --noEmit`
+ビルド/TestFlight配信はGitHub Actions(`.github/workflows/byme-eas-build.yml`)経由。
 
-## フェーズ
+## ディレクトリ
 
-- **Phase 1(このリポジトリの現状)**: タブ4画面+宣言モード+SQLite+ストリーク+ローカル通知+オンボーディング(AI変換)+経営者プリセット+TestFlight配信
-- **Phase 2**: Supabase同期・音声録音再生・ウィジェット・ダークモード
-- **Phase 3**: RevenueCat課金(ProGateは実装済みの抽象化を有効化)・月次AIレビュー・ストリーク保護
+```
+src/app/(tabs)/         today / master / history / settings
+src/app/ritual.tsx      儀式プレイヤー(全画面・再開対応)
+src/app/master/         [type]一覧 / item/[id]エディタ(重複チェック付き)
+src/db/                 schema(v6)/ queries / types / migrateV6Data
+src/lib/                playlist / duplicates / stats / sentences / notifications / dates
+src/store/              useAppStore(Zustand)
+src/data/master.ts      マスターコンテンツ(文言の正)
+```
