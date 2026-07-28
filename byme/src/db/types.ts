@@ -55,6 +55,15 @@ export interface DailyLog {
 
 export type DailyLogField = Exclude<keyof DailyLog, 'date'>;
 
+/** 日次読了記録の対象種別 */
+export type ReadKind = 'principle' | 'affirmation';
+
+export interface ReadRecord {
+  date: string;
+  kind: ReadKind;
+  item_id: number;
+}
+
 /** settings テーブルの既知キー */
 export type SettingKey =
   | 'identity'

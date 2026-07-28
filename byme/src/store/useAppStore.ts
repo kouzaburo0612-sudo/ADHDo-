@@ -8,6 +8,7 @@ import type {
   Kpi,
   Principle,
   Quest,
+  ReadKind,
   Scene,
   SettingKey,
 } from '../db/types';
@@ -30,6 +31,8 @@ interface AppState {
   dailyLogs: DailyLog[];
   todayLog: DailyLog;
   streak: number;
+  /** 今日読了した項目ID(日次リセット) */
+  readsToday: { principle: number[]; affirmation: number[] };
 
   init: (db: SQLiteDatabase) => Promise<void>;
   reload: () => Promise<void>;
@@ -37,6 +40,14 @@ interface AppState {
   saveSetting: (key: SettingKey, value: string) => Promise<void>;
   updateKpiCurrent: (id: number, current: number) => Promise<void>;
   togglePrinciple: (id: number, active: boolean) => Promise<void>;
+  addPrinciple: (category: string, text: string) => Promise<void>;
+  editPrinciple: (id: number, text: string) => Promise<void>;
+  removePrinciple: (id: number) => Promise<void>;
+  addAffirmation: (title: string, body: string) => Promise<void>;
+  editAffirmation: (id: number, title: string, body: string) => Promise<void>;
+  removeAffirmation: (id: number) => Promise<void>;
+  /** 項目ごとの「読んだ」トグル(今日) */
+  markRead: (kind: ReadKind, itemId: number, read: boolean) => Promise<void>;
   toggleQuest: (id: number, done: boolean) => Promise<void>;
   setTodayField: (field: DailyLogField, value: boolean) => Promise<void>;
 
@@ -71,6 +82,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   dailyLogs: [],
   todayLog: EMPTY_LOG,
   streak: 0,
+  readsToday: { principle: [], affirmation: [] },
 
   init: async (database) => {
     _db = database;
@@ -82,7 +94,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   reload: async () => {
     const d = db();
     const today = todayKey();
-    const [settings, kpis, principles, affirmations, scenes, quests, dailyLogs, todayLog] =
+    const [settings, kpis, principles, affirmations, scenes, quests, dailyLogs, todayLog, reads] =
       await Promise.all([
         q.getAllSettings(d),
         q.listKpis(d),
@@ -92,6 +104,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         q.listQuests(d),
         q.listDailyLogs(d),
         q.getDailyLog(d, today),
+        q.listReadsForDate(d, today),
       ]);
     set({
       settings,
@@ -103,6 +116,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       dailyLogs,
       todayLog,
       streak: computeStreak(dailyLogs),
+      readsToday: {
+        principle: reads.filter((r) => r.kind === 'principle').map((r) => r.item_id),
+        affirmation: reads.filter((r) => r.kind === 'affirmation').map((r) => r.item_id),
+      },
     });
   },
 
@@ -119,6 +136,48 @@ export const useAppStore = create<AppState>((set, get) => ({
   togglePrinciple: async (id, active) => {
     await q.setPrincipleActive(db(), id, active);
     set({ principles: await q.listPrinciples(db()) });
+  },
+
+  addPrinciple: async (category, text) => {
+    await q.insertPrinciple(db(), category, text);
+    set({ principles: await q.listPrinciples(db()) });
+  },
+
+  editPrinciple: async (id, text) => {
+    await q.updatePrincipleText(db(), id, text);
+    set({ principles: await q.listPrinciples(db()) });
+  },
+
+  removePrinciple: async (id) => {
+    await q.deletePrinciple(db(), id);
+    set({ principles: await q.listPrinciples(db()) });
+  },
+
+  addAffirmation: async (title, body) => {
+    await q.insertAffirmation(db(), title, body);
+    set({ affirmations: await q.listAffirmations(db()) });
+  },
+
+  editAffirmation: async (id, title, body) => {
+    await q.updateAffirmation(db(), id, title, body);
+    set({ affirmations: await q.listAffirmations(db()) });
+  },
+
+  removeAffirmation: async (id) => {
+    await q.deleteAffirmation(db(), id);
+    set({ affirmations: await q.listAffirmations(db()) });
+  },
+
+  markRead: async (kind, itemId, read) => {
+    const today = todayKey();
+    await q.setRead(db(), today, kind, itemId, read);
+    const reads = await q.listReadsForDate(db(), today);
+    set({
+      readsToday: {
+        principle: reads.filter((r) => r.kind === 'principle').map((r) => r.item_id),
+        affirmation: reads.filter((r) => r.kind === 'affirmation').map((r) => r.item_id),
+      },
+    });
   },
 
   toggleQuest: async (id, done) => {

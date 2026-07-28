@@ -6,6 +6,8 @@ import type {
   Kpi,
   Principle,
   Quest,
+  ReadKind,
+  ReadRecord,
   Scene,
   SettingKey,
 } from './types';
@@ -47,6 +49,25 @@ export async function setPrincipleActive(db: SQLiteDatabase, id: number, active:
   await db.runAsync('UPDATE principles SET active = ? WHERE id = ?', active ? 1 : 0, id);
 }
 
+export async function insertPrinciple(db: SQLiteDatabase, category: string, text: string): Promise<void> {
+  const max = await db.getFirstAsync<{ m: number | null }>('SELECT MAX(sort_order) AS m FROM principles');
+  await db.runAsync(
+    'INSERT INTO principles (category, text, sort_order) VALUES (?, ?, ?)',
+    category,
+    text,
+    (max?.m ?? 0) + 1
+  );
+}
+
+export async function updatePrincipleText(db: SQLiteDatabase, id: number, text: string): Promise<void> {
+  await db.runAsync('UPDATE principles SET text = ? WHERE id = ?', text, id);
+}
+
+export async function deletePrinciple(db: SQLiteDatabase, id: number): Promise<void> {
+  await db.runAsync('DELETE FROM principles WHERE id = ?', id);
+  await db.runAsync("DELETE FROM reads WHERE kind = 'principle' AND item_id = ?", id);
+}
+
 // ---------- affirmations / scenes ----------
 
 export async function listAffirmations(db: SQLiteDatabase): Promise<Affirmation[]> {
@@ -55,6 +76,55 @@ export async function listAffirmations(db: SQLiteDatabase): Promise<Affirmation[
 
 export async function listScenes(db: SQLiteDatabase): Promise<Scene[]> {
   return db.getAllAsync<Scene>('SELECT * FROM scenes ORDER BY sort_order, id');
+}
+
+export async function insertAffirmation(db: SQLiteDatabase, title: string, body: string): Promise<void> {
+  const max = await db.getFirstAsync<{ m: number | null }>('SELECT MAX(sort_order) AS m FROM affirmations');
+  await db.runAsync(
+    'INSERT INTO affirmations (title, body, sort_order) VALUES (?, ?, ?)',
+    title,
+    body,
+    (max?.m ?? 0) + 1
+  );
+}
+
+export async function updateAffirmation(
+  db: SQLiteDatabase,
+  id: number,
+  title: string,
+  body: string
+): Promise<void> {
+  await db.runAsync('UPDATE affirmations SET title = ?, body = ? WHERE id = ?', title, body, id);
+}
+
+export async function deleteAffirmation(db: SQLiteDatabase, id: number): Promise<void> {
+  await db.runAsync('DELETE FROM affirmations WHERE id = ?', id);
+  await db.runAsync("DELETE FROM reads WHERE kind = 'affirmation' AND item_id = ?", id);
+}
+
+// ---------- reads(日次読了) ----------
+
+export async function listReadsForDate(db: SQLiteDatabase, date: string): Promise<ReadRecord[]> {
+  return db.getAllAsync<ReadRecord>('SELECT * FROM reads WHERE date = ?', date);
+}
+
+export async function setRead(
+  db: SQLiteDatabase,
+  date: string,
+  kind: ReadKind,
+  itemId: number,
+  read: boolean
+): Promise<void> {
+  if (read) {
+    await db.runAsync(
+      'INSERT INTO reads (date, kind, item_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING',
+      date,
+      kind,
+      itemId
+    );
+  } else {
+    await db.runAsync('DELETE FROM reads WHERE date = ? AND kind = ? AND item_id = ?', date, kind, itemId);
+  }
 }
 
 // ---------- quests ----------

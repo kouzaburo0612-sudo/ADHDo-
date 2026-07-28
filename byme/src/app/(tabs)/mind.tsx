@@ -1,24 +1,26 @@
-import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CREED, PRINCIPLE_CATEGORIES } from '../../data/master';
-import { todaysPrinciple, useAppStore } from '../../store/useAppStore';
+import { useAppStore } from '../../store/useAppStore';
 import { colors, enLabel, fonts, spacing } from '../../theme/tokens';
 
 /**
- * 心得ライブラリ: カテゴリ別に全項目を常時閲覧。項目ごとにオン/オフ切替
- * (オフはローテーション対象外)。アファメーション5篇の全文もここ。
+ * MIND = ライブラリの入口。
+ * 戒め/アファメーション/心得カテゴリの一覧から各詳細へドリルダウンする。
+ * 各行に件数と「今日読んだ数」を表示する。
  */
 export default function Mind() {
   const principles = useAppStore((s) => s.principles);
   const affirmations = useAppStore((s) => s.affirmations);
-  const togglePrinciple = useAppStore((s) => s.togglePrinciple);
-  const refreshNotifications = useAppStore((s) => s.refreshNotifications);
-  const today = todaysPrinciple(principles);
+  const readsToday = useAppStore((s) => s.readsToday);
+
+  const affReadCount = affirmations.filter((a) => readsToday.affirmation.includes(a.id)).length;
 
   return (
     <SafeAreaView style={styles.root} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* 戒め3カ条 */}
+        {/* 戒め3カ条(常時表示) */}
         <View style={styles.creedCard}>
           <Text style={styles.creedLabel}>CREED — 2026年 戒め</Text>
           {CREED.map((c, i) => (
@@ -28,46 +30,49 @@ export default function Mind() {
           ))}
         </View>
 
-        {/* 心得ライブラリ */}
-        {PRINCIPLE_CATEGORIES.map((cat) => {
-          const items = principles.filter((p) => p.category === cat);
-          if (items.length === 0) return null;
-          return (
-            <View key={cat} style={styles.section}>
-              <Text style={styles.catName}>{cat}</Text>
-              <View style={styles.card}>
-                {items.map((p) => (
-                  <View key={p.id} style={[styles.row, p.active === 0 && { opacity: 0.45 }]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.itemText}>{p.text}</Text>
-                      {today?.id === p.id ? (
-                        <Text style={styles.todayBadge}>TODAY</Text>
-                      ) : null}
-                    </View>
-                    <Switch
-                      value={p.active === 1}
-                      onValueChange={async (v) => {
-                        await togglePrinciple(p.id, v);
-                        await refreshNotifications();
-                      }}
-                      trackColor={{ true: colors.blue, false: colors.line }}
-                    />
-                  </View>
-                ))}
-              </View>
-            </View>
-          );
-        })}
+        {/* アファメーション入口 */}
+        <Pressable style={styles.affCard} onPress={() => router.push('/affirmations')}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.affEn}>AFFIRMATIONS</Text>
+            <Text style={styles.affJp}>アファメーション {affirmations.length}篇</Text>
+          </View>
+          <Text style={styles.affCount}>
+            今日 {affReadCount}/{affirmations.length}
+          </Text>
+          <Text style={styles.chev}>▸</Text>
+        </Pressable>
 
-        {/* アファメーション5篇 */}
-        <View style={styles.section}>
-          <Text style={styles.affHead}>AFFIRMATIONS — 上映用・5篇</Text>
-          {affirmations.map((a) => (
-            <View key={a.id} style={styles.affCard}>
-              <Text style={styles.affTitle}>{a.title}</Text>
-              <Text style={styles.affBody}>{a.body}</Text>
-            </View>
-          ))}
+        {/* 唱和モード */}
+        <Pressable style={styles.reciteBtn} onPress={() => router.push('/recite')}>
+          <View style={styles.playTri} />
+          <Text style={styles.reciteText}>アファメーションを唱える — 全画面</Text>
+        </Pressable>
+
+        {/* 心得ライブラリ(カテゴリ一覧) */}
+        <Text style={styles.secLabel}>LIBRARY — 心得ライブラリ</Text>
+        <View style={styles.listCard}>
+          {PRINCIPLE_CATEGORIES.map((cat) => {
+            const items = principles.filter((p) => p.category === cat);
+            const read = items.filter((p) => readsToday.principle.includes(p.id)).length;
+            return (
+              <Pressable
+                key={cat}
+                style={styles.row}
+                onPress={() =>
+                  router.push({ pathname: '/library/[category]', params: { category: cat } })
+                }
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowName}>{cat}</Text>
+                  <Text style={styles.rowMeta}>{items.length}項目</Text>
+                </View>
+                <Text style={[styles.rowRead, read === items.length && items.length > 0 && styles.rowReadAll]}>
+                  今日 {read}/{items.length}
+                </Text>
+                <Text style={styles.chev}>▸</Text>
+              </Pressable>
+            );
+          })}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -101,78 +106,107 @@ const styles = StyleSheet.create({
     lineHeight: 30,
     color: colors.white,
   },
-  section: {
-    paddingHorizontal: spacing.screenX,
-    paddingTop: 18,
-  },
-  catName: {
-    fontFamily: fonts.enSemi,
-    letterSpacing: 2,
-    fontSize: 13,
-    color: colors.ink,
-    borderBottomWidth: 2,
-    borderBottomColor: colors.blue,
-    alignSelf: 'flex-start',
-    paddingBottom: 4,
-    marginBottom: 8,
-  },
-  card: {
-    backgroundColor: colors.white,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.line,
-  },
-  itemText: {
-    fontFamily: fonts.jpMedium,
-    fontSize: 13,
-    lineHeight: 22,
-    color: colors.inkSoft,
-  },
-  todayBadge: {
-    ...enLabel,
-    fontSize: 9,
-    color: colors.blueDeep,
-    backgroundColor: colors.bluePale,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginTop: 4,
-  },
-  affHead: {
-    ...enLabel,
-    fontSize: 11,
-    color: colors.mist,
-    marginBottom: 10,
-  },
   affCard: {
+    marginHorizontal: spacing.screenX,
+    marginTop: 14,
     backgroundColor: colors.white,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.line,
     borderRadius: 14,
     padding: 16,
-    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  affTitle: {
+  affEn: {
+    ...enLabel,
+    fontSize: 12,
+    color: colors.blue,
+  },
+  affJp: {
+    fontFamily: fonts.jpMedium,
+    fontSize: 12,
+    color: colors.inkSoft,
+    marginTop: 3,
+  },
+  affCount: {
+    fontFamily: fonts.en,
+    fontSize: 12,
+    color: colors.mist,
+  },
+  chev: {
+    color: colors.blue,
+    fontSize: 15,
+  },
+  reciteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginHorizontal: spacing.screenX,
+    marginTop: 10,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: colors.blueDeep,
+  },
+  playTri: {
+    width: 0,
+    height: 0,
+    borderTopWidth: 6,
+    borderBottomWidth: 6,
+    borderLeftWidth: 9,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderLeftColor: colors.white,
+  },
+  reciteText: {
     fontFamily: fonts.jpBold,
     fontSize: 13,
-    color: colors.blueDeep,
-    marginBottom: 6,
+    letterSpacing: 1,
+    color: colors.white,
   },
-  affBody: {
-    fontFamily: fonts.jpBlack,
+  secLabel: {
+    ...enLabel,
+    fontSize: 11,
+    color: colors.mist,
+    marginTop: 22,
+    marginBottom: 10,
+    paddingHorizontal: spacing.screenX,
+  },
+  listCard: {
+    marginHorizontal: spacing.screenX,
+    backgroundColor: colors.white,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 13,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.line,
+  },
+  rowName: {
+    fontFamily: fonts.jpBold,
     fontSize: 14,
-    lineHeight: 26,
     color: colors.ink,
+  },
+  rowMeta: {
+    fontFamily: fonts.jp,
+    fontSize: 10,
+    color: colors.mist,
+    marginTop: 2,
+  },
+  rowRead: {
+    fontFamily: fonts.en,
+    fontSize: 11,
+    color: colors.mist,
+  },
+  rowReadAll: {
+    color: colors.blueDeep,
+    fontFamily: fonts.enSemi,
   },
 });

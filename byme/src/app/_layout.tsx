@@ -55,6 +55,12 @@ export default function RootLayout() {
             name="theater"
             options={{ presentation: 'fullScreenModal', animation: 'fade' }}
           />
+          <Stack.Screen
+            name="recite"
+            options={{ presentation: 'fullScreenModal', animation: 'fade' }}
+          />
+          <Stack.Screen name="library/[category]" />
+          <Stack.Screen name="affirmations" />
           <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
         </Stack>
       </Bootstrap>

@@ -17,8 +17,9 @@ import {
  *     マスターコンテンツをシードとして投入する。
  * v3: マスターコンテンツ更新に伴う体験クエストの全28件化。
  *     タイトル一致(改名マッピング込み)でチェック状態を維持したままupsertする。
+ * v4: 項目ごとの日次読了記録(reads)を追加。
  */
-const LATEST_VERSION = 3;
+const LATEST_VERSION = 4;
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
@@ -27,6 +28,16 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
 
   if (current < 2) await migrateToV2(db);
   if (current < 3) await upsertTaikenQuests(db);
+  if (current < 4) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS reads (
+        date TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        item_id INTEGER NOT NULL,
+        PRIMARY KEY (date, kind, item_id)
+      );
+    `);
+  }
   await db.execAsync(`PRAGMA user_version = ${LATEST_VERSION}`);
 }
 
