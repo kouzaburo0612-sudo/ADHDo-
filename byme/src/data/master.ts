@@ -1,7 +1,7 @@
 /**
- * BYME マスターコンテンツ v1.0(byme-master-content §1〜4)のシードデータ。
+ * BYME マスターコンテンツ(byme-master-content §1〜4)のシードデータ。
  * このファイルが文言の「正」。勝手に変えない。
- * 注: 体験クエストは原本が「ほか」で省略しているため、記載済み17件のみ収録(原本は28件と記載)。
+ * 体験クエストは更新版マスターコンテンツの全28件を収録。
  */
 
 // ---------- §1-1 アイデンティティ / §1-2 MVV / §1-3 テーマ ----------
@@ -251,24 +251,35 @@ export const QUESTS: SeedQuest[] = [
   { category: '家族友人', title: '愛美54kg' },
   { category: '家族友人', title: '愛美に英語' },
   { category: '家族友人', title: '帰国後第二子' },
-  // 体験(原本28件のうち記載済み17件)
-  { category: '体験', title: '加賀先生のアドバイス全実行' },
-  { category: '体験', title: 'LA同じ家に75泊' },
-  { category: '体験', title: '国内10県宿泊' },
-  { category: '体験', title: '中国' },
-  { category: '体験', title: 'モンゴル' },
-  { category: '体験', title: 'アフリカ' },
-  { category: '体験', title: 'ドバイ' },
-  { category: '体験', title: 'スペイン' },
-  { category: '体験', title: 'フランス' },
-  { category: '体験', title: 'クロアチア' },
-  { category: '体験', title: '未踏欧州5カ国' },
-  { category: '体験', title: 'カナダ' },
-  { category: '体験', title: 'キューバ' },
-  { category: '体験', title: 'バリ再訪' },
-  { category: '体験', title: '海外ポーカー100万勝つ' },
+  // 体験(28・ご褒美枠)
+  { category: '体験', title: '加賀先生のアドバイスを全て実行する' },
+  { category: '体験', title: 'ロサンゼルスの同じ家に75泊する' },
+  { category: '体験', title: '福島に宿泊' },
+  { category: '体験', title: '秋田に宿泊' },
+  { category: '体験', title: '岩手に宿泊' },
+  { category: '体験', title: '長崎に宿泊' },
+  { category: '体験', title: '島根に宿泊' },
+  { category: '体験', title: '愛媛に宿泊' },
+  { category: '体験', title: '埼玉に宿泊' },
+  { category: '体験', title: '岡山に宿泊' },
+  { category: '体験', title: '山口に宿泊' },
+  { category: '体験', title: '大分に宿泊' },
+  { category: '体験', title: '中国滞在' },
+  { category: '体験', title: 'モンゴル滞在' },
+  { category: '体験', title: 'アフリカ滞在' },
+  { category: '体験', title: 'ドバイ滞在' },
+  { category: '体験', title: 'スペイン滞在' },
+  { category: '体験', title: 'フランス滞在' },
+  { category: '体験', title: 'クロアチア滞在' },
+  { category: '体験', title: '未踏ヨーロッパ5カ国滞在' },
+  { category: '体験', title: 'カナダ滞在' },
+  { category: '体験', title: 'キューバ滞在' },
+  { category: '体験', title: 'バリ島再訪' },
+  { category: '体験', title: '海外のポーカーで100万勝つ' },
   { category: '体験', title: '竹ふえ泊まる' },
   { category: '体験', title: 'W杯決勝見る' },
+  { category: '体験', title: 'ロサンゼルスの自宅に女7人呼ぶ' },
+  { category: '体験', title: 'ラスベガスのスフィアに行く' },
   // スキル(2)
   { category: 'スキル', title: '英語力B2' },
   { category: 'スキル', title: '良書30冊' },

@@ -15,14 +15,22 @@ import {
  * v2: 「人生のコックピット」への全面改修。
  *     v1(目標/宣言文/儀式ログ/日記)のテーブルは破棄し、
  *     マスターコンテンツをシードとして投入する。
+ * v3: マスターコンテンツ更新に伴う体験クエストの全28件化。
+ *     タイトル一致(改名マッピング込み)でチェック状態を維持したままupsertする。
  */
-const LATEST_VERSION = 2;
+const LATEST_VERSION = 3;
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
   const current = row?.user_version ?? 0;
   if (current >= LATEST_VERSION) return;
 
+  if (current < 2) await migrateToV2(db);
+  if (current < 3) await upsertTaikenQuests(db);
+  await db.execAsync(`PRAGMA user_version = ${LATEST_VERSION}`);
+}
+
+async function migrateToV2(db: SQLiteDatabase): Promise<void> {
   await db.execAsync(`
     PRAGMA journal_mode = 'wal';
 
@@ -95,7 +103,53 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
   `);
 
   await seed(db);
-  await db.execAsync(`PRAGMA user_version = ${LATEST_VERSION}`);
+}
+
+/** v2シード時代の旧タイトル → 更新版マスターコンテンツのタイトル(チェック状態の引き継ぎ用) */
+const TAIKEN_RENAMES: [string, string][] = [
+  ['加賀先生のアドバイス全実行', '加賀先生のアドバイスを全て実行する'],
+  ['LA同じ家に75泊', 'ロサンゼルスの同じ家に75泊する'],
+  ['中国', '中国滞在'],
+  ['モンゴル', 'モンゴル滞在'],
+  ['アフリカ', 'アフリカ滞在'],
+  ['ドバイ', 'ドバイ滞在'],
+  ['スペイン', 'スペイン滞在'],
+  ['フランス', 'フランス滞在'],
+  ['クロアチア', 'クロアチア滞在'],
+  ['未踏欧州5カ国', '未踏ヨーロッパ5カ国滞在'],
+  ['カナダ', 'カナダ滞在'],
+  ['キューバ', 'キューバ滞在'],
+  ['バリ再訪', 'バリ島再訪'],
+  ['海外ポーカー100万勝つ', '海外のポーカーで100万勝つ'],
+];
+
+/**
+ * 体験カテゴリをマスターコンテンツの全28件に揃える。
+ * タイトル一致(+旧タイトルからの改名マッピング)で既存のチェック状態を維持し、
+ * マスターの掲載順で再投入する。
+ */
+async function upsertTaikenQuests(db: SQLiteDatabase): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    const rows = await db.getAllAsync<{ title: string; done: number }>(
+      "SELECT title, done FROM quests WHERE category = '体験'"
+    );
+    const doneByTitle = new Map(rows.map((r) => [r.title, r.done]));
+    for (const [oldTitle, newTitle] of TAIKEN_RENAMES) {
+      const oldDone = doneByTitle.get(oldTitle);
+      if (oldDone !== undefined && !doneByTitle.has(newTitle)) {
+        doneByTitle.set(newTitle, oldDone);
+      }
+    }
+    await db.runAsync("DELETE FROM quests WHERE category = '体験'");
+    for (const q of QUESTS.filter((x) => x.category === '体験')) {
+      await db.runAsync(
+        'INSERT INTO quests (category, title, done) VALUES (?, ?, ?)',
+        q.category,
+        q.title,
+        doneByTitle.get(q.title) ?? (q.done ? 1 : 0)
+      );
+    }
+  });
 }
 
 /** マスターコンテンツ(byme-master-content §1〜4)を投入する。冪等。 */
