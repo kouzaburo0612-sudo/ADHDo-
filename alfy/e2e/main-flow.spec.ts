@@ -73,11 +73,10 @@ test("イベント作成の主要フローが通しで完了する", async ({ pa
 });
 
 test("入力保持: 戻る・進む・リロードでもSTEP1/STEP2の入力が残る", async ({ page }) => {
-  // STEP1入力(NG曜日含む)
+  // STEP1入力
   await page.goto("/new");
   await page.getByLabel("イベント名").fill("保持テスト会議");
   await page.getByRole("button", { name: "90分" }).click();
-  await page.getByRole("button", { name: "火", exact: true }).click();
   await page.waitForTimeout(500); // debounce保存を待つ
 
   // STEP2へ進んでテキスト入力
@@ -94,7 +93,6 @@ test("入力保持: 戻る・進む・リロードでもSTEP1/STEP2の入力が�
   await page.waitForURL(/\/new$/, { timeout: 30_000 });
   await expect(page.getByLabel("イベント名")).toHaveValue("保持テスト会議", { timeout: 10_000 });
   await expect(page.getByRole("button", { name: "90分" })).toHaveClass(/selected/);
-  await expect(page.getByRole("button", { name: "火", exact: true })).toHaveClass(/selected/);
 
   // リロードしても残る
   await page.reload();

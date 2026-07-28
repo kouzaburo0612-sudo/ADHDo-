@@ -92,6 +92,7 @@ export async function generateCandidates(params: {
       ? `所要時間は「終日」です。候補は日付のみとし、start と end は null にしてください。`
       : `所要時間は ${params.durationMinutes} 分です。ユーザーの空き時間がそれより長い場合は、空き時間の先頭から ${params.durationMinutes} 分ごとに区切って候補を作ってください。`,
     `ユーザーが書いた空き時間の範囲内でのみ候補を作ってください(勝手に空きを追加しない)。`,
+    `時刻は10分単位にしてください(14:03のような1分単位の端数は10分単位に丸める)。`,
     ...imageRules(params.images, params.freeText),
   ];
   if (params.candidateDates.length > 0) {

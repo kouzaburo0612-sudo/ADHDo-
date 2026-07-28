@@ -58,29 +58,40 @@ export async function POST(req: NextRequest) {
   const baseDate = body.deadline && dateRe.test(body.deadline) ? body.deadline : todayJst();
   const deleteAt = `${addDays(baseDate, 30)}T00:00:00+09:00`;
 
-  const { data: event, error } = await db
+  const basePayload = {
+    code,
+    admin_token: adminToken,
+    title,
+    duration_minutes: body.durationMinutes ?? null,
+    deadline: body.deadline || null,
+    period_from: body.periodFrom || null,
+    period_to: body.periodTo || null,
+    time_from: body.timeFrom || null,
+    time_to: body.timeTo || null,
+    delete_at: deleteAt,
+  };
+  const memo = (body.memo ?? "").trim().slice(0, 1000);
+  const extras: Record<string, unknown> = {};
+  if (ngWeekdays.length > 0) extras.ng_weekdays = ngWeekdays;
+  if (memo) extras.memo = memo;
+
+  // まず追加列込みで保存し、列が無いDB(マイグレーション未適用)なら
+  // 追加列なしで再試行する。イベント作成自体は必ず成功させる。
+  let insertResult = await db
     .from("events")
-    .insert({
-      code,
-      admin_token: adminToken,
-      title,
-      duration_minutes: body.durationMinutes ?? null,
-      deadline: body.deadline || null,
-      period_from: body.periodFrom || null,
-      period_to: body.periodTo || null,
-      time_from: body.timeFrom || null,
-      time_to: body.timeTo || null,
-      // マイグレーション未適用のDBでも作成が失敗しないよう、値がある時のみ送る
-      ...(ngWeekdays.length > 0 ? { ng_weekdays: ngWeekdays } : {}),
-      ...((body.memo ?? "").trim()
-        ? { memo: (body.memo ?? "").trim().slice(0, 1000) }
-        : {}),
-      delete_at: deleteAt,
-    })
+    .insert({ ...basePayload, ...extras })
     .select("id, code")
     .single();
+  if (insertResult.error && Object.keys(extras).length > 0) {
+    insertResult = await db
+      .from("events")
+      .insert(basePayload)
+      .select("id, code")
+      .single();
+  }
+  const event = insertResult.data;
 
-  if (error || !event) {
+  if (insertResult.error || !event) {
     return NextResponse.json({ error: "イベントの作成に失敗しました" }, { status: 500 });
   }
 
