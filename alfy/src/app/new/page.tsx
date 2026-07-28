@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { saveDraft, clearDraft } from "@/lib/draft";
 import { useDraft, DRAFT_KEYS } from "@/lib/useDraft";
 import { clearImages } from "@/lib/imageStore";
+import MonthCalendar from "@/components/MonthCalendar";
+import { formatDateJa } from "@/lib/jst";
 
 // 作成 STEP1 — 仕様書 §3-2 / 追加要件A(NG曜日)・C(入力保持)
 const DURATION_OPTIONS: { label: string; value: number | "allday" | "custom" }[] = [
@@ -35,11 +37,11 @@ type Step1Form = {
   customDuration: string;
   maxCandidates: number | "auto";
   deadline: string;
-  periodFrom: string;
-  periodTo: string;
+  candidateDates: string[];
   timeFrom: string;
   timeTo: string;
   ngWeekdays: number[];
+  memo: string;
 };
 
 const INITIAL_FORM: Step1Form = {
@@ -48,11 +50,11 @@ const INITIAL_FORM: Step1Form = {
   customDuration: "",
   maxCandidates: "auto",
   deadline: "",
-  periodFrom: "",
-  periodTo: "",
+  candidateDates: [],
   timeFrom: "",
   timeTo: "",
   ngWeekdays: [],
+  memo: "",
 };
 
 export default function NewEventPage() {
@@ -105,20 +107,16 @@ export default function NewEventPage() {
     } else {
       durationMinutes = form.duration;
     }
-    if (form.periodFrom && form.periodTo && form.periodFrom > form.periodTo) {
-      setError("候補期間の開始と終了が逆になっています");
-      return;
-    }
     saveDraft({
       title: form.title.trim(),
       durationMinutes,
       maxCandidates: form.maxCandidates === "auto" ? null : form.maxCandidates,
       deadline: form.deadline || null,
-      periodFrom: form.periodFrom || null,
-      periodTo: form.periodTo || null,
+      candidateDates: form.candidateDates,
       timeFrom: form.timeFrom || null,
       timeTo: form.timeTo || null,
       ngWeekdays: form.ngWeekdays,
+      memo: form.memo.trim(),
     });
     router.push("/new/google");
   };
@@ -194,23 +192,21 @@ export default function NewEventPage() {
         />
 
         <label className="field-label">
-          候補期間<span className="opt">任意</span>
+          候補日<span className="opt">任意 — カレンダーをタップして選択</span>
         </label>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input
-            type="date"
-            value={form.periodFrom}
-            onChange={(e) => patch({ periodFrom: e.target.value })}
-            aria-label="候補期間の開始日"
-          />
-          <span>〜</span>
-          <input
-            type="date"
-            value={form.periodTo}
-            onChange={(e) => patch({ periodTo: e.target.value })}
-            aria-label="候補期間の終了日"
-          />
-        </div>
+        <p className="muted" style={{ marginBottom: 6 }}>
+          選んだ日の中からだけ候補をつくります(選ばなければ空き時間の文章から自動判断)。
+          時刻は所要時間とAlfyくんが自動で決めるので入力不要です。
+        </p>
+        <MonthCalendar
+          selected={form.candidateDates}
+          onChange={(dates) => patch({ candidateDates: dates })}
+        />
+        {form.candidateDates.length > 0 && (
+          <p className="muted" style={{ marginTop: 6 }}>
+            選択中: {form.candidateDates.map((d) => formatDateJa(d)).join(" / ")}
+          </p>
+        )}
 
         <label className="field-label">
           時間帯<span className="opt">任意 (例: 11:00〜18:00)</span>
@@ -250,6 +246,17 @@ export default function NewEventPage() {
         <p className="muted" style={{ marginTop: 4 }}>
           選んだ曜日は候補から外します
         </p>
+
+        <label className="field-label" htmlFor="memo">
+          メモ<span className="opt">任意 — 回答ページで参加者に表示されます</span>
+        </label>
+        <textarea
+          id="memo"
+          value={form.memo}
+          onChange={(e) => patch({ memo: e.target.value })}
+          placeholder="例) 7月の飲み会の日程調整です!お店は決まり次第連絡します🍻"
+          style={{ minHeight: 80 }}
+        />
       </div>
 
       {error && <div className="error-box">{error}</div>}
