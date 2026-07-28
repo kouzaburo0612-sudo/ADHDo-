@@ -20,17 +20,6 @@ const DURATION_OPTIONS: { label: string; value: number | "allday" | "custom" }[]
 
 const COUNT_OPTIONS: (number | "auto")[] = ["auto", 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
-// 表示は月〜日、値は 0=日〜6=土(要件A-2)
-const WEEKDAY_CHIPS: { label: string; value: number }[] = [
-  { label: "月", value: 1 },
-  { label: "火", value: 2 },
-  { label: "水", value: 3 },
-  { label: "木", value: 4 },
-  { label: "金", value: 5 },
-  { label: "土", value: 6 },
-  { label: "日", value: 0 },
-];
-
 type Step1Form = {
   title: string;
   duration: number | "allday" | "custom";
@@ -40,7 +29,6 @@ type Step1Form = {
   candidateDates: string[];
   timeFrom: string;
   timeTo: string;
-  ngWeekdays: number[];
   memo: string;
 };
 
@@ -51,9 +39,8 @@ const INITIAL_FORM: Step1Form = {
   maxCandidates: "auto",
   deadline: "",
   candidateDates: [],
-  timeFrom: "",
-  timeTo: "",
-  ngWeekdays: [],
+  timeFrom: "09:00", // 時間帯のデフォルト
+  timeTo: "18:00",
   memo: "",
 };
 
@@ -67,15 +54,6 @@ export default function NewEventPage() {
   const [error, setError] = useState<string | null>(null);
 
   const patch = (p: Partial<Step1Form>) => setForm((prev) => ({ ...prev, ...p }));
-
-  const toggleWeekday = (value: number) => {
-    setForm((prev) => ({
-      ...prev,
-      ngWeekdays: prev.ngWeekdays.includes(value)
-        ? prev.ngWeekdays.filter((d) => d !== value)
-        : [...prev.ngWeekdays, value],
-    }));
-  };
 
   // 明示破棄(要件C-4)
   const restart = () => {
@@ -115,7 +93,7 @@ export default function NewEventPage() {
       candidateDates: form.candidateDates,
       timeFrom: form.timeFrom || null,
       timeTo: form.timeTo || null,
-      ngWeekdays: form.ngWeekdays,
+      ngWeekdays: [],
       memo: form.memo.trim(),
     });
     router.push("/new/google");
@@ -209,12 +187,13 @@ export default function NewEventPage() {
         )}
 
         <label className="field-label">
-          時間帯<span className="opt">任意 (例: 11:00〜18:00)</span>
+          時間帯<span className="opt">この範囲で候補をつくります</span>
         </label>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input
             type="time"
             value={form.timeFrom}
+            step={600}
             onChange={(e) => patch({ timeFrom: e.target.value })}
             aria-label="時間帯の開始"
           />
@@ -222,30 +201,11 @@ export default function NewEventPage() {
           <input
             type="time"
             value={form.timeTo}
+            step={600}
             onChange={(e) => patch({ timeTo: e.target.value })}
             aria-label="時間帯の終了"
           />
         </div>
-
-        <label className="field-label">
-          NG曜日<span className="opt">任意</span>
-        </label>
-        <div className="chip-row">
-          {WEEKDAY_CHIPS.map((d) => (
-            <button
-              key={d.value}
-              type="button"
-              className={`chip ${form.ngWeekdays.includes(d.value) ? "selected" : ""}`}
-              onClick={() => toggleWeekday(d.value)}
-              aria-pressed={form.ngWeekdays.includes(d.value)}
-            >
-              {d.label}
-            </button>
-          ))}
-        </div>
-        <p className="muted" style={{ marginTop: 4 }}>
-          選んだ曜日は候補から外します
-        </p>
 
         <label className="field-label" htmlFor="memo">
           メモ<span className="opt">任意 — 回答ページで参加者に表示されます</span>

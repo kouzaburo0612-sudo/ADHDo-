@@ -289,6 +289,7 @@ export default function AvailabilityPage() {
                     <input
                       type="time"
                       value={addStart}
+                      step={600}
                       onChange={(e) => setAddStart(e.target.value)}
                       aria-label="開始時刻"
                     />
@@ -296,6 +297,7 @@ export default function AvailabilityPage() {
                     <input
                       type="time"
                       value={addEnd}
+                      step={600}
                       onChange={(e) => setAddEnd(e.target.value)}
                       aria-label="終了時刻"
                     />
