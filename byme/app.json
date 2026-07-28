@@ -19,7 +19,7 @@
     "android": {
       "package": "com.nash.byme",
       "adaptiveIcon": {
-        "backgroundColor": "#FFFFFF",
+        "backgroundColor": "#010508",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
@@ -37,9 +37,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#FFFFFF",
+          "backgroundColor": "#010508",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 120
+          "imageWidth": 300
         }
       ]
     ],
