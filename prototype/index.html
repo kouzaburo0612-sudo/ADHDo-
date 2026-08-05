@@ -116,6 +116,11 @@ header.app .date{font-size:13px;color:var(--ink-2);margin-top:2px}
 .tl-head{display:flex;align-items:baseline;justify-content:space-between;margin:2px 2px 8px}
 .tl-head h2{font-size:16px;font-weight:700}
 .tl-head span{font-size:12px;color:var(--ink-3)}
+.tmrw-note{
+  background:color-mix(in srgb,var(--brand) 10%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--brand) 35%,var(--line));
+  border-radius:10px;padding:8px 12px;font-size:11.5px;color:var(--ink-2);margin-bottom:10px;
+}
 .tl{position:relative;padding-left:54px;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .tl *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .tl.drag-active .tl-card,.tl.drag-active .tl-time,.tl.drag-active .tl-node{transition:none!important}
@@ -537,8 +542,8 @@ textarea:focus,input:focus{border-color:var(--c-work)}
 <section class="screen active" id="scr-home">
   <header class="app">
     <div class="seg-tabs">
-      <button id="tab-tl" class="sel">タイムライン</button>
-      <button id="tab-clock">24Hグラフ</button>
+      <button id="day-today" class="sel">今日</button>
+      <button id="day-tmrw">明日</button>
     </div>
   </header>
 
@@ -554,10 +559,11 @@ textarea:focus,input:focus{border-color:var(--c-work)}
       <div class="chart-tip" id="chart-tip"></div>
     </div>
     <div class="legend" id="legend"></div>
+    <button class="btn sm" id="clock-back" style="display:block;margin:0 auto 8px">← タイムラインに戻る</button>
   </div>
 
   <div id="view-tl">
-    <div class="tl-head"><h2>タイムライン</h2><button class="btn sm" id="ai-open">✨ AIプラン</button></div>
+    <div class="tl-head"><h2 id="tl-title">タイムライン</h2><button class="btn sm" id="clock-toggle">🕐 24H</button></div>
     <div class="tl" id="timeline"></div>
     <div id="skip-wrap"></div>
     <button class="fab" id="fab-add" aria-label="予定を追加">+</button>
@@ -644,9 +650,9 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <div id="tpl-list"></div>
   </div>
   <div class="panel">
-    <h3>✨ AIプランニング</h3>
+    <h3>✨ AI設定</h3>
     <p style="font-size:12.5px;color:var(--ink-2);line-height:1.7;margin-bottom:10px">
-      AnthropicのAPIキーを入れると、ホームの「✨AIプラン」でタスクを空き時間に自動配置できます。キーは端末内にのみ保存されます。
+      AnthropicのAPIキーを入れると、今後のAI機能(Inboxの自動分類・リンク要約など)で使われます。キーは端末内にのみ保存されます。
     </p>
     <input type="text" id="ai-key" placeholder="sk-ant-..." autocomplete="off">
     <p style="font-size:11px;color:var(--ink-3);margin-top:8px">キーの発行: console.anthropic.com → API Keys(従量課金)</p>
@@ -685,7 +691,7 @@ textarea:focus,input:focus{border-color:var(--c-work)}
     <p style="font-size:11px;color:var(--ink-3);margin-top:6px">就寝〜起床の時間は、タイムラインと24Hグラフに「睡眠」として自動で組み込まれます。</p>
   </div>
   <p class="tagline">By ADHD. <b>For ADHD.</b></p>
-  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v2.2</p>
+  <p style="text-align:center;font-size:11px;color:var(--ink-3);margin-top:4px">ADHDo v2.3</p>
 </section>
 
 <!-- ============ 予定エディタ ============ -->
@@ -722,20 +728,6 @@ textarea:focus,input:focus{border-color:var(--c-work)}
       <button class="btn danger" id="ed-delete">削除</button>
       <button class="btn" id="ed-cancel">キャンセル</button>
       <button class="btn primary" id="ed-save">保存</button>
-    </div>
-  </div>
-</div>
-
-<!-- ============ AIプランニング ============ -->
-<div class="modal center" id="aiplan">
-  <div class="focus-box" style="text-align:left">
-    <h3 style="font-size:16px;font-weight:800;margin-bottom:6px">✨ AIプランニング</h3>
-    <p style="font-size:12px;color:var(--ink-2);margin-bottom:10px">今日やることを箇条書きで書くと、AIが空き時間に自動で配置します。</p>
-    <textarea id="ai-tasks" rows="5" placeholder="例:&#10;・企画書のたたき台を作る&#10;・美容院の予約&#10;・英語の宿題30分"></textarea>
-    <p id="ai-status" style="font-size:12px;color:var(--ink-2);margin-top:10px;min-height:18px"></p>
-    <div class="focus-btn-row" style="margin-top:8px">
-      <button class="btn" id="ai-close">閉じる</button>
-      <button class="btn primary" id="ai-run" style="min-width:120px">配置する</button>
     </div>
   </div>
 </div>
@@ -1031,19 +1023,37 @@ function confettiBurst(x, y, count = 14){
 
 /* ================= タイムライン ================= */
 let subOpen = {}; // サブ項目の開閉状態(タップで切り替え。NOWは初期展開)
+let tlDay = 0;    // 0=今日 1=明日
+// 明日に自動適用される曜日テンプレート(あればプレビューに使う)
+function tomorrowTemplate(){
+  const wd = new Date(Date.now() + 86400000).getDay();
+  return store.get('templates', [null, null, null]).find(t => t && t.days && t.days.includes(wd)) || null;
+}
 function renderTimeline(){
+  const future = tlDay === 1;
   const n = nowMin();
   const tl = $('#timeline');
   tl.innerHTML = '';
-  for(const e of visibleEvents()){
+  const tplTm = future ? tomorrowTemplate() : null;
+  let events;
+  if(future){
+    const base = tplTm ? tplTm.schedule.filter(x => x.cat !== 'sleep') : SCHEDULE;
+    events = [...base, sleepEvent()];
+    if(tplTm) tl.insertAdjacentHTML('beforeend',
+      `<div class="tmrw-note">📋 明日はテンプレート「${esc(tplTm.name || '')}」が自動適用されます(プレビュー)</div>`);
+  }else{
+    events = visibleEvents();
+  }
+  $('#tl-title').textContent = future ? '明日の予定' : 'タイムライン';
+  for(const e of events){
     const cat = CATS[e.cat];
-    const checkable = e.cat !== 'sleep';
+    const checkable = !future && e.cat !== 'sleep';
     const hasSubs = !!(e.subs && e.subs.length);
     const evDone = checkable && !hasSubs && isDone(e.id);
     const subDoneCount = hasSubs ? e.subs.filter((s,i) => isDone(e.id + '/' + i)).length : 0;
 
     const skipState = checkable ? skipStateOf(e.id) : null;
-    const active = isActive(e,n), past = !active && isPast(e,n);
+    const active = !future && isActive(e, n), past = !future && !active && isPast(e, n);
     const fullyDone = checkable && (hasSubs ? subDoneCount === e.subs.length : evDone);
     const overdue = checkable && past && !fullyDone; // 時間が過ぎたのに未消化
     // サブ項目は基本折りたたみ(NOWだけ初期展開)。タップで開閉
@@ -1068,7 +1078,7 @@ function renderTimeline(){
           ${hasSubs && checkable ? `<span class="sub-count">${subDoneCount}/${e.subs.length} ${expanded ? '▴' : '▾'}</span>` : ''}
           <span class="now-badge">NOW</span>
           ${overdue ? '<span class="overdue-badge">⚠ 未消化</span>' : '<span class="cat-tag">' + cat.name + '</span>'}
-          ${e.id === '__sleep' ? '' : `<button class="edit-btn" data-edit="${e.id}" aria-label="編集">✎</button>`}
+          ${e.id === '__sleep' || (future && tplTm) ? '' : `<button class="edit-btn" data-edit="${e.id}" aria-label="編集">✎</button>`}
         </div>
         <div class="range">${fmt(e.start)} – ${fmt(e.end)} ・ ${durLabel(dur(e))}</div>
         ${expanded ? `<div class="subs">${e.subs.map((s,si) => {
@@ -1088,7 +1098,7 @@ function renderTimeline(){
       </div>`;
     tl.appendChild(item);
   }
-  renderSkipped();
+  if(future) $('#skip-wrap').innerHTML = ''; else renderSkipped();
 }
 
 // スキップ中の予定は畳んで一覧に(タップで復帰できる)
@@ -1920,6 +1930,7 @@ function positionDropLine(){
 }
 
 $('#timeline').addEventListener('pointerdown', e => {
+  if(tlDay === 1) return; // 明日ビューは並べ替え不可
   const item = e.target.closest('.tl-item');
   if(!item || item.dataset.id === '__sleep' || e.target.closest('button, input')) return;
   tlDownX = e.clientX; tlDownY = e.clientY;
@@ -2081,16 +2092,26 @@ $('#fm-close').addEventListener('click', () => { if(fm && confirm('集中モー�
 $('#fm-minus').addEventListener('click', () => { if(!fm) return; fm.left = Math.max(10, fm.left - 60); fmRender(); });
 $('#fm-plus').addEventListener('click', () => { if(!fm) return; fm.left += 60; fm.planned = Math.max(fm.planned, fm.left); fmRender(); });
 
-// タイムライン / 24Hグラフ 切り替え
+// タイムライン / 24Hグラフ 切り替え(グラフは控えめな🕐ボタンから)
 function setView(v){
   store.set('view', v);
-  $('#tab-tl').classList.toggle('sel', v === 'tl');
-  $('#tab-clock').classList.toggle('sel', v === 'clock');
   $('#view-tl').style.display = v === 'tl' ? '' : 'none';
   $('#view-clock').style.display = v === 'clock' ? '' : 'none';
 }
-$('#tab-tl').addEventListener('click', () => { setView('tl'); scrollToNow(); });
-$('#tab-clock').addEventListener('click', () => setView('clock'));
+$('#clock-toggle').addEventListener('click', () => setView('clock'));
+$('#clock-back').addEventListener('click', () => { setView('tl'); scrollToNow(); });
+
+// 今日 / 明日 の切り替え
+function setDay(d){
+  tlDay = d;
+  $('#day-today').classList.toggle('sel', d === 0);
+  $('#day-tmrw').classList.toggle('sel', d === 1);
+  setView('tl');
+  renderTimeline();
+  if(d === 0) scrollToNow(); else window.scrollTo(0, 0);
+}
+$('#day-today').addEventListener('click', () => setDay(0));
+$('#day-tmrw').addEventListener('click', () => setDay(1));
 
 // 達成率(チェックした数 / チェック対象の数。睡眠は対象外)
 function renderAch(){
@@ -2387,108 +2408,9 @@ $('#backup-import').addEventListener('click', () => {
   }
 });
 
-/* ================= AIプランニング ================= */
+/* ================= AI設定(キーは今後のAI機能で使用) ================= */
 $('#ai-key').value = store.get('aikey', '');
 $('#ai-key').addEventListener('input', e => store.set('aikey', e.target.value.trim()));
-
-function freeGaps(){
-  const covered = [];
-  for(const e of visibleEvents()){
-    if(e.start < e.end) covered.push([e.start, e.end]);
-    else { covered.push([e.start, 1440]); covered.push([0, e.end]); }
-  }
-  covered.sort((a, b) => a[0] - b[0]);
-  const gaps = [];
-  let cur = 0;
-  for(const [s, t] of covered){
-    if(s > cur) gaps.push([cur, s]);
-    cur = Math.max(cur, t);
-  }
-  if(cur < 1440) gaps.push([cur, 1440]);
-  const n = nowMin();
-  return gaps.map(([s, t]) => [Math.max(s, n), t]).filter(([s, t]) => t - s >= 15);
-}
-
-$('#ai-open').addEventListener('click', () => {
-  $('#ai-status').textContent = store.get('aikey', '') ? '' : '先に「プロフィール&設定 → AIプランニング」でAPIキーを設定してください';
-  $('#aiplan').classList.add('show');
-});
-$('#ai-close').addEventListener('click', () => $('#aiplan').classList.remove('show'));
-$('#aiplan').addEventListener('click', e => { if(e.target === $('#aiplan')) $('#aiplan').classList.remove('show'); });
-
-$('#ai-run').addEventListener('click', async () => {
-  const key = store.get('aikey', '');
-  const tasks = $('#ai-tasks').value.trim();
-  const st = $('#ai-status');
-  if(!key){ st.textContent = 'APIキーが未設定です(設定画面で入力してください)'; return; }
-  if(!tasks){ st.textContent = 'やることを書いてください'; return; }
-  const gaps = freeGaps();
-  if(!gaps.length){ st.textContent = '今日はもう空き時間がありません。明日の朝にどうぞ'; return; }
-  st.textContent = '✨ AIが配置を考えています…';
-  $('#ai-run').disabled = true;
-  try{
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1500,
-        system: 'あなたはADHD当事者のためのスケジュールアシスタント。タスクを空き時間に無理なく配置する。出力はJSON配列のみ。説明文やコードブロック記号は出力しない。',
-        messages: [{role: 'user', content:
-`今日の空き時間: ${gaps.map(g => fmt(g[0]) + '-' + (g[1] === 1440 ? '24:00' : fmt(g[1]))).join(', ')}
-使えるカテゴリ: work(仕事), study(学習), workout(筋トレ), meal(食事), routine(ルーティン), meeting(ミーティング), appt(アポイント), other(その他)
-
-やることリスト:
-${tasks}
-
-ルール:
-- 必ず空き時間の範囲内にだけ配置する(重複禁止)
-- 各タスクに現実的な所要時間を割り当てる。大きいタスクは無理に全部入れない
-- タスク間は詰め込みすぎず、5-10分の余白があると良い
-- この形式のJSON配列のみを出力: [{"title":"タスク名","cat":"work","start":"HH:MM","end":"HH:MM"}]`}],
-      }),
-    });
-    if(!res.ok){
-      const err = await res.json().catch(() => ({}));
-      throw new Error(res.status === 401 ? 'APIキーが無効です。設定を確認してください' : (err.error && err.error.message) || `エラー(${res.status})`);
-    }
-    const data = await res.json();
-    let text = (data.content && data.content[0] && data.content[0].text || '').trim();
-    text = text.replace(/^```json?\s*/i, '').replace(/```\s*$/, '');
-    const items = JSON.parse(text);
-    if(!Array.isArray(items) || !items.length) throw new Error('配置できるタスクがありませんでした');
-    let added = 0;
-    for(const it of items){
-      if(!it.title || !it.start || !it.end) continue;
-      SCHEDULE.push({
-        id: 'ai' + Date.now() + '-' + added,
-        title: String(it.title).slice(0, 40),
-        cat: CATS[it.cat] ? it.cat : 'other',
-        start: toMin(it.start),
-        end: toMin(it.end),
-      });
-      added++;
-    }
-    if(!added) throw new Error('配置できるタスクがありませんでした');
-    SCHEDULE.sort((a, b) => a.start - b.start);
-    persistSchedule();
-    st.textContent = '';
-    $('#aiplan').classList.remove('show');
-    $('#ai-tasks').value = '';
-    confettiBurst(innerWidth / 2, innerHeight / 3, 24);
-    setTimeout(() => scrollToNow(), 300);
-  }catch(err){
-    st.textContent = String(err.message || err).includes('Failed to fetch')
-      ? 'ネットワークに接続できませんでした(Web版のclaude.ai上ではAIは使えません。アプリ版でお試しください)'
-      : (err.message || 'エラーが発生しました');
-  }
-  $('#ai-run').disabled = false;
-});
 
 /* ================= 初回チュートリアル ================= */
 const OB_SLIDES = [
@@ -2554,7 +2476,7 @@ function tickClock(){
 }
 
 autoApplyTemplate();
-setView(store.get('view', 'tl'));
+setView('tl');
 refreshHome();
 renderLegend();
 renderTemplates();
@@ -2562,9 +2484,6 @@ renderLevel();
 tickClock();
 setInterval(tickClock, 1000);
 setTimeout(() => scrollToNow(false), 120);
-// 起動は常にInbox: 開いた瞬間に入力できる状態にする(LINE代替の要)
-document.querySelector('nav.footer button[data-scr="inbox"]').click();
-setTimeout(() => { try{ $('#ib-input').focus(); }catch{} }, 100);
 setInterval(() => { if($('#scr-home').classList.contains('active')) refreshHome(); }, 30000);
 syncNative();
 </script>
