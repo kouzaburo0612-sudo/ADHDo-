@@ -258,6 +258,71 @@ tr.all-yes td, tr.all-yes th { background: #e7f3ec; }
 .mark-maybe { color: var(--maybe); font-weight: 700; }
 .mark-no { color: var(--ng); font-weight: 700; }
 
+/* イベントカード(ホーム) */
+.event-card {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.event-card-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+.event-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 28px;
+}
+.event-title {
+  font-size: 18px;
+  line-height: 1.4;
+}
+.event-badges { display: flex; gap: 4px; flex-shrink: 0; }
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 1px 10px;
+  font-family: var(--font-sans);
+}
+.badge-navy { background: var(--navy); color: #fff; }
+.badge-green { background: var(--ok); color: #fff; }
+.slot-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+.slot-chip {
+  background: #faf6ec;
+  border: 1px solid #eadfc8;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.slot-chip-more { color: var(--muted); font-size: 12px; }
+.event-remove {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+}
+
 /* カレンダー(候補日の複数選択) */
 .cal {
   background: #fff;

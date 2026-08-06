@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { addMyEvent } from "@/lib/myEvents";
+import { upsertMyEvent } from "@/lib/myEvents";
 import { slotLabel, formatDateJaLong, formatTime } from "@/lib/jst";
 
 // 管理(結果)ページ — 仕様書 §3-8
@@ -74,11 +74,11 @@ export default function AdminPage() {
       setResponses(data.responses);
       // 有効な管理トークンで開けたら端末に記憶(次回ホームから戻れるように)
       if (data.event?.isAdmin && token) {
-        addMyEvent({
+        upsertMyEvent({
           code: data.event.code,
           title: data.event.title,
+          role: "organizer",
           adminToken: token,
-          createdAt: new Date().toISOString(),
         });
       }
     } catch {

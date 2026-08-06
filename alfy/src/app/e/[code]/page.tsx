@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import AvailabilityInput from "@/components/AvailabilityInput";
-import { getAdminToken } from "@/lib/myEvents";
+import { getAdminToken, upsertMyEvent } from "@/lib/myEvents";
 import { useDraft, DRAFT_KEYS } from "@/lib/useDraft";
 import type { StoredImage } from "@/lib/imageStore";
 import { slotLabel, formatDateJaLong, formatTime } from "@/lib/jst";
@@ -174,6 +174,10 @@ export default function RespondPage() {
       if (!res.ok) {
         setError(data.error ?? "送信に失敗しました");
         return;
+      }
+      // 回答済みイベントとして端末に記憶(ホームの一覧に出す)
+      if (event) {
+        upsertMyEvent({ code: params.code, title: event.title, role: "participant" });
       }
       // 回答送信完了 → ドラフト破棄(要件C-4)
       clearForm();

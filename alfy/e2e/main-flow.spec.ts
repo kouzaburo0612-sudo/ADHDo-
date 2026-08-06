@@ -71,10 +71,10 @@ test("イベント作成の主要フローが通しで完了する", async ({ pa
   await expect(page.getByRole("link", { name: "LINEで送る" })).toBeVisible();
   await expect(page.getByRole("link", { name: "管理ページへ" })).toBeVisible();
 
-  // ホームの「あなたの日程調整」から管理ページへ戻れる(幹事の導線)
+  // ホームのイベントカードから管理ページへ戻れる(幹事の導線)
   await page.goto("/");
-  await expect(page.getByText("あなたの日程調整")).toBeVisible();
-  await expect(page.getByRole("link", { name: "管理" })).toHaveAttribute(
+  await expect(page.getByText("イベント", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: /E2Eテスト会議/ })).toHaveAttribute(
     "href",
     "/e/test1234/admin?token=admintoken"
   );
