@@ -6,7 +6,7 @@ import AvailabilityInput from "@/components/AvailabilityInput";
 import { EventDraft, loadDraft, clearDraft } from "@/lib/draft";
 import { useDraft, DRAFT_KEYS } from "@/lib/useDraft";
 import { StoredImage, saveImages, loadImages, clearImages } from "@/lib/imageStore";
-import { addMyEvent } from "@/lib/myEvents";
+import { upsertMyEvent } from "@/lib/myEvents";
 import { formatDateJa, WEEKDAYS_JA } from "@/lib/jst";
 
 // 作成 STEP2: 空き時間提出 → AI候補生成 → 確認 → 保存 — 仕様書 §3-4,5
@@ -170,11 +170,11 @@ export default function AvailabilityPage() {
         return;
       }
       // 幹事の端末に管理トークンを記憶(ホームや回答ページから管理画面へ戻れるように)
-      addMyEvent({
+      upsertMyEvent({
         code: data.code,
         title: draft.title,
+        role: "organizer",
         adminToken: data.adminToken,
-        createdAt: new Date().toISOString(),
       });
       // イベント発行完了 → ドラフト破棄(要件C-4)
       clearAllDrafts();
