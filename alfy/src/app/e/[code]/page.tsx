@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import AvailabilityInput from "@/components/AvailabilityInput";
+import { getAdminToken } from "@/lib/myEvents";
 import { useDraft, DRAFT_KEYS } from "@/lib/useDraft";
 import type { StoredImage } from "@/lib/imageStore";
 import { slotLabel, formatDateJaLong, formatTime } from "@/lib/jst";
@@ -70,6 +72,22 @@ export default function RespondPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [copiedLine, setCopiedLine] = useState(false);
+  // この端末で作成したイベントなら管理ページへのボタンを出す
+  const [adminToken, setAdminToken] = useState<string | null>(null);
+  useEffect(() => {
+    setAdminToken(getAdminToken(params.code));
+  }, [params.code]);
+
+  const adminBanner = adminToken && (
+    <div className="mt-2">
+      <Link
+        className="btn btn-gold"
+        href={`/e/${params.code}/admin?token=${encodeURIComponent(adminToken)}`}
+      >
+        🤵 管理ページを開く(あなたが幹事のイベントです)
+      </Link>
+    </div>
+  );
 
   const load = useCallback(async () => {
     try {
@@ -221,6 +239,8 @@ export default function RespondPage() {
           </p>
         </div>
 
+        {adminBanner}
+
         {lineText && (
           <div className="card" style={{ marginTop: 8 }}>
             <label className="field-label">LINE用の確定文面</label>
@@ -270,6 +290,8 @@ export default function RespondPage() {
         ○△×で回答してください(登録不要)
         {event.deadline && ` — 締切: ${event.deadline}`}
       </p>
+
+      {adminBanner}
 
       {event.memo && (
         <div className="info-box mt-2" style={{ whiteSpace: "pre-line" }}>

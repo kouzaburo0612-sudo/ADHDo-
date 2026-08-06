@@ -1,14 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { getMyEvents, removeMyEvent, MyEvent } from "@/lib/myEvents";
 
 // ホーム — 仕様書 §3-1
 export default function HomePage() {
   const router = useRouter();
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinInput, setJoinInput] = useState("");
+  const [myEvents, setMyEvents] = useState<MyEvent[]>([]);
+
+  useEffect(() => {
+    setMyEvents(getMyEvents());
+  }, []);
+
+  const forget = (code: string) => {
+    if (!window.confirm("この一覧から削除しますか?(イベント自体は消えません)")) return;
+    removeMyEvent(code);
+    setMyEvents(getMyEvents());
+  };
 
   const goJoin = () => {
     const input = joinInput.trim();
@@ -60,6 +72,37 @@ export default function HomePage() {
           </div>
         )}
       </div>
+
+      {myEvents.length > 0 && (
+        <div className="card mt-2">
+          <h2 style={{ fontSize: 17, marginBottom: 8 }}>あなたの日程調整</h2>
+          {myEvents.map((e) => (
+            <div className="answer-row" key={e.code}>
+              <span className="answer-label">
+                {e.title || e.code}
+                <br />
+                <span className="muted">{e.createdAt.slice(0, 10)} 作成</span>
+              </span>
+              <span style={{ display: "flex", gap: 6 }}>
+                <Link
+                  className="btn btn-gold btn-small"
+                  href={`/e/${e.code}/admin?token=${encodeURIComponent(e.adminToken)}`}
+                >
+                  管理
+                </Link>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-small"
+                  onClick={() => forget(e.code)}
+                  aria-label={`${e.title || e.code} を一覧から削除`}
+                >
+                  ×
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="card mt-2">
         <h2 style={{ fontSize: 17, marginBottom: 8 }}>Alfyのお約束</h2>
