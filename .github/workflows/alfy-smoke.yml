@@ -1,0 +1,82 @@
+name: Alfy Smoke Test
+
+# 本番APIに対する実環境スモークテスト。
+# テスト用イベントを1件作成し、メモ永続化・重要度設定・回答修正を通しで検証する。
+# (テストイベントは30日後に自動削除される)
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "デプロイ完了を待つコミットSHA先頭7桁(空なら待たない)"
+        required: false
+        default: ""
+
+env:
+  BASE: https://adh-do-mu.vercel.app
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for deploy
+        if: ${{ inputs.expected_sha != '' }}
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sS "$BASE/" | grep -q "build ${{ inputs.expected_sha }}"; then
+              echo "deploy is live"; exit 0
+            fi
+            echo "waiting... ($i)"; sleep 10
+          done
+          echo "::error::deploy did not become live in time"; exit 1
+
+      - name: Create test event (with memo)
+        run: |
+          code=$(curl -sS -X POST "$BASE/api/events" -H "Content-Type: application/json" -d '{
+            "title": "SMOKE-自動テスト(無視してOK)",
+            "durationMinutes": 60,
+            "memo": "スモークテスト用メモ",
+            "slots": [
+              {"date": "2099-01-11", "start": "10:00", "end": "11:00"},
+              {"date": "2099-01-12", "start": "10:00", "end": "11:00"}
+            ]
+          }' | jq -re '.code')
+          echo "EVENT_CODE=$code" >> "$GITHUB_ENV"
+          echo "created event: $code"
+
+      - name: Memo persists (meta-row fallback)
+        run: |
+          curl -sS "$BASE/api/events/$EVENT_CODE" | tee event.json | jq -e '.event.memo == "スモークテスト用メモ"'
+
+      - name: Submit answer
+        run: |
+          s1=$(jq -re '.slots[0].id' event.json)
+          s2=$(jq -re '.slots[1].id' event.json)
+          echo "S1=$s1" >> "$GITHUB_ENV"; echo "S2=$s2" >> "$GITHUB_ENV"
+          pid=$(curl -sS -X POST "$BASE/api/events/$EVENT_CODE/respond" -H "Content-Type: application/json" \
+            -d "{\"lastName\":\"スモーク\",\"answers\":{\"$s1\":\"yes\",\"$s2\":\"no\"}}" | jq -re '.participantId')
+          echo "PID=$pid" >> "$GITHUB_ENV"
+          echo "participant: $pid"
+
+      - name: Set priority to required
+        run: |
+          curl -sS -X POST "$BASE/api/events/$EVENT_CODE/priority" -H "Content-Type: application/json" \
+            -d "{\"participantId\":\"$PID\",\"priority\":\"required\"}" | jq -e '.ok == true'
+
+      - name: Priority persists and meta row is hidden
+        run: |
+          curl -sS "$BASE/api/events/$EVENT_CODE" | tee event2.json \
+            | jq -e --arg pid "$PID" '(.participants | length) == 1 and .participants[0].id == $pid and .participants[0].priority == "required"'
+
+      - name: Edit answer (× → ○)
+        run: |
+          curl -sS -X POST "$BASE/api/events/$EVENT_CODE/respond" -H "Content-Type: application/json" \
+            -d "{\"participantId\":\"$PID\",\"lastName\":\"スモーク\",\"answers\":{\"$S1\":\"yes\",\"$S2\":\"yes\"}}" \
+            | jq -e --arg pid "$PID" '.participantId == $pid'
+
+      - name: Edited answer persists
+        run: |
+          curl -sS "$BASE/api/events/$EVENT_CODE" \
+            | jq -e --arg s2 "$S2" '([.responses[] | select(.slot_id == $s2)] | first.answer) == "yes"'
+
+      - name: Summary
+        run: echo "smoke test passed for event $EVENT_CODE"

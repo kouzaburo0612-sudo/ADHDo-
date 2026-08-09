@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { META_LAST_NAME } from "@/lib/eventMeta";
 
 export const runtime = "nodejs";
 
@@ -59,11 +60,11 @@ export async function POST(
   if (editId) {
     const { data: existing } = await db
       .from("participants")
-      .select("id")
+      .select("id, last_name")
       .eq("id", editId)
       .eq("event_id", event.id)
       .single();
-    if (!existing) {
+    if (!existing || existing.last_name === META_LAST_NAME) {
       return NextResponse.json({ error: "回答者が見つかりません" }, { status: 404 });
     }
 

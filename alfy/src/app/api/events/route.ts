@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { generateCode, generateAdminToken } from "@/lib/id";
 import { addDays, todayJst } from "@/lib/jst";
+import { saveEventMeta } from "@/lib/eventMeta";
 
 export const runtime = "nodejs";
 
@@ -108,6 +109,11 @@ export async function POST(req: NextRequest) {
   if (slotError) {
     await db.from("events").delete().eq("id", event.id);
     return NextResponse.json({ error: "候補枠の保存に失敗しました" }, { status: 500 });
+  }
+
+  // メモはメタ行にも保存する(memo列が無いDBでも永続化される。GETは列→メタの順で参照)
+  if (memo) {
+    await saveEventMeta(db, event.id, null, { memo });
   }
 
   return NextResponse.json({ code: event.code, adminToken });
