@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { isMetaRow, parseMeta } from "@/lib/eventMeta";
 
 export const runtime = "nodejs";
 
@@ -51,25 +52,31 @@ export async function GET(
     responses = data ?? [];
   }
 
+  // メタ行(memo・重要度をJSONで保持する隠し行)を分離し、一覧からは必ず除外する
+  const allParticipants = participants ?? [];
+  const metaRow = allParticipants.find((p) => isMetaRow(p));
+  const meta = metaRow ? parseMeta(metaRow.first_name) : {};
+  const visibleParticipants = allParticipants.filter((p) => !isMetaRow(p));
+
   return NextResponse.json({
     event: {
       code: event.code,
       title: event.title,
       durationMinutes: event.duration_minutes,
       deadline: event.deadline,
-      memo: event.memo ?? null,
+      memo: event.memo ?? meta.memo ?? null,
       status: event.status,
       confirmedSlotId: event.confirmed_slot_id,
       isAdmin,
     },
     slots: slots ?? [],
-    participants: (participants ?? []).map((p) => ({
+    participants: visibleParticipants.map((p) => ({
       id: p.id,
       last_name: p.last_name,
       first_name: p.first_name,
       proxy_last_name: p.proxy_last_name,
       proxy_first_name: p.proxy_first_name,
-      priority: p.priority ?? null,
+      priority: meta.priorities?.[p.id] ?? p.priority ?? null,
     })),
     responses,
   });
