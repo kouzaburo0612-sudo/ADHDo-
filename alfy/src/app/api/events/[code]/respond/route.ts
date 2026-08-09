@@ -4,11 +4,13 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 export const runtime = "nodejs";
 
 // 回答送信(本人 or 代理)。登録不要 — 仕様書 §3-7
+// participantId 付きは既存回答の修正(調整さん方式: 名前タップで誰でも修正可能)
 export async function POST(
   req: NextRequest,
   { params }: { params: { code: string } }
 ) {
   let body: {
+    participantId?: string;
     lastName?: string;
     firstName?: string;
     email?: string;
@@ -52,6 +54,52 @@ export async function POST(
     return NextResponse.json({ error: "回答がありません" }, { status: 400 });
   }
 
+  // ===== 既存回答の修正 =====
+  const editId = (body.participantId ?? "").trim();
+  if (editId) {
+    const { data: existing } = await db
+      .from("participants")
+      .select("id")
+      .eq("id", editId)
+      .eq("event_id", event.id)
+      .single();
+    if (!existing) {
+      return NextResponse.json({ error: "回答者が見つかりません" }, { status: 404 });
+    }
+
+    const update: Record<string, unknown> = {
+      last_name: lastName,
+      first_name: (body.firstName ?? "").trim() || null,
+      proxy_last_name: (body.proxyLastName ?? "").trim() || null,
+      proxy_first_name: (body.proxyFirstName ?? "").trim() || null,
+    };
+    // メールは修正フォームに再入力されたときだけ上書き(空なら既存を保持)
+    const email = (body.email ?? "").trim();
+    if (email) update.email = email;
+
+    const { error: uError } = await db
+      .from("participants")
+      .update(update)
+      .eq("id", editId);
+    if (uError) {
+      return NextResponse.json({ error: "回答の修正に失敗しました" }, { status: 500 });
+    }
+
+    await db.from("responses").delete().eq("participant_id", editId);
+    const { error: rError } = await db.from("responses").insert(
+      entries.map(([slotId, answer]) => ({
+        slot_id: slotId,
+        participant_id: editId,
+        answer,
+      }))
+    );
+    if (rError) {
+      return NextResponse.json({ error: "回答の修正に失敗しました" }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, participantId: editId });
+  }
+
+  // ===== 新規回答 =====
   const { data: participant, error: pError } = await db
     .from("participants")
     .insert({
@@ -82,5 +130,5 @@ export async function POST(
     return NextResponse.json({ error: "回答の保存に失敗しました" }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, participantId: participant.id });
 }

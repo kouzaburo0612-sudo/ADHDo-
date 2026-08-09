@@ -177,3 +177,68 @@ test("回答ページ: 登録不要で○△×回答と代理回答ができる"
     answers: { s1: "yes", s2: "no" },
   });
 });
+
+test("回答表の名前タップで既存回答を修正できる", async ({ page }) => {
+  // 回答済み参加者が1名いる状態をモック
+  await page.route("**/api/events/test1234", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        event: {
+          code: "test1234",
+          title: "E2Eテスト会議",
+          durationMinutes: 60,
+          deadline: null,
+          status: "open",
+          confirmedSlotId: null,
+          isAdmin: false,
+        },
+        slots: [
+          { id: "s1", date: "2099-07-27", start_time: "14:00:00", end_time: "15:00:00" },
+          { id: "s2", date: "2099-07-30", start_time: "16:30:00", end_time: "17:30:00" },
+        ],
+        participants: [
+          {
+            id: "p1",
+            last_name: "山田",
+            first_name: null,
+            proxy_last_name: null,
+            proxy_first_name: null,
+            priority: null,
+          },
+        ],
+        responses: [
+          { slot_id: "s1", participant_id: "p1", answer: "yes" },
+          { slot_id: "s2", participant_id: "p1", answer: "no" },
+        ],
+      }),
+    })
+  );
+  let submittedBody: Record<string, unknown> | null = null;
+  await page.route("**/api/events/test1234/respond", async (route) => {
+    submittedBody = route.request().postDataJSON();
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, participantId: "p1" }),
+    });
+  });
+
+  await page.goto("/e/test1234");
+  // マトリクスの名前をタップ → 修正モード(名前・回答がプレフィルされる)
+  await page.getByRole("button", { name: "山田", exact: true }).click();
+  await expect(page.getByText("山田さんの回答を修正しています")).toBeVisible();
+  await expect(page.getByLabel("姓", { exact: true })).toHaveValue("山田");
+
+  // s2 を × → ○ に変更して送信
+  await page.getByRole("button", { name: "7/30(木) 16:30〜17:30 に ○" }).click();
+  await page.getByRole("button", { name: "回答を修正する" }).click();
+  await expect(page.getByText("回答を受け付けました")).toBeVisible();
+
+  expect(submittedBody).toMatchObject({
+    participantId: "p1",
+    lastName: "山田",
+    answers: { s1: "yes", s2: "yes" },
+  });
+});

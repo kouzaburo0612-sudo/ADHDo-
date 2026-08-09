@@ -17,7 +17,11 @@ type Participant = {
   first_name: string | null;
   proxy_last_name: string | null;
   proxy_first_name: string | null;
+  priority: "required" | "preferred" | null;
 };
+
+// 重要度の表示マーク(★必須 / ☆できれば)
+const PRIORITY_MARK: Record<string, string> = { required: "★", preferred: "☆" };
 type ResponseRow = { slot_id: string; participant_id: string; answer: string };
 
 const MARK_VIEW: Record<string, { label: string; cls: string }> = {
@@ -109,6 +113,73 @@ export default function RespondPage() {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [copiedRemind, setCopiedRemind] = useState(false);
 
+  // 回答修正(調整さん方式: 回答表の名前タップで誰でも修正可能)
+  const [editingId, setEditingId] = useState<string | null>(null);
+  // 自分がこの端末から回答した参加者IDを記憶 → 「自分の回答を修正」導線に使う
+  const [myPid, setMyPid] = useState<string | null>(null);
+  useEffect(() => {
+    setMyPid(localStorage.getItem(`alfy_pid_${params.code}`));
+  }, [params.code]);
+  // 重要度の保存中表示
+  const [savingPriority, setSavingPriority] = useState<string | null>(null);
+
+  const startEdit = (p: Participant) => {
+    const answers: Record<string, Answer> = {};
+    responses.forEach((r) => {
+      if (
+        r.participant_id === p.id &&
+        (r.answer === "yes" || r.answer === "maybe" || r.answer === "no")
+      ) {
+        answers[r.slot_id] = r.answer;
+      }
+    });
+    setForm(() => ({
+      ...INITIAL_RESPOND,
+      proxyMode: !!p.proxy_last_name,
+      lastName: p.last_name,
+      firstName: p.first_name ?? "",
+      proxyLastName: p.proxy_last_name ?? "",
+      proxyFirstName: p.proxy_first_name ?? "",
+      answers,
+    }));
+    setEditingId(p.id);
+    setSubmitted(false);
+    setError(null);
+    window.scrollTo(0, 0);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    clearForm();
+  };
+
+  const setPriority = async (
+    participantId: string,
+    priority: "required" | "preferred" | null
+  ) => {
+    setError(null);
+    setSavingPriority(participantId);
+    try {
+      const res = await fetch(`/api/events/${params.code}/priority`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participantId, priority }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "重要度を保存できませんでした");
+        return;
+      }
+      setParticipants((prev) =>
+        prev.map((p) => (p.id === participantId ? { ...p, priority } : p))
+      );
+    } catch {
+      setError("通信に失敗しました。時間をおいて再度お試しください。");
+    } finally {
+      setSavingPriority(null);
+    }
+  };
+
   const confirmSlot = async (slotId: string) => {
     if (
       !window.confirm(
@@ -159,6 +230,7 @@ export default function RespondPage() {
   const answerMap = new Map(
     responses.map((r) => [`${r.slot_id}:${r.participant_id}`, r.answer])
   );
+  const canEditAnswers = event?.status === "open";
   const matrixCard = participants.length > 0 && (
     <div className="card">
       <h2 style={{ fontSize: 16, marginBottom: 8 }}>
@@ -170,7 +242,32 @@ export default function RespondPage() {
             <tr>
               <th className="slot-col">候補</th>
               {participants.map((p) => (
-                <th key={p.id}>{participantLabel(p)}</th>
+                <th key={p.id}>
+                  {canEditAnswers ? (
+                    <button
+                      type="button"
+                      onClick={() => startEdit(p)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        font: "inherit",
+                        color: "inherit",
+                        textDecoration: "underline",
+                        textDecorationStyle: "dotted",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {p.priority ? PRIORITY_MARK[p.priority] : ""}
+                      {participantLabel(p)}
+                    </button>
+                  ) : (
+                    <>
+                      {p.priority ? PRIORITY_MARK[p.priority] : ""}
+                      {participantLabel(p)}
+                    </>
+                  )}
+                </th>
               ))}
             </tr>
           </thead>
@@ -200,6 +297,11 @@ export default function RespondPage() {
           </tbody>
         </table>
       </div>
+      {canEditAnswers && (
+        <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+          名前をタップすると、その人の回答を修正できます。
+        </p>
+      )}
     </div>
   );
 
@@ -226,32 +328,92 @@ export default function RespondPage() {
       /* noop */
     }
   };
+  // 重要度を加味した候補の並び替え(必須×がいる候補は減点して下へ)
+  const requiredPeople = participants.filter((p) => p.priority === "required");
+  const rankedSlots = slots
+    .map((slot) => {
+      const ans = (p: Participant) => answerMap.get(`${slot.id}:${p.id}`);
+      const allYes =
+        participants.length > 0 && participants.every((p) => ans(p) === "yes");
+      const reqNo = requiredPeople.filter((p) => ans(p) === "no");
+      const reqAllYes =
+        requiredPeople.length > 0 && requiredPeople.every((p) => ans(p) === "yes");
+      let score = participants.filter((p) => ans(p) === "yes").length;
+      participants.forEach((p) => {
+        const a = ans(p);
+        if (p.priority === "required") {
+          if (a === "yes") score += 100;
+          else if (a === "no") score -= 1000;
+        } else if (p.priority === "preferred") {
+          if (a === "yes") score += 10;
+          else if (a === "no") score -= 10;
+        }
+      });
+      return { slot, allYes, reqNo, reqAllYes, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const PRIORITY_CHOICES: { value: "required" | "preferred" | null; label: string }[] = [
+    { value: "required", label: "★必須" },
+    { value: "preferred", label: "☆できれば" },
+    { value: null, label: "ふつう" },
+  ];
+
   const organizerMenu = participants.length > 0 && (
     <details className="card">
       <summary style={{ cursor: "pointer", fontSize: 16, fontWeight: 600 }}>
         📅 日程を確定する(幹事メニュー)
       </summary>
-      <p className="muted" style={{ margin: "8px 0" }}>
+
+      <h3 style={{ fontSize: 14, margin: "12px 0 4px" }}>参加者の重要度</h3>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        「絶対来てほしい人」を★必須にすると、その人が○の候補が上に、×の候補は下に並びます。
+      </p>
+      {participants.map((p) => (
+        <div className="answer-row" key={p.id}>
+          <span className="answer-label">{participantLabel(p)}</span>
+          <span style={{ display: "flex", gap: 6 }}>
+            {PRIORITY_CHOICES.map((c) => (
+              <button
+                key={c.label}
+                type="button"
+                className={`chip ${(p.priority ?? null) === c.value ? "selected" : ""}`}
+                disabled={savingPriority === p.id}
+                onClick={() => setPriority(p.id, c.value)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </span>
+        </div>
+      ))}
+
+      <h3 style={{ fontSize: 14, margin: "16px 0 4px" }}>日程を確定する</h3>
+      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
         確定すると全員にこの日程が表示され、メール登録者には通知が届きます。
       </p>
       <div className="stack">
-        {slots.map((slot) => {
-          const allYes = participants.every(
-            (p) => answerMap.get(`${slot.id}:${p.id}`) === "yes"
-          );
-          return (
+        {rankedSlots.map(({ slot, allYes, reqNo, reqAllYes }) => (
+          <div key={slot.id}>
             <button
-              key={slot.id}
-              className={`btn ${allYes ? "btn-gold" : "btn-outline"}`}
+              className={`btn ${allYes || reqAllYes ? "btn-gold" : "btn-outline"}`}
+              style={{ width: "100%" }}
               onClick={() => confirmSlot(slot.id)}
               disabled={confirming !== null}
             >
               {confirming === slot.id
                 ? "確定中…"
-                : `${slotLabel(slot)} で確定する${allYes ? "(全員○)" : ""}`}
+                : `${slotLabel(slot)} で確定する${
+                    allYes ? "(全員○)" : reqAllYes ? "(必須全員○)" : ""
+                  }`}
             </button>
-          );
-        })}
+            {reqNo.length > 0 && (
+              <p style={{ fontSize: 12, margin: "4px 0 0", color: "#b3261e" }}>
+                ⚠ 必須の{reqNo.map((p) => p.last_name).join("さん・")}さんが×です
+              </p>
+            )}
+          </div>
+        ))}
         <button className="btn btn-outline" onClick={copyRemind}>
           {copiedRemind ? "コピーしました ✓" : "LINE催促文面をコピー"}
         </button>
@@ -342,6 +504,7 @@ export default function RespondPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          participantId: editingId ?? undefined,
           lastName: form.lastName.trim(),
           firstName: form.firstName.trim(),
           email: form.email.trim(),
@@ -359,7 +522,13 @@ export default function RespondPage() {
       if (event) {
         upsertMyEvent({ code: params.code, title: event.title, role: "participant" });
       }
+      // 新規回答なら、この端末の回答者として記憶(「自分の回答を修正」導線に使う)
+      if (!editingId && data.participantId) {
+        localStorage.setItem(`alfy_pid_${params.code}`, data.participantId);
+        setMyPid(data.participantId);
+      }
       // 回答送信完了 → ドラフト破棄(要件C-4)+ 最新の回答状況を取得
+      setEditingId(null);
       clearForm();
       await load();
       setSubmitted(true);
@@ -479,6 +648,19 @@ export default function RespondPage() {
             確定時にはメールでもお知らせします。
           </p>
         )}
+        {myPid && participants.some((p) => p.id === myPid) && (
+          <div className="stack mt-2">
+            <button
+              className="btn btn-outline"
+              onClick={() => {
+                const me = participants.find((p) => p.id === myPid);
+                if (me) startEdit(me);
+              }}
+            >
+              自分の回答を修正する
+            </button>
+          </div>
+        )}
         {matrixCard}
         {organizerMenu}
       </main>
@@ -495,6 +677,27 @@ export default function RespondPage() {
       </p>
 
       {openInAppLink}
+
+      {editingId && (
+        <div className="info-box mt-2">
+          ✏️ {form.lastName || "回答者"}さんの回答を修正しています
+          <button
+            type="button"
+            onClick={cancelEdit}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--muted)",
+              fontSize: 12,
+              textDecoration: "underline",
+              cursor: "pointer",
+              marginLeft: 8,
+            }}
+          >
+            修正をやめる
+          </button>
+        </div>
+      )}
 
       {event.memo && (
         <div className="info-box mt-2" style={{ whiteSpace: "pre-line" }}>
@@ -641,6 +844,8 @@ export default function RespondPage() {
           <>
             <span className="spinner" /> 送信しています…
           </>
+        ) : editingId ? (
+          "回答を修正する"
         ) : (
           "回答を送信"
         )}

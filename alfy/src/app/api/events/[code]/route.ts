@@ -30,9 +30,11 @@ export async function GET(
       .select("id, date, start_time, end_time, sort_order")
       .eq("event_id", event.id)
       .order("sort_order"),
+    // select("*") でマイグレーション未適用(priority列なし)でも動くようにし、
+    // 返却時に必要な列だけへマッピングする(emailは公開しない)
     db
       .from("participants")
-      .select("id, last_name, first_name, proxy_last_name, proxy_first_name, created_at")
+      .select("*")
       .eq("event_id", event.id)
       .order("created_at"),
   ]);
@@ -61,7 +63,14 @@ export async function GET(
       isAdmin,
     },
     slots: slots ?? [],
-    participants: participants ?? [],
+    participants: (participants ?? []).map((p) => ({
+      id: p.id,
+      last_name: p.last_name,
+      first_name: p.first_name,
+      proxy_last_name: p.proxy_last_name,
+      proxy_first_name: p.proxy_first_name,
+      priority: p.priority ?? null,
+    })),
     responses,
   });
 }
