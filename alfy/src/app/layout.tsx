@@ -52,8 +52,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   function nav(url) {
     try {
       var u = new URL(url);
-      if (u.pathname && u.pathname !== location.pathname) {
-        location.href = u.pathname + u.search;
+      // https://host/e/xxx → /e/xxx
+      // alfy://e/xxx はホスト部に "e" が入るため /(host)(pathname) に組み直す
+      var path = (u.protocol === 'http:' || u.protocol === 'https:')
+        ? u.pathname
+        : '/' + u.host + u.pathname;
+      if (path && path !== '/' && path !== location.pathname) {
+        location.href = path + u.search;
       }
     } catch (e) {}
   }
