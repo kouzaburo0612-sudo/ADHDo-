@@ -99,6 +99,14 @@ export default function RespondPage() {
       const data = await res.json();
       setEvent(data.event);
       setSlots(data.slots);
+      // 開いただけでホームの一覧に載せる(幹事登録済みなら上書きしない)
+      if (data.event?.title) {
+        upsertMyEvent({
+          code: params.code,
+          title: data.event.title,
+          role: "participant",
+        });
+      }
     } catch {
       setNotFound(true);
     } finally {

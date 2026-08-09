@@ -82,6 +82,16 @@ export default function HomePage() {
         </Link>
       </div>
 
+      {myEvents.length === 0 && (
+        <div className="info-box mt-2">
+          作成したイベント・URLを開いたイベントが、ここに一覧で並びます。
+          <br />
+          <span className="muted">
+            ※一覧はこの端末に記憶されます(アプリとブラウザで別々)。管理用URLは失くさないようメモ推奨。
+          </span>
+        </div>
+      )}
+
       {myEvents.length > 0 && (
         <>
           <h2 style={{ fontSize: 17, margin: "20px 0 8px" }}>イベント</h2>
