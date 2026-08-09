@@ -26,7 +26,7 @@ test("イベント作成の主要フローが通しで完了する", async ({ pa
       return route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ code: "test1234", adminToken: "admintoken" }),
+        body: JSON.stringify({ code: "test1234" }),
       });
     }
     return route.continue();
@@ -64,19 +64,19 @@ test("イベント作成の主要フローが通しで完了する", async ({ pa
   await page.getByRole("button", { name: "7/27(月) 15:00〜16:00 を削除" }).click();
   await expect(page.getByText("7/27(月) 15:00〜16:00")).toBeHidden();
 
-  // 保存 → 共有ページ
+  // 保存 → 共有ページ(調整さん方式: URLはひとつだけ、トークンなし)
   await page.getByRole("button", { name: "この予定で確定(イベント保存)" }).click();
-  await page.waitForURL(/\/e\/test1234\/share\?token=admintoken$/, { timeout: 30_000 });
+  await page.waitForURL(/\/e\/test1234\/share$/, { timeout: 30_000 });
   await expect(page.getByText("イベントをつくりました")).toBeVisible();
   await expect(page.getByRole("link", { name: "LINEで送る" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "管理ページへ" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "イベントページへ" })).toBeVisible();
 
-  // ホームのイベントカードから管理ページへ戻れる(幹事の導線)
+  // ホームのイベントカードからイベントページへ戻れる(幹事の導線)
   await page.goto("/");
   await expect(page.getByText("イベント", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /E2Eテスト会議/ })).toHaveAttribute(
     "href",
-    "/e/test1234/admin?token=admintoken"
+    "/e/test1234"
   );
 });
 

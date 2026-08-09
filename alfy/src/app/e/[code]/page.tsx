@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
 import AvailabilityInput from "@/components/AvailabilityInput";
-import { getAdminToken, upsertMyEvent } from "@/lib/myEvents";
+import { upsertMyEvent } from "@/lib/myEvents";
 import { useDraft, DRAFT_KEYS } from "@/lib/useDraft";
 import type { StoredImage } from "@/lib/imageStore";
 import { slotLabel, formatDateJaLong, formatTime } from "@/lib/jst";
@@ -99,15 +98,62 @@ export default function RespondPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [copiedLine, setCopiedLine] = useState(false);
-  // この端末で作成したイベントなら管理ページへのボタンを出す
-  const [adminToken, setAdminToken] = useState<string | null>(null);
   // iPhoneでアプリ外(Safari/LINE内ブラウザ)で開いている場合は「アプリで開く」を出す
   const [showOpenInApp, setShowOpenInApp] = useState(false);
   useEffect(() => {
-    setAdminToken(getAdminToken(params.code));
     const w = window as unknown as { Capacitor?: unknown };
     setShowOpenInApp(/iPhone|iPad|iPod/.test(navigator.userAgent) && !w.Capacitor);
   }, [params.code]);
+
+  // 確定・取り消し(調整さん方式: URLを知っている人なら誰でも操作可能)
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [copiedRemind, setCopiedRemind] = useState(false);
+
+  const confirmSlot = async (slotId: string) => {
+    if (
+      !window.confirm(
+        "この日程で確定します。全員に確定として表示され、メール登録者には通知が送られます。よろしいですか?"
+      )
+    )
+      return;
+    setError(null);
+    setConfirming(slotId);
+    try {
+      const res = await fetch(`/api/events/${params.code}/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slotId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "確定に失敗しました");
+        return;
+      }
+      await load();
+      window.scrollTo(0, 0);
+    } catch {
+      setError("通信に失敗しました。時間をおいて再度お試しください。");
+    } finally {
+      setConfirming(null);
+    }
+  };
+
+  const cancelConfirm = async () => {
+    if (!window.confirm("確定を取り消して、募集中に戻しますか?")) return;
+    try {
+      const res = await fetch(`/api/events/${params.code}/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cancel: true }),
+      });
+      if (res.ok) {
+        setSubmitted(false);
+        await load();
+      }
+    } catch {
+      /* 画面はそのまま */
+    }
+  };
 
   // みんなの回答状況(調整さん風マトリクス・閲覧用)
   const answerMap = new Map(
@@ -165,15 +211,52 @@ export default function RespondPage() {
     </p>
   );
 
-  const adminBanner = adminToken && (
-    <div className="mt-2">
-      <Link
-        className="btn btn-gold"
-        href={`/e/${params.code}/admin?token=${encodeURIComponent(adminToken)}`}
-      >
-        🤵 管理ページを開く(あなたが幹事のイベントです)
-      </Link>
-    </div>
+  // 幹事メニュー(誰でも使える — 調整さん方式)
+  const eventUrl =
+    typeof window !== "undefined" ? `${window.location.origin}/e/${params.code}` : "";
+  const remindText = event
+    ? `【${event.title}】\n日程調整の回答がまだの方はお願いします🙏\n${event.deadline ? `締切: ${event.deadline}\n` : ""}回答はこちら(登録不要):\n${eventUrl}`
+    : "";
+  const copyRemind = async () => {
+    try {
+      await navigator.clipboard.writeText(remindText);
+      setCopiedRemind(true);
+      setTimeout(() => setCopiedRemind(false), 2000);
+    } catch {
+      /* noop */
+    }
+  };
+  const organizerMenu = participants.length > 0 && (
+    <details className="card">
+      <summary style={{ cursor: "pointer", fontSize: 16, fontWeight: 600 }}>
+        📅 日程を確定する(幹事メニュー)
+      </summary>
+      <p className="muted" style={{ margin: "8px 0" }}>
+        確定すると全員にこの日程が表示され、メール登録者には通知が届きます。
+      </p>
+      <div className="stack">
+        {slots.map((slot) => {
+          const allYes = participants.every(
+            (p) => answerMap.get(`${slot.id}:${p.id}`) === "yes"
+          );
+          return (
+            <button
+              key={slot.id}
+              className={`btn ${allYes ? "btn-gold" : "btn-outline"}`}
+              onClick={() => confirmSlot(slot.id)}
+              disabled={confirming !== null}
+            >
+              {confirming === slot.id
+                ? "確定中…"
+                : `${slotLabel(slot)} で確定する${allYes ? "(全員○)" : ""}`}
+            </button>
+          );
+        })}
+        <button className="btn btn-outline" onClick={copyRemind}>
+          {copiedRemind ? "コピーしました ✓" : "LINE催促文面をコピー"}
+        </button>
+      </div>
+    </details>
   );
 
   const load = useCallback(async () => {
@@ -341,8 +424,6 @@ export default function RespondPage() {
           </p>
         </div>
 
-        {adminBanner}
-
         {lineText && (
           <div className="card" style={{ marginTop: 8 }}>
             <label className="field-label">LINE用の確定文面</label>
@@ -362,6 +443,22 @@ export default function RespondPage() {
 
         <p className="muted" style={{ textAlign: "center" }}>
           このイベントのデータは30日後に自動削除されます。
+        </p>
+        <p style={{ textAlign: "center", marginTop: 8 }}>
+          <button
+            type="button"
+            onClick={cancelConfirm}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--muted)",
+              fontSize: 12,
+              textDecoration: "underline",
+              cursor: "pointer",
+            }}
+          >
+            確定を取り消して募集中に戻す
+          </button>
         </p>
       </main>
     );
@@ -383,6 +480,7 @@ export default function RespondPage() {
           </p>
         )}
         {matrixCard}
+        {organizerMenu}
       </main>
     );
   }
@@ -397,8 +495,6 @@ export default function RespondPage() {
       </p>
 
       {openInAppLink}
-
-      {adminBanner}
 
       {event.memo && (
         <div className="info-box mt-2" style={{ whiteSpace: "pre-line" }}>
@@ -522,6 +618,8 @@ export default function RespondPage() {
       </div>
 
       {matrixCard}
+
+      {organizerMenu}
 
       <div className="card">
         <label className="field-label" htmlFor="email">
