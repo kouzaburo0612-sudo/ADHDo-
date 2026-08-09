@@ -21,10 +21,12 @@ jobs:
       - name: Wait for deploy
         if: ${{ inputs.expected_sha != '' }}
         run: |
+          # React SSRは "build " とSHAの間に <!-- --> を挟むため、SHA単体で照合する
           for i in $(seq 1 60); do
-            line=$(curl -sS "$BASE/" | grep -o 'build [0-9a-f]\{7\}' || true)
-            echo "attempt $i: live='$line' want='build ${{ inputs.expected_sha }}'"
-            if [ "$line" = "build ${{ inputs.expected_sha }}" ]; then
+            page=$(curl -sS "$BASE/" || true)
+            live=$(echo "$page" | grep -o 'build.\{0,20\}' | head -1 || true)
+            echo "attempt $i: footer='$live' want='${{ inputs.expected_sha }}'"
+            if echo "$page" | grep -q "${{ inputs.expected_sha }}"; then
               echo "deploy is live"; exit 0
             fi
             sleep 10
