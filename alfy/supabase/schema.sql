@@ -37,6 +37,7 @@ create table participants (
   email text,
   proxy_last_name text,                 -- 代理人(いれば)
   proxy_first_name text,
+  priority text,                        -- 重要度 required=必須 / preferred=できれば / null=ふつう
   created_at timestamptz default now()
 );
 
