@@ -1,0 +1,13 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "8332N8C6UX.com.kozaburo.alfy",
+        "appIDs": ["8332N8C6UX.com.kozaburo.alfy"],
+        "paths": ["*"],
+        "components": [{ "/": "*" }]
+      }
+    ]
+  }
+}
