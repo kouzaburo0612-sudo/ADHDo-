@@ -9,18 +9,18 @@ export default function SharePage() {
   const params = useParams<{ code: string }>();
   const search = useSearchParams();
   const token = search.get("token");
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const eventUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
     return `${window.location.origin}/e/${params.code}`;
   }, [params.code]);
 
-  const copyUrl = async () => {
+  const copyText = async (key: string, text: string) => {
     try {
-      await navigator.clipboard.writeText(eventUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      setTimeout(() => setCopied(null), 2000);
     } catch {
       // クリップボード非対応環境では選択コピーしてもらう
     }
@@ -46,8 +46,8 @@ export default function SharePage() {
           <a className="btn btn-primary" href={lineShareUrl} target="_blank" rel="noreferrer">
             LINEで送る
           </a>
-          <button className="btn btn-outline" onClick={copyUrl}>
-            {copied ? "コピーしました ✓" : "URLをコピー"}
+          <button className="btn btn-outline" onClick={() => copyText("event", eventUrl)}>
+            {copied === "event" ? "コピーしました ✓" : "URLをコピー"}
           </button>
         </div>
       </div>
@@ -63,8 +63,36 @@ export default function SharePage() {
           >
             管理ページへ
           </Link>
+
+          <label className="field-label" style={{ marginTop: 16 }}>
+            管理用URL(あなた専用 — 必ず控えてください)
+          </label>
+          <input
+            type="text"
+            readOnly
+            value={`${eventUrl}/admin?token=${token}`}
+            onFocus={(e) => e.target.select()}
+          />
+          <div className="stack mt-2">
+            <button
+              className="btn btn-outline"
+              onClick={() => copyText("admin", `${eventUrl}/admin?token=${token}`)}
+            >
+              {copied === "admin" ? "コピーしました ✓" : "管理URLをコピー"}
+            </button>
+            <a
+              className="btn btn-outline"
+              href={`https://line.me/R/share?text=${encodeURIComponent(
+                `【Alfy管理用・自分メモ】このURLは他の人に送らないでください\n${eventUrl}/admin?token=${token}`
+              )}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              LINEのKeepメモに送っておく(紛失防止)
+            </a>
+          </div>
           <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
-            ※ 管理ページのURLはブックマークしておいてください。紛失すると管理操作ができなくなります。
+            ※ 機種変更やアプリ入れ直しをしても、このURLさえあれば管理ページに入れます。
           </p>
         </div>
       ) : (
