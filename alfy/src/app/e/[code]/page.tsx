@@ -12,6 +12,31 @@ import { slotLabel, formatDateJaLong, formatTime } from "@/lib/jst";
 // 回答ページ(参加者・登録不要)+ 確定表示 — 仕様書 §3-7, §3-9
 // 追加要件B(写真複数枚)・C-3(回答途中の入力保持: イベントコード単位)
 type Slot = { id: string; date: string; start_time: string | null; end_time: string | null };
+type Participant = {
+  id: string;
+  last_name: string;
+  first_name: string | null;
+  proxy_last_name: string | null;
+  proxy_first_name: string | null;
+};
+type ResponseRow = { slot_id: string; participant_id: string; answer: string };
+
+const MARK_VIEW: Record<string, { label: string; cls: string }> = {
+  yes: { label: "○", cls: "mark-yes" },
+  maybe: { label: "△", cls: "mark-maybe" },
+  no: { label: "×", cls: "mark-no" },
+};
+
+function participantLabel(p: Participant): string {
+  const name = p.first_name ? `${p.last_name} ${p.first_name}` : p.last_name;
+  if (p.proxy_last_name) {
+    const proxy = p.proxy_first_name
+      ? `${p.proxy_last_name} ${p.proxy_first_name}`
+      : p.proxy_last_name;
+    return `${name}(代理: ${proxy})`;
+  }
+  return name;
+}
 type EventInfo = {
   code: string;
   title: string;
@@ -55,6 +80,8 @@ export default function RespondPage() {
   const params = useParams<{ code: string }>();
   const [event, setEvent] = useState<EventInfo | null>(null);
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [responses, setResponses] = useState<ResponseRow[]>([]);
   const [notFound, setNotFound] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -81,6 +108,54 @@ export default function RespondPage() {
     const w = window as unknown as { Capacitor?: unknown };
     setShowOpenInApp(/iPhone|iPad|iPod/.test(navigator.userAgent) && !w.Capacitor);
   }, [params.code]);
+
+  // みんなの回答状況(調整さん風マトリクス・閲覧用)
+  const answerMap = new Map(
+    responses.map((r) => [`${r.slot_id}:${r.participant_id}`, r.answer])
+  );
+  const matrixCard = participants.length > 0 && (
+    <div className="card">
+      <h2 style={{ fontSize: 16, marginBottom: 8 }}>
+        みんなの回答状況({participants.length}名)
+      </h2>
+      <div className="matrix-wrap">
+        <table className="matrix">
+          <thead>
+            <tr>
+              <th className="slot-col">候補</th>
+              {participants.map((p) => (
+                <th key={p.id}>{participantLabel(p)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {slots.map((slot) => {
+              const allYes = participants.every(
+                (p) => answerMap.get(`${slot.id}:${p.id}`) === "yes"
+              );
+              return (
+                <tr key={slot.id} className={allYes ? "all-yes" : ""}>
+                  <th className="slot-col">
+                    {slotLabel(slot)}
+                    {allYes && <span className="badge-all-yes">全員○</span>}
+                  </th>
+                  {participants.map((p) => {
+                    const a = answerMap.get(`${slot.id}:${p.id}`);
+                    const m = a ? MARK_VIEW[a] : null;
+                    return (
+                      <td key={p.id} className={m?.cls ?? ""}>
+                        {m?.label ?? "−"}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 
   const openInAppLink = showOpenInApp && (
     <p style={{ textAlign: "center", margin: "8px 0 0" }}>
@@ -111,6 +186,8 @@ export default function RespondPage() {
       const data = await res.json();
       setEvent(data.event);
       setSlots(data.slots);
+      setParticipants(data.participants ?? []);
+      setResponses(data.responses ?? []);
       // 開いただけでホームの一覧に載せる(幹事登録済みなら上書きしない)
       if (data.event?.title) {
         upsertMyEvent({
@@ -199,8 +276,9 @@ export default function RespondPage() {
       if (event) {
         upsertMyEvent({ code: params.code, title: event.title, role: "participant" });
       }
-      // 回答送信完了 → ドラフト破棄(要件C-4)
+      // 回答送信完了 → ドラフト破棄(要件C-4)+ 最新の回答状況を取得
       clearForm();
+      await load();
       setSubmitted(true);
       window.scrollTo(0, 0);
     } catch {
@@ -280,6 +358,8 @@ export default function RespondPage() {
           </div>
         )}
 
+        {matrixCard}
+
         <p className="muted" style={{ textAlign: "center" }}>
           このイベントのデータは30日後に自動削除されます。
         </p>
@@ -302,6 +382,7 @@ export default function RespondPage() {
             確定時にはメールでもお知らせします。
           </p>
         )}
+        {matrixCard}
       </main>
     );
   }
@@ -439,6 +520,8 @@ export default function RespondPage() {
           </div>
         ))}
       </div>
+
+      {matrixCard}
 
       <div className="card">
         <label className="field-label" htmlFor="email">
