@@ -46,7 +46,30 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </footer>
         <script
           dangerouslySetInnerHTML={{
-            __html: `if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); }); }`,
+            __html: `if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); }); }
+// ユニバーサルリンク/URLスキームでアプリが開かれたとき、該当ページへ遷移する(Capacitor)
+(function () {
+  function nav(url) {
+    try {
+      var u = new URL(url);
+      if (u.pathname && u.pathname !== location.pathname) {
+        location.href = u.pathname + u.search;
+      }
+    } catch (e) {}
+  }
+  function setup() {
+    var C = window.Capacitor;
+    var A = C && C.Plugins && C.Plugins.App;
+    if (!A) return;
+    A.addListener('appUrlOpen', function (d) { if (d && d.url) nav(d.url); });
+    if (A.getLaunchUrl && !sessionStorage.getItem('alfy_launch_handled')) {
+      sessionStorage.setItem('alfy_launch_handled', '1');
+      A.getLaunchUrl().then(function (d) { if (d && d.url) nav(d.url); }).catch(function () {});
+    }
+  }
+  if (document.readyState === 'complete') { setup(); }
+  else { window.addEventListener('load', setup); }
+})();`,
           }}
         />
       </body>

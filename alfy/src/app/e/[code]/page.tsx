@@ -74,9 +74,21 @@ export default function RespondPage() {
   const [copiedLine, setCopiedLine] = useState(false);
   // この端末で作成したイベントなら管理ページへのボタンを出す
   const [adminToken, setAdminToken] = useState<string | null>(null);
+  // iPhoneでアプリ外(Safari/LINE内ブラウザ)で開いている場合は「アプリで開く」を出す
+  const [showOpenInApp, setShowOpenInApp] = useState(false);
   useEffect(() => {
     setAdminToken(getAdminToken(params.code));
+    const w = window as unknown as { Capacitor?: unknown };
+    setShowOpenInApp(/iPhone|iPad|iPod/.test(navigator.userAgent) && !w.Capacitor);
   }, [params.code]);
+
+  const openInAppLink = showOpenInApp && (
+    <p style={{ textAlign: "center", margin: "8px 0 0" }}>
+      <a href={`alfy://e/${params.code}`} className="muted" style={{ fontSize: 13 }}>
+        📱 Alfyアプリをお持ちの方はこちら(アプリで開く)
+      </a>
+    </p>
+  );
 
   const adminBanner = adminToken && (
     <div className="mt-2">
@@ -302,6 +314,8 @@ export default function RespondPage() {
         ○△×で回答してください(登録不要)
         {event.deadline && ` — 締切: ${event.deadline}`}
       </p>
+
+      {openInAppLink}
 
       {adminBanner}
 
