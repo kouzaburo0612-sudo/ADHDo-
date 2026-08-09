@@ -39,6 +39,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             Alfy<span>.</span>
           </div>
           <div className="tagline">日程調整を、スマートに。</div>
+          {/* 反映確認用のビルド識別子(デプロイごとに変わる) */}
+          <div style={{ marginTop: 6, fontSize: 10, opacity: 0.6 }}>
+            build {(process.env.VERCEL_GIT_COMMIT_SHA ?? "dev").slice(0, 7)}
+          </div>
         </footer>
         <script
           dangerouslySetInnerHTML={{
