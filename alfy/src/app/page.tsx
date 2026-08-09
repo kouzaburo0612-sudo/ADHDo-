@@ -60,10 +60,8 @@ export default function HomePage() {
     router.push(`/e/${encodeURIComponent(code)}`);
   };
 
-  const cardHref = (e: MyEvent) =>
-    e.role === "organizer" && e.adminToken
-      ? `/e/${e.code}/admin?token=${encodeURIComponent(e.adminToken)}`
-      : `/e/${e.code}`;
+  // 調整さん方式: 幹事も参加者も同じイベントページへ(確定は回答ページの幹事メニューから)
+  const cardHref = (e: MyEvent) => `/e/${e.code}`;
 
   return (
     <main className="container">
@@ -87,7 +85,7 @@ export default function HomePage() {
           作成したイベント・URLを開いたイベントが、ここに一覧で並びます。
           <br />
           <span className="muted">
-            ※一覧はこの端末に記憶されます(アプリとブラウザで別々)。管理用URLは失くさないようメモ推奨。
+            ※一覧はこの端末に記憶されます(アプリとブラウザで別々)。URLさえあればいつでも開けます。
           </span>
         </div>
       )}

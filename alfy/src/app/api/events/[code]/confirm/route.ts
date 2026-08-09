@@ -5,12 +5,13 @@ import { slotLabel, todayJst, addDays } from "@/lib/jst";
 
 export const runtime = "nodejs";
 
-// 日程確定(admin_token 必須)。確定メール送信 + delete_at 更新 — 仕様書 §3-8,9 / §6-1
+// 日程確定・取り消し(調整さん方式: URLを知っている人は誰でも操作可能)
+// 確定時はメール登録済み参加者へ通知 + delete_at更新 — 仕様書 §3-8,9 / §6-1
 export async function POST(
   req: NextRequest,
   { params }: { params: { code: string } }
 ) {
-  let body: { token?: string; slotId?: string };
+  let body: { slotId?: string; cancel?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -20,15 +21,24 @@ export async function POST(
   const db = supabaseAdmin();
   const { data: event } = await db
     .from("events")
-    .select("id, admin_token, title, status")
+    .select("id, code, title, status")
     .eq("code", params.code)
     .single();
 
   if (!event) {
     return NextResponse.json({ error: "イベントが見つかりません" }, { status: 404 });
   }
-  if (!body.token || body.token !== event.admin_token) {
-    return NextResponse.json({ error: "権限がありません" }, { status: 403 });
+
+  // 確定の取り消し(募集中に戻す)
+  if (body.cancel) {
+    const { error } = await db
+      .from("events")
+      .update({ status: "open", confirmed_slot_id: null })
+      .eq("id", event.id);
+    if (error) {
+      return NextResponse.json({ error: "取り消しに失敗しました" }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true });
   }
 
   const { data: slot } = await db

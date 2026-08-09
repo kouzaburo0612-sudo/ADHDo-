@@ -169,16 +169,15 @@ export default function AvailabilityPage() {
         setError(data.error ?? "保存に失敗しました");
         return;
       }
-      // 幹事の端末に管理トークンを記憶(ホームや回答ページから管理画面へ戻れるように)
+      // 幹事としてホームの一覧に記憶(調整さん方式: URLだけで管理できるのでトークン不要)
       upsertMyEvent({
         code: data.code,
         title: draft.title,
         role: "organizer",
-        adminToken: data.adminToken,
       });
       // イベント発行完了 → ドラフト破棄(要件C-4)
       clearAllDrafts();
-      router.push(`/e/${data.code}/share?token=${encodeURIComponent(data.adminToken)}`);
+      router.push(`/e/${data.code}/share`);
     } catch {
       setError("通信に失敗しました。時間をおいて再度お試しください。");
     } finally {
