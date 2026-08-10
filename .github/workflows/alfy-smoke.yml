@@ -82,5 +82,11 @@ jobs:
           curl -sS "$BASE/api/events/$EVENT_CODE" \
             | jq -e --arg s2 "$S2" '([.responses[] | select(.slot_id == $s2)] | first.answer) == "yes"'
 
+      - name: Rename event
+        run: |
+          curl -sS -X PATCH "$BASE/api/events/$EVENT_CODE" -H "Content-Type: application/json" \
+            -d '{"title":"SMOKE-改名テスト"}' | jq -e '.ok == true'
+          curl -sS "$BASE/api/events/$EVENT_CODE" | jq -e '.event.title == "SMOKE-改名テスト"'
+
       - name: Summary
         run: echo "smoke test passed for event $EVENT_CODE"
