@@ -153,6 +153,37 @@ export default function RespondPage() {
     clearForm();
   };
 
+  // イベント名の変更(幹事メニュー)
+  const [editTitle, setEditTitle] = useState("");
+  const [savingTitle, setSavingTitle] = useState(false);
+  useEffect(() => {
+    if (event?.title) setEditTitle(event.title);
+  }, [event?.title]);
+
+  const renameEvent = async () => {
+    const t = editTitle.trim();
+    if (!t || !event || t === event.title) return;
+    setError(null);
+    setSavingTitle(true);
+    try {
+      const res = await fetch(`/api/events/${params.code}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: t }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "イベント名を変更できませんでした");
+        return;
+      }
+      await load();
+    } catch {
+      setError("通信に失敗しました。時間をおいて再度お試しください。");
+    } finally {
+      setSavingTitle(false);
+    }
+  };
+
   const setPriority = async (
     participantId: string,
     priority: "required" | "preferred" | null
@@ -359,34 +390,59 @@ export default function RespondPage() {
     { value: null, label: "ふつう" },
   ];
 
-  const organizerMenu = participants.length > 0 && (
+  const organizerMenu = (
     <details className="card">
       <summary style={{ cursor: "pointer", fontSize: 16, fontWeight: 600 }}>
-        📅 日程を確定する(幹事メニュー)
+        📅 幹事メニュー(名前変更・重要度・日程確定)
       </summary>
 
-      <h3 style={{ fontSize: 14, margin: "12px 0 4px" }}>参加者の重要度</h3>
-      <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-        「絶対来てほしい人」を★必須にすると、その人が○の候補が上に、×の候補は下に並びます。
-      </p>
-      {participants.map((p) => (
-        <div className="answer-row" key={p.id}>
-          <span className="answer-label">{participantLabel(p)}</span>
-          <span style={{ display: "flex", gap: 6 }}>
-            {PRIORITY_CHOICES.map((c) => (
-              <button
-                key={c.label}
-                type="button"
-                className={`chip ${(p.priority ?? null) === c.value ? "selected" : ""}`}
-                disabled={savingPriority === p.id}
-                onClick={() => setPriority(p.id, c.value)}
-              >
-                {c.label}
-              </button>
-            ))}
-          </span>
-        </div>
-      ))}
+      <h3 style={{ fontSize: 14, margin: "12px 0 4px" }}>イベント名の変更</h3>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <input
+          type="text"
+          value={editTitle}
+          onChange={(e) => setEditTitle(e.target.value)}
+          aria-label="イベント名"
+          style={{ flex: 1 }}
+        />
+        <button
+          type="button"
+          className="btn btn-outline btn-small"
+          onClick={renameEvent}
+          disabled={
+            savingTitle || !editTitle.trim() || editTitle.trim() === event?.title
+          }
+        >
+          {savingTitle ? "変更中…" : "変更"}
+        </button>
+      </div>
+
+      {participants.length > 0 && (
+        <>
+          <h3 style={{ fontSize: 14, margin: "16px 0 4px" }}>参加者の重要度</h3>
+          <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+            「絶対来てほしい人」を★必須にすると、その人が○の候補が上に、×の候補は下に並びます。
+          </p>
+          {participants.map((p) => (
+            <div className="answer-row" key={p.id}>
+              <span className="answer-label">{participantLabel(p)}</span>
+              <span style={{ display: "flex", gap: 6 }}>
+                {PRIORITY_CHOICES.map((c) => (
+                  <button
+                    key={c.label}
+                    type="button"
+                    className={`chip ${(p.priority ?? null) === c.value ? "selected" : ""}`}
+                    disabled={savingPriority === p.id}
+                    onClick={() => setPriority(p.id, c.value)}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </span>
+            </div>
+          ))}
+        </>
+      )}
 
       <h3 style={{ fontSize: 14, margin: "16px 0 4px" }}>日程を確定する</h3>
       <p className="muted" style={{ fontSize: 12, marginBottom: 8 }}>

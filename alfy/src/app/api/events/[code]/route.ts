@@ -4,6 +4,35 @@ import { isMetaRow, parseMeta } from "@/lib/eventMeta";
 
 export const runtime = "nodejs";
 
+// イベント名の変更(調整さん方式: URLを知っている人なら誰でも操作可能)
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { code: string } }
+) {
+  let body: { title?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "リクエストが不正です" }, { status: 400 });
+  }
+  const title = (body.title ?? "").trim().slice(0, 100);
+  if (!title) {
+    return NextResponse.json({ error: "イベント名を入力してください" }, { status: 400 });
+  }
+
+  const db = supabaseAdmin();
+  const { data, error } = await db
+    .from("events")
+    .update({ title })
+    .eq("code", params.code)
+    .select("id")
+    .single();
+  if (error || !data) {
+    return NextResponse.json({ error: "イベント名を変更できませんでした" }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
+}
+
 // イベント取得。code だけで回答ページ用データ、code + admin_token で管理判定を返す。
 export async function GET(
   req: NextRequest,
