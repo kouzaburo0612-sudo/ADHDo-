@@ -648,6 +648,7 @@ export default function RespondPage() {
             確定時にはメールでもお知らせします。
           </p>
         )}
+        {organizerMenu}
         {myPid && participants.some((p) => p.id === myPid) && (
           <div className="stack mt-2">
             <button
@@ -662,7 +663,6 @@ export default function RespondPage() {
           </div>
         )}
         {matrixCard}
-        {organizerMenu}
       </main>
     );
   }
@@ -704,6 +704,8 @@ export default function RespondPage() {
           {event.memo}
         </div>
       )}
+
+      {organizerMenu}
 
       <div className="card mt-2">
         <div className="chip-row">
@@ -821,8 +823,6 @@ export default function RespondPage() {
       </div>
 
       {matrixCard}
-
-      {organizerMenu}
 
       <div className="card">
         <label className="field-label" htmlFor="email">
