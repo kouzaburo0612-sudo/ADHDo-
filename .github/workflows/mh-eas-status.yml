@@ -76,9 +76,16 @@ jobs:
                            key, algorithm='ES256', headers={'kid': KEY_ID, 'typ': 'JWT'})
           H = {'Authorization': 'Bearer ' + tok}
           r = requests.get(B + '/v1/apps?filter[bundleId]=com.nash.masterhealth', headers=H, timeout=60)
+          print('GET /v1/apps ->', r.status_code, flush=True)
           apps = r.json().get('data', []) if r.status_code == 200 else []
           if not apps:
-              print('app record not found')
+              # 失敗原因の診断: ASCのエラーレスポンス(code/title/detail)には秘密情報は含まれない
+              try:
+                  for e in r.json().get('errors', []):
+                      print(f"ASC error: status={e.get('status')} code={e.get('code')} title={e.get('title')} detail={e.get('detail')}", flush=True)
+              except Exception as ex:
+                  print('ASC error body parse failed:', ex, flush=True)
+              print('app record not found', flush=True)
               raise SystemExit(0)
           appid = apps[0]['id']
           r = requests.get(B + f'/v1/builds?filter[app]={appid}&sort=-uploadedDate&limit=5', headers=H, timeout=60)
