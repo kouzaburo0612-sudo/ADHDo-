@@ -89,6 +89,16 @@ db.execAsync(`
     uri TEXT NOT NULL,
     timestamp TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS morning_reports (
+    date TEXT PRIMARY KEY,
+    condition INTEGER,
+    lifestyle TEXT,
+    training_done INTEGER,
+    training_place TEXT,
+    training_parts TEXT,
+    training_minutes INTEGER,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `)
   .then(() => normalizeLogTimestamps())
   .catch((e) => console.warn('store init failed', e));
@@ -648,6 +658,60 @@ export async function addMemory(category: MemoryCategory, content: string): Prom
 
 export async function deleteMemory(id: string): Promise<void> {
   await db.runAsync('DELETE FROM memories WHERE id = ?', id);
+}
+
+// ---- 朝の報告カード(トレーナー毎日報告)の日次入力 ----
+// 体調・過ごし方・トレーニング入力を日付キーで保存し、
+// 後からトレンドタブで体重・睡眠との相関分析に使えるようにしておく。
+
+export interface MorningReportEntry {
+  date: string;
+  /** 体調 1〜5(未入力はnull) */
+  condition: number | null;
+  /** 過ごし方の手動上書き(nullなら歩数からの自動判定を使う) */
+  lifestyle: string | null;
+  /** トレーニング有無(未入力はnull=自動初期値に従う) */
+  trainingDone: boolean | null;
+  /** 場所(「石垣島」「東京」「LA」またはその他の自由記述) */
+  trainingPlace: string | null;
+  /** 部位(複数選択) */
+  trainingParts: string[];
+  trainingMinutes: number | null;
+}
+
+export async function getMorningReport(date: string): Promise<MorningReportEntry | null> {
+  const r = await db.getFirstAsync<{
+    date: string; condition: number | null; lifestyle: string | null;
+    training_done: number | null; training_place: string | null;
+    training_parts: string | null; training_minutes: number | null;
+  }>('SELECT * FROM morning_reports WHERE date = ?', date);
+  if (!r) return null;
+  let parts: string[] = [];
+  try { parts = r.training_parts ? JSON.parse(r.training_parts) : []; } catch { parts = []; }
+  return {
+    date: r.date,
+    condition: r.condition,
+    lifestyle: r.lifestyle,
+    trainingDone: r.training_done == null ? null : r.training_done === 1,
+    trainingPlace: r.training_place,
+    trainingParts: parts,
+    trainingMinutes: r.training_minutes,
+  };
+}
+
+export async function saveMorningReport(e: MorningReportEntry): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO morning_reports (date, condition, lifestyle, training_done, training_place, training_parts, training_minutes, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(date) DO UPDATE SET
+       condition = excluded.condition, lifestyle = excluded.lifestyle,
+       training_done = excluded.training_done, training_place = excluded.training_place,
+       training_parts = excluded.training_parts, training_minutes = excluded.training_minutes,
+       updated_at = excluded.updated_at`,
+    e.date, e.condition, e.lifestyle,
+    e.trainingDone == null ? null : e.trainingDone ? 1 : 0,
+    e.trainingPlace, JSON.stringify(e.trainingParts), e.trainingMinutes,
+  );
 }
 
 // ---- utils ----
