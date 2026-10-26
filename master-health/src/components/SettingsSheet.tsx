@@ -14,7 +14,7 @@ import { Colors, Fonts, Radius, Spacing, Type } from '@/constants/theme';
 import { useHealthAuth } from '@/hooks/useHealthData';
 import { kvSet } from '@/lib/db';
 import { rescheduleReminders } from '@/lib/notifications';
-import { getOuraToken, setOuraToken, syncOura } from '@/lib/oura';
+import { getOuraDiag, getOuraToken, setOuraToken, syncOura, type OuraDiag } from '@/lib/oura';
 import { disconnectWithings, isWithingsConnected, startWithingsAuth, syncWithings } from '@/lib/withings';
 import { lastSyncDate, syncHealthData } from '@/lib/sync';
 import {
@@ -35,6 +35,7 @@ export function SettingsBody() {
   const [ouraInput, setOuraInput] = useState('');
   const [ouraSet, setOuraSet] = useState(false);
   const [ouraBusy, setOuraBusy] = useState(false);
+  const [ouraDiag, setOuraDiag] = useState<OuraDiag | null>(null);
   const [withingsOn, setWithingsOn] = useState(false);
   const [withingsBusy, setWithingsBusy] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
@@ -48,6 +49,7 @@ export function SettingsBody() {
     getProfile().then(setProfile);
     getApiKey().then((k) => setKeySet(k != null));
     getOuraToken().then((t) => setOuraSet(t != null)).catch(() => {});
+    getOuraDiag().then(setOuraDiag).catch(() => {});
     isWithingsConnected().then(setWithingsOn).catch(() => {});
     lastSyncDate().then(setLastSync);
     // 直近7日の平均TDEE(消費)と内訳
@@ -251,11 +253,14 @@ export function SettingsBody() {
                     Alert.alert('連携を解除しました');
                   } else {
                     const r = await syncOura(90);
+                    const d = await getOuraDiag();
+                    setOuraDiag(d);
                     setOuraSet(true);
                     setOuraInput('');
-                    Alert.alert('接続成功 💍', `過去90日分のOuraスコア(${r?.synced ?? 0}件)を取り込みました。Body Dataタブで確認できます。`);
+                    Alert.alert('接続成功 💍', `過去90日分のOuraスコア(${r?.synced ?? 0}件)を取り込みました。\nレディネス: ${d?.readiness ?? '—'}\n睡眠: ${d?.sleep ?? '—'}\nアクティビティ: ${d?.activity ?? '—'}`);
                   }
                 } catch (e) {
+                  setOuraDiag(await getOuraDiag().catch(() => null));
                   const msg = e instanceof Error && e.message === 'OURA_BAD_TOKEN'
                     ? 'トークンが無効です。発行し直して再入力してください。'
                     : '接続に失敗しました。通信環境を確認してください。';
@@ -267,6 +272,29 @@ export function SettingsBody() {
             >
               <Text style={styles.btnText}>{ouraBusy ? '接続確認中…' : '保存して接続テスト'}</Text>
             </Pressable>
+            {ouraSet && (
+              <Pressable
+                style={[styles.btn, ouraBusy && { opacity: 0.5 }]}
+                disabled={ouraBusy}
+                onPress={async () => {
+                  setOuraBusy(true);
+                  try {
+                    await syncOura(90);
+                  } catch { /* 診断に結果が残る */ }
+                  const d = await getOuraDiag().catch(() => null);
+                  setOuraDiag(d);
+                  setOuraBusy(false);
+                  Alert.alert('Oura再同期', `レディネス: ${d?.readiness ?? '—'}\n睡眠: ${d?.sleep ?? '—'}\nアクティビティ: ${d?.activity ?? '—'}`);
+                }}
+              >
+                <Text style={styles.btnText}>{ouraBusy ? '同期中…' : '再同期して診断(90日分)'}</Text>
+              </Pressable>
+            )}
+            {ouraDiag != null && (
+              <Text style={styles.hint}>
+                前回同期({new Date(ouraDiag.at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}): レディネス {ouraDiag.readiness} ・ 睡眠 {ouraDiag.sleep} ・ アクティビティ {ouraDiag.activity}
+              </Text>
+            )}
             <Text style={styles.hint}>
               睡眠時間・HRVなどの基本データはこれまで通りヘルスケア経由です。複数デバイスで同じ指標がある場合の優先順位は、iOSヘルスケアアプリ → データソースの設定に従います
             </Text>

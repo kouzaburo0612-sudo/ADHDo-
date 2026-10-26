@@ -8,7 +8,7 @@
  */
 import * as SecureStore from 'expo-secure-store';
 
-import { upsertMetrics, type MetricRow } from '@/lib/db';
+import { kvGet, kvSet, upsertMetrics, type MetricRow } from '@/lib/db';
 import { addDays, toKey } from '@/lib/dates';
 
 const TOKEN_KEY = 'oura_pat';
@@ -42,8 +42,28 @@ async function fetchAll<T>(token: string, path: string, startDate: string, endDa
   return out;
 }
 
+/** 直近の同期結果(種別ごとの件数/エラー)。設定画面での原因切り分け用 */
+export interface OuraDiag {
+  at: string;
+  readiness: string;
+  sleep: string;
+  activity: string;
+}
+
+export async function getOuraDiag(): Promise<OuraDiag | null> {
+  try {
+    const v = await kvGet('oura_sync_diag');
+    return v ? (JSON.parse(v) as OuraDiag) : null;
+  } catch { return null; }
+}
+
+const errLabel = (e: unknown): string =>
+  `エラー(${e instanceof Error ? e.message : String(e)})`;
+
 /**
  * Ouraスコア類を同期する。トークン未設定なら何もしない。
+ * 種別ごとに独立して取得し、1つの失敗が他を巻き込まないようにする。
+ * 結果(件数/エラー)はkv 'oura_sync_diag' に残し、設定画面に表示する。
  * @param days 何日分遡って取るか(初回は90日、通常は14日で十分)
  */
 export async function syncOura(days = 14): Promise<{ synced: number } | null> {
@@ -53,18 +73,42 @@ export async function syncOura(days = 14): Promise<{ synced: number } | null> {
   const start = toKey(addDays(new Date(), -days));
 
   const rows: MetricRow[] = [];
-  const [readiness, sleep, activity] = await Promise.all([
-    fetchAll<OuraReadiness>(token, 'daily_readiness', start, end),
-    fetchAll<OuraDaily>(token, 'daily_sleep', start, end),
-    fetchAll<OuraDaily>(token, 'daily_activity', start, end),
-  ]);
-  for (const r of readiness) {
-    if (r.score != null) rows.push({ date: r.day, metric: 'oura_readiness', value: r.score });
-    if (r.temperature_deviation != null) rows.push({ date: r.day, metric: 'temp_deviation', value: r.temperature_deviation });
-  }
-  for (const s of sleep) if (s.score != null) rows.push({ date: s.day, metric: 'oura_sleep_score', value: s.score });
-  for (const a of activity) if (a.score != null) rows.push({ date: a.day, metric: 'oura_activity_score', value: a.score });
+  const diag: OuraDiag = { at: new Date().toISOString(), readiness: '', sleep: '', activity: '' };
+  let failures = 0;
+  let badToken = false;
+  const noteError = (e: unknown): string => {
+    failures++;
+    if (e instanceof Error && e.message === 'OURA_BAD_TOKEN') badToken = true;
+    return errLabel(e);
+  };
 
+  try {
+    const readiness = await fetchAll<OuraReadiness>(token, 'daily_readiness', start, end);
+    let n = 0;
+    for (const r of readiness) {
+      if (r.score != null) { rows.push({ date: r.day, metric: 'oura_readiness', value: r.score }); n++; }
+      if (r.temperature_deviation != null) rows.push({ date: r.day, metric: 'temp_deviation', value: r.temperature_deviation });
+    }
+    diag.readiness = `${n}件`;
+  } catch (e) { diag.readiness = noteError(e); }
+
+  try {
+    const sleep = await fetchAll<OuraDaily>(token, 'daily_sleep', start, end);
+    let n = 0;
+    for (const s of sleep) if (s.score != null) { rows.push({ date: s.day, metric: 'oura_sleep_score', value: s.score }); n++; }
+    diag.sleep = `${n}件`;
+  } catch (e) { diag.sleep = noteError(e); }
+
+  try {
+    const activity = await fetchAll<OuraDaily>(token, 'daily_activity', start, end);
+    let n = 0;
+    for (const a of activity) if (a.score != null) { rows.push({ date: a.day, metric: 'oura_activity_score', value: a.score }); n++; }
+    // 取得はできたがスコアが入っていない(未確定等)ケースも切り分けられるようにする
+    diag.activity = activity.length > 0 && n === 0 ? `0件(取得${activity.length}件・スコア未確定)` : `${n}件`;
+  } catch (e) { diag.activity = noteError(e); }
+
+  await kvSet('oura_sync_diag', JSON.stringify(diag)).catch(() => {});
   await upsertMetrics(rows);
+  if (failures === 3) throw new Error(badToken ? 'OURA_BAD_TOKEN' : 'OURA_ALL_FAILED');
   return { synced: rows.length };
 }
