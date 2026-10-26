@@ -10,6 +10,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-worklets';
 
 import { AppHeader } from '@/components/AppHeader';
+import { MorningReport } from '@/components/MorningReport';
 import { Card, Chip, SectionTitle } from '@/components/ui';
 import { SettingsSheet } from '@/components/SettingsSheet';
 import { Colors, Fonts, Spacing, Type, scoreColor } from '@/constants/theme';
@@ -71,6 +72,7 @@ export default function MyBodyScreen() {
   const params = useLocalSearchParams<{ confirm?: string }>();
   const [dateKey, setDateKey] = useState(todayKey());
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [morningOpen, setMorningOpen] = useState(false);
   const [day, setDay] = useState<DayData | null>(null);
   const [bank, setBank] = useState<BankSummary | null>(null);
   const [goal, setGoal] = useState<GoalNumbers | null>(null);
@@ -311,6 +313,13 @@ export default function MyBodyScreen() {
         contentContainerStyle={{ paddingTop: Spacing.md, paddingBottom: 120, paddingHorizontal: Spacing.md }}
         refreshControl={<RefreshControl refreshing={d.refreshing} onRefresh={() => { d.refresh(); loadDay(dateKey); }} tintColor={Colors.accent} />}
       >
+        {/* 朝の記録(トレーナーへの毎日報告をスクショ1枚/テキスト共有で) */}
+        {isToday && (
+          <Pressable style={styles.morningBtn} onPress={() => setMorningOpen(true)}>
+            <Text style={styles.morningBtnText}>📋 朝の記録(トレーナー共有用)</Text>
+          </Pressable>
+        )}
+
         {/* スコア(コンディション・睡眠・活動・体組成)。過去日も表示。タップで根拠 */}
         {scores != null && (
           <>
@@ -770,6 +779,9 @@ export default function MyBodyScreen() {
       </ScrollView>
       </GestureDetector>
 
+      {/* 朝の記録(トレーナー共有用)モーダル */}
+      <MorningReport visible={morningOpen} onClose={() => setMorningOpen(false)} />
+
       {/* 設定(タブではなく⚙から開くモーダル) */}
       <SettingsSheet visible={settingsOpen} onClose={() => { setSettingsOpen(false); loadDay(dateKey); }} />
 
@@ -1002,6 +1014,13 @@ const styles = StyleSheet.create({
   statValue: { color: Colors.text, fontSize: Type.body, fontWeight: '600', fontVariant: ['tabular-nums'] },
   statUnit: { color: Colors.textFaint, fontSize: Type.caption, fontWeight: '400' },
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  // 朝の記録ボタン
+  morningBtn: {
+    borderRadius: 12, borderWidth: 1, borderColor: Colors.accentDim,
+    backgroundColor: Colors.surface, paddingVertical: 12, alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  morningBtnText: { color: Colors.accent, fontSize: Type.body, fontWeight: '700' },
   // 食事の操作(My Bodyへ集約)
   mealActions: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
   mealActionBtn: {
